@@ -18,7 +18,7 @@ wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/ico
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/__init__.py" -P ${PLUGIN_PATH}
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plugin.png" -P ${PLUGIN_PATH}
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plugin.py" -P ${PLUGIN_PATH}
-wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/vko_input.py" -P ${PLUGIN_PATH}
+wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/vkb_input.py" -P ${PLUGIN_PATH}
 
 echo "*****************************************************"
 echo "** **"
