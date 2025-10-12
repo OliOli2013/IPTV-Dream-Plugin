@@ -1,7 +1,7 @@
 # Wtyczka IPTV Dream
 # Wtyczka IPTV Dream
 
-![Ikona wtyczki IPTV Dream](plugin.png)
+<img src="plugin.png" alt="Ikona wtyczki IPTV Dream" width="250"/>
 ..
 
 Lekka i szybka wtyczka do list IPTV dla dekoderów z oprogramowaniem Enigma2 (Python 3).
