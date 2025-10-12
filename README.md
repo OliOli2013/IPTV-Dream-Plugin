@@ -1,5 +1,4 @@
 # Wtyczka IPTV Dream
-# Wtyczka IPTV Dream
 
 <img src="plugin.png" alt="Ikona wtyczki IPTV Dream" width="250"/>
 ..
