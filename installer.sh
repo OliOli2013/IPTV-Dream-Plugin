@@ -20,11 +20,14 @@ wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plu
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plugin.py" -P ${PLUGIN_PATH}
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/vkb_input.py" -P ${PLUGIN_PATH}
 
+echo ">>> Ustawianie odpowiednich uprawnień dla plików..."
+chmod -R 755 ${PLUGIN_PATH}
+
 echo "*****************************************************"
 echo "** **"
-echo "** Instalacja zakończona pomyślnie!      **"
-echo "** Proszę zrestartować Enigma2, aby zmiany     **"
-echo "** zostały wprowadzone.           **"
+echo "** Instalacja zakończona pomyślnie!           **"
+echo "** Proszę zrestartować Enigma2, aby zmiany      **"
+echo "** zostały wprowadzone.                 **"
 echo "** **"
 echo "*****************************************************"
 
