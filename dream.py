@@ -113,7 +113,7 @@ class IPTVDreamMain(Screen):
 
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
-        self["foot"]   = Label("IPTV Dream v2.1 | msisystem@t.pl | GitHub: OliOli2013")   # ← STOPKA
+        self["foot"]   = Label("IPTV Dream v2.1 | msisystem@t.pl | by: Paweł Pawełek")   # ← STOPKA
 
         self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
             "1": self.openUrl,
