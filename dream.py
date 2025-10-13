@@ -48,7 +48,7 @@ def save_profiles(data):
 # ---------- główne okno ----------
 class IPTVDreamMain(Screen):
     skin = """
-    <screen name="IPTVDreamMain" position="center,center" size="900,670" title="IPTV Dream v2.1">
+    <screen name="IPTVDreamMain" position="center,center" size="900,700" title="IPTV Dream v2.1">
         <!-- NAZWA I WERSJA – prawy górny róg -->
         <eLabel text="IPTV Dream v2.1" position="700,10" size="190,30" font="Regular;22" halign="right" valign="center" foregroundColor="yellow" backgroundColor="#1f771f" cornerRadius="8"/>
 
@@ -82,8 +82,8 @@ class IPTVDreamMain(Screen):
         <widget name="key_yellow" position="450,625" size="225,25" font="Regular;20" halign="center" valign="center" foregroundColor="yellow"/>
         <widget name="key_blue"   position="675,625" size="225,25" font="Regular;20" halign="center" valign="center" foregroundColor="blue"/>
 
-        <!-- STOPKA – Twoje dane (nieobcięta) -->
-        <widget name="foot" position="0,655" size="900,25" font="Regular;18" halign="center" valign="center" foregroundColor="grey"/>
+        <!-- STOPKA – identyczna jak w Twojej wtyczce AIO 1.9r3 -->
+        <widget name="foot" position="0,655" size="900,40" font="Regular;18" halign="center" valign="center" foregroundColor="grey"/>
     </screen>
     """
 
@@ -113,7 +113,7 @@ class IPTVDreamMain(Screen):
 
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
-        self["foot"]   = Label(_("foot", self.lang))   # ← STOPKA
+        self["foot"]   = Label("IPTV Dream v2.1 | msisystem@t.pl | GitHub: OliOli2013")   # ← STOPKA
 
         self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
             "1": self.openUrl,
@@ -287,7 +287,7 @@ class IPTVDreamMain(Screen):
         self["key_yellow"].setText(_("auto_up", self.lang))
         self["key_blue"].setText(_("export", self.lang))
         self["info"].setText(_("press_1_6", self.lang))
-        self["foot"].setText(_("foot", self.lang))
+        self["foot"].setText("IPTV Dream v2.1 | msisystem@t.pl | GitHub: OliOli2013")
         self.session.open(MessageBox, _("lang_changed", self.lang) + " " + self.lang.upper(),
                           MessageBox.TYPE_INFO, timeout=2)
 
