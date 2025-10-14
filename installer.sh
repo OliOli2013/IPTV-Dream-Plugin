@@ -1,5 +1,5 @@
 #!/bin/sh
-# Skrypt instalacyjny dla wtyczki IPTV Dream v2.1
+# Skrypt instalacyjny dla wtyczki IPTV Dream
 
 # Ustawienie ścieżek
 PLUGIN_PATH="/usr/lib/enigma2/python/Plugins/Extensions/IPTVDream"
@@ -23,18 +23,22 @@ wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plu
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/vkb_input.py" -P ${PLUGIN_PATH}
 
 echo ">>> Pobieranie plików z katalogu /tools..."
+wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/tools/bouquet_picker.py" -P ${TOOLS_PATH}
+wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/tools/epg_picon.py" -P ${TOOLS_PATH}
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/tools/lang.py" -P ${TOOLS_PATH}
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/tools/mac_portal.py" -P ${TOOLS_PATH}
 wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/tools/updater.py" -P ${TOOLS_PATH}
+wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/tools/vkb_input.py" -P ${TOOLS_PATH}
+wget -q "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/tools/xtream_one_window.py" -P ${TOOLS_PATH}
 
 echo ">>> Ustawianie odpowiednich uprawnień dla plików..."
 chmod -R 755 ${PLUGIN_PATH}
 
 echo "*****************************************************"
 echo "** **"
-echo "** Aktualizacja do v2.1 zakończona!           **"
+echo "** Instalacja zakończona pomyślnie!          **"
 echo "** Proszę zrestartować Enigma2, aby zmiany     **"
-echo "** zostały wprowadzone.                 **"
+echo "** zostały wprowadzone.                **"
 echo "** **"
 echo "*****************************************************"
 
