@@ -12,10 +12,14 @@ from .tools.mac_portal    import (load_mac_json, save_mac_json,
                                   parse_mac_playlist, download_picon_url)
 from .tools.updater       import check_update, do_update
 from .tools.lang          import _
+from .tools.xtream_one_window import XtreamOneWindow
+from .tools.bouquet_picker    import BouquetPicker
+from .tools.epg_picon         import fetch_epg_for_playlist, download_picon_url
 import os, json, urllib.request, requests
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
+USER_M3U_FILE = "/etc/enigma2/iptvdream_user_m3u.json"
 
 # ---------- pomocnicze ----------
 def parse_m3u_bytes(data):
@@ -48,42 +52,44 @@ def save_profiles(data):
 # ---------- główne okno ----------
 class IPTVDreamMain(Screen):
     skin = """
-    <screen name="IPTVDreamMain" position="center,center" size="900,700" title="IPTV Dream v2.1">
-        <!-- NAZWA I WERSJA – prawy górny róg -->
-        <eLabel text="IPTV Dream v2.1" position="700,10" size="190,30" font="Regular;22" halign="right" valign="center" foregroundColor="yellow" backgroundColor="#1f771f" cornerRadius="8"/>
+    <screen name="IPTVDreamMain" position="center,center" size="950,680" title="IPTV Dream v2.2">
+        <!-- NAGŁÓWEK -->
+        <eLabel text="IPTV Dream v2.2" position="700,10" size="230,35" font="Regular;28" halign="right" valign="center" foregroundColor="yellow" backgroundColor="#1f771f" cornerRadius="8"/>
 
-        <!-- 6 źródeł -->
-        <eLabel text="1" position="90,90"  size="60,60" font="Regular;48" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
-        <eLabel text="M3U URL"  position="170,90"  size="200,60" font="Regular;28" halign="left" valign="center"/>
-        <eLabel text="2" position="90,170" size="60,60" font="Regular;48" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
-        <eLabel text="M3U plik" position="170,170" size="200,60" font="Regular;28" halign="left" valign="center"/>
-        <eLabel text="3" position="90,250" size="60,60" font="Regular;48" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
-        <eLabel text="Xtream" position="170,250" size="200,60" font="Regular;28" halign="left" valign="center"/>
-        <eLabel text="4" position="90,330" size="60,60" font="Regular;48" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
-        <eLabel text="MAC Portal" position="170,330" size="200,60" font="Regular;28" halign="left" valign="center"/>
-        <eLabel text="5" position="90,410" size="60,60" font="Regular;48" halign="center" valign="center" foregroundColor="white" backgroundColor="#555555" cornerRadius="12"/>
-        <eLabel text="Własne M3U" position="170,410" size="200,60" font="Regular;28" halign="left" valign="center"/>
-        <eLabel text="6" position="90,490" size="60,60" font="Regular;48" halign="center" valign="center" foregroundColor="white" backgroundColor="#800080" cornerRadius="12"/>
-        <eLabel text="PL / EN" position="170,490" size="200,60" font="Regular;28" halign="left" valign="center"/>
+        <!-- 6 ŹRÓDEŁ – kompaktowe -->
+        <eLabel text="1" position="40,80"  size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
+        <eLabel text="M3U URL"  position="130,80"  size="220,70" font="Regular;28" halign="left" valign="center"/>
+        <eLabel text="2" position="40,160" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
+        <eLabel text="M3U plik" position="130,160" size="220,70" font="Regular;28" halign="left" valign="center"/>
+        <eLabel text="3" position="40,240" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
+        <eLabel text="Xtream" position="130,240" size="220,70" font="Regular;28" halign="left" valign="center"/>
+        <eLabel text="4" position="40,320" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
+        <eLabel text="MAC Portal" position="130,320" size="220,70" font="Regular;28" halign="left" valign="center"/>
+        <eLabel text="5" position="40,400" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#555555" cornerRadius="12"/>
+        <eLabel text="Własne M3U" position="130,400" size="220,70" font="Regular;28" halign="left" valign="center"/>
+        <eLabel text="6" position="40,480" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#800080" cornerRadius="12"/>
+        <eLabel text="PL / EN" position="130,480" size="220,70" font="Regular;28" halign="left" valign="center"/>
 
-        <widget name="lab1" position="400,90"  size="450,60" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab2" position="400,170" size="450,60" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab3" position="400,250" size="450,60" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab4" position="400,330" size="450,60" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab5" position="400,410" size="450,60" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab6" position="400,490" size="450,60" font="Regular;24" halign="left" valign="center"/>
+        <!-- OPISY PO PRAWEJ -->
+        <widget name="lab1" position="380,80"  size="520,70" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab2" position="380,160" size="520,70" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab3" position="380,240" size="520,70" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab4" position="380,320" size="520,70" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab5" position="380,400" size="520,70" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab6" position="380,480" size="520,70" font="Regular;24" halign="left" valign="center"/>
 
-        <widget name="info"   position="30,560" size="840,30" font="Regular;22" halign="center" valign="center" foregroundColor="yellow"/>
-        <widget name="status" position="30,590" size="840,30" font="Regular;20" halign="center" valign="center"/>
+        <!-- STATUS -->
+        <widget name="info"   position="30,560" size="890,30" font="Regular;22" halign="center" valign="center" foregroundColor="yellow"/>
+        <widget name="status" position="30,590" size="890,25" font="Regular;20" halign="center" valign="center"/>
 
-        <!-- 4 standardowe przyciski -->
-        <widget name="key_red"    position="0,625" size="225,25" font="Regular;20" halign="center" valign="center" foregroundColor="red"/>
-        <widget name="key_green"  position="225,625" size="225,25" font="Regular;20" halign="center" valign="center" foregroundColor="green"/>
-        <widget name="key_yellow" position="450,625" size="225,25" font="Regular;20" halign="center" valign="center" foregroundColor="yellow"/>
-        <widget name="key_blue"   position="675,625" size="225,25" font="Regular;20" halign="center" valign="center" foregroundColor="blue"/>
+        <!-- PRZYCISKI -->
+        <widget name="key_red"    position="0,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="red"/>
+        <widget name="key_green"  position="237,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="green"/>
+        <widget name="key_yellow" position="474,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="yellow"/>
+        <widget name="key_blue"   position="711,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="blue"/>
 
-        <!-- STOPKA – identyczna jak w Twojej wtyczce AIO 1.9r3 -->
-        <widget name="foot" position="0,655" size="900,40" font="Regular;18" halign="center" valign="center" foregroundColor="grey"/>
+        <!-- STOPKA -->
+        <widget name="foot" position="0,650" size="950,20" font="Regular;16" halign="center" valign="center" foregroundColor="grey"/>
     </screen>
     """
 
@@ -92,13 +98,11 @@ class IPTVDreamMain(Screen):
         self.session   = session
         self.playlist  = []
         self.listname  = "IPTV-Dream"
-        # JĘZYK SYSTEMOWY (PL domyślnie)
         self.lang      = language.getLanguage()[:2] or "pl"
         prof           = load_profiles()
         if prof.get("lang") in ("pl", "en"):
             self.lang = prof.get("lang")
 
-        # etykiety – od razu w języku systemowym
         self["key_red"]    = Label(_("exit", self.lang))
         self["key_green"]  = Label(_("check_upd", self.lang))
         self["key_yellow"] = Label(_("auto_up", self.lang))
@@ -113,7 +117,7 @@ class IPTVDreamMain(Screen):
 
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
-        self["foot"]   = Label("IPTV Dream v2.1 | msisystem@t.pl | by: Paweł Pawełek")   # ← STOPKA
+        self["foot"]   = Label("IPTV Dream v2.2 | by Paweł Pawelek | msisystem@t.pl")
 
         self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
             "1": self.openUrl,
@@ -130,11 +134,28 @@ class IPTVDreamMain(Screen):
             "cancel": self.close
         }, -1)
 
-    # ---------- 1) M3U URL ----------
+    # 1) M3U URL ----------------------------------------------------------
     def openUrl(self):
-        self.session.openWithCallback(self.onUrlReady, VKInputBox,
-                                      title=_("load_url", self.lang),
-                                      text="http://")
+        self.session.openWithCallback(self.onUrlOrJson, VKInputBox,
+                                      title=_("Wklej link M3U lub JSON:", self.lang),
+                                      text="")
+    def onUrlOrJson(self, txt):
+        if not txt:
+            self.session.openWithCallback(self.onUrlReady, VKInputBox,
+                                          title=_("load_url", self.lang),
+                                          text="http://")
+            return
+        try:
+            data = json.loads(txt)
+            if isinstance(data, list) and all("url" in x for x in data):
+                menu = [(x["name"], x["url"]) for x in data]
+                self.session.openWithCallback(self.onMyLink, ChoiceBox,
+                                              title=_("Wybierz link:", self.lang),
+                                              list=menu)
+                return
+        except Exception:
+            pass
+        self.onUrlReady(txt.strip())
 
     def onUrlReady(self, url):
         if not url:
@@ -150,7 +171,7 @@ class IPTVDreamMain(Screen):
         except Exception as e:
             self.session.open(MessageBox, "URL error: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
 
-    # ---------- 2) M3U file ----------
+    # 2) M3U plik ---------------------------------------------------------
     def openFile(self):
         self.session.openWithCallback(self.onFileReady, M3UFilePick, start_dir="/tmp/")
 
@@ -166,44 +187,39 @@ class IPTVDreamMain(Screen):
         except Exception as e:
             self.session.open(MessageBox, "File error: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
 
-    # ---------- 3) Xtream ----------
+    # 3) Xtream -----------------------------------------------------------
     def openXtream(self):
-        self.session.openWithCallback(self.xtreamHost, VKInputBox,
-                                      title=_("xtream", self.lang),
-                                      text="http://example.com")
+        # ===== AUTOMATYCZNE wczytanie pliku =====
+        xtream_file = "/etc/enigma2/iptvdream_xtream.json"
+        if os.path.isfile(xtream_file):
+            try:
+                with open(xtream_file, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                if all(k in cfg for k in ("host", "user", "pass")):
+                    # od razu przekazujemy dane – użytkownik tylko ENTER
+                    self.onXtreamOne((cfg["host"], cfg["user"], cfg["pass"]))
+                    return
+            except Exception:
+                pass
+        # ===== standardowo – okno ręczne =====
+        self.session.openWithCallback(self.onXtreamOne, XtreamOneWindow)
 
-    def xtreamHost(self, host):
-        if not host:
+    def onXtreamOne(self, data):
+        if not data:
             return
-        self.x_host = host.rstrip("/")
-        self.session.openWithCallback(self.xtreamUser, VKInputBox,
-                                      title=_("xtream", self.lang) + " – user:",
-                                      text="")
-
-    def xtreamUser(self, user):
-        if not user:
-            return
-        self.x_user = user
-        self.session.openWithCallback(self.xtreamPass, VKInputBox,
-                                      title=_("xtream", self.lang) + " – password:",
-                                      text="")
-
-    def xtreamPass(self, pwd):
-        if not pwd:
-            return
-        m3u = f"{self.x_host}/get.php?username={self.x_user}&password={pwd}&type=m3u_plus&output=ts"
+        host, user, pwd = data
         try:
-            with urllib.request.urlopen(m3u, timeout=15) as r:
+            with urllib.request.urlopen(f"{host}/get.php?username={user}&password={pwd}&type=m3u_plus&output=ts", timeout=15) as r:
                 data = r.read()
             playlist = parse_m3u_bytes(data)
-            prof = load_profiles()
-            prof["last_url"] = m3u
-            save_profiles(prof)
-            self.onListLoaded(playlist, f"Xtream-{self.x_user}")
+            fetch_epg_for_playlist(playlist)
+            for ch in playlist:
+                ch["picon"] = download_picon_url(ch.get("logo", ""), ch["title"])
+            self.onListLoaded(playlist, f"Xtream-{user}")
         except Exception as e:
             self.session.open(MessageBox, "Xtream error: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
 
-    # ---------- 4) MAC ----------
+    # 4) MAC Portal -------------------------------------------------------
     def openMac(self):
         data = load_mac_json()
         txt  = json.dumps(data, indent=2, ensure_ascii=False)
@@ -242,6 +258,7 @@ class IPTVDreamMain(Screen):
         self.data["mac"] = mac
         try:
             playlist = parse_mac_playlist(self.data["host"], mac)
+            fetch_epg_for_playlist(playlist)
             for ch in playlist:
                 ch["picon"] = download_picon_url(ch.get("logo", ""), ch["title"])
             save_mac_json(self.data)
@@ -249,7 +266,7 @@ class IPTVDreamMain(Screen):
         except Exception as e:
             self.session.open(MessageBox, "MAC error: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
 
-    # ---------- 5) Own M3U links ----------
+    # 5) Własne linki -----------------------------------------------------
     def openMyLinks(self):
         try:
             with open(MY_LINKS_FILE) as f:
@@ -269,13 +286,12 @@ class IPTVDreamMain(Screen):
         if choice:
             self.onUrlReady(choice[1])
 
-    # ---------- 6) Language ----------
+    # 6) Zmiana języka ----------------------------------------------------
     def toggleLang(self):
         self.lang = "en" if self.lang == "pl" else "pl"
         prof = load_profiles()
         prof["lang"] = self.lang
         save_profiles(prof)
-        # odśwież WSZYSTKIE etykiety
         self["lab1"].setText(_("load_url", self.lang))
         self["lab2"].setText(_("pick_file", self.lang))
         self["lab3"].setText(_("xtream", self.lang))
@@ -287,11 +303,11 @@ class IPTVDreamMain(Screen):
         self["key_yellow"].setText(_("auto_up", self.lang))
         self["key_blue"].setText(_("export", self.lang))
         self["info"].setText(_("press_1_6", self.lang))
-        self["foot"].setText("IPTV Dream v2.1 | msisystem@t.pl | GitHub: OliOli2013")
+        self["foot"].setText("IPTV Dream v2.2 | by Paweł Pawelek | msisystem@t.pl")
         self.session.open(MessageBox, _("lang_changed", self.lang) + " " + self.lang.upper(),
                           MessageBox.TYPE_INFO, timeout=2)
 
-    # ---------- GREEN – check updates ----------
+    # ---------- GREEN – check updates -----------------------------------
     def checkUpdates(self):
         newer, local, remote = check_update()
         if not newer:
@@ -323,17 +339,7 @@ class IPTVDreamMain(Screen):
             from enigma import quitMainloop
             quitMainloop(3)
 
-    # ---------- BLUE – export ----------
-    def exportBouquet(self):
-        if not self.playlist:
-            self.session.open(MessageBox, _("load_first", self.lang),
-                              MessageBox.TYPE_WARNING, timeout=4)
-            return
-        export_bouquets(self.playlist, bouquet_name=self.listname, keep_groups=True)
-        self.session.open(MessageBox, _("exported", self.lang),
-                          MessageBox.TYPE_INFO, timeout=5)
-
-    # ---------- YELLOW – cron ----------
+    # ---------- YELLOW – auto-update cron -------------------------------
     def toggleAutoUpdate(self):
         cron = "/etc/cron/crontabs/root"
         os.makedirs(os.path.dirname(cron), exist_ok=True)
@@ -350,8 +356,65 @@ class IPTVDreamMain(Screen):
                 f.write('0 5 * * * %s # IPTVDREAM_AUTO\n' % script)
             self["status"].setText(_("auto_on", self.lang))
 
-    # ---------- common ----------
-    def onListLoaded(self, playlist, name):
+    # ---------- BLUE – export z wyborem bukietów ------------------------
+    def exportBouquet(self):
+        if not self.playlist:
+            self.session.open(MessageBox, _("load_first", self.lang),
+                              MessageBox.TYPE_WARNING, timeout=4)
+            return
+
+        # 1. tworzymy SŁOWNIK:  {nazwa_bukietu: [kanały]}
+        groups = {}
+        for ch in self.playlist:
+            g = ch.get("group", "").strip() or (ch["title"].split()[0] if ch["title"] else "Inne")
+            groups.setdefault(g, []).append(ch)
+
+        if groups:
+            # 2. otwieramy OKNO – przekazujemy SŁOWNIK
+            self.session.openWithCallback(self.onBouquetsChosen, BouquetPicker, groups)
+            self._groups = groups          # zachowujemy do odczytu
+            self._name   = self.listname
+        else:
+            self.finishLoad(self.playlist, self.listname)
+
+    # 3. odbieramy LISTĘ NAZW (string-i) – bezpieczne klucze
+    def onBouquetsChosen(self, selected):
+        """
+        selected = lista NAZW bukietów (str) zaznaczonych przez użytkownika
+        BEZPIECZNIE – pomijamy elementy które nie są stringami
+        """
+        if not selected:
+            return
+        final = []
+        for g in selected:
+            # ➜ ZABEZPIECZENIE: tylko stringi mogą być kluczami
+            if isinstance(g, str) and g in self._groups:
+                final.extend(self._groups[g])
+        self.finishLoad(final, self._name)
+
+    def finishLoad(self, playlist, name):
         self.playlist = playlist
         self.listname = name
         self["status"].setText(_("loaded", self.lang) % len(playlist))
+        # osobny plik dla każdej grupy – zachowujemy oryginalne nazwy
+        export_bouquets(playlist, bouquet_name=None, keep_groups=True)
+        self.session.open(MessageBox, f"Eksport zakończony!\n{len(playlist)} kanałów w {len(set(ch.get('group','') for ch in playlist))} bukietach.",
+                          MessageBox.TYPE_INFO, timeout=3)
+
+    # -------------  UNIWERSALNA METODA – OTWIERA OKNO WYBORU  -------------
+    def onListLoaded(self, playlist, name):
+        """wywoływana gdy lista M3U/MAC/Xtream została pobrana i sparsowana"""
+        if not playlist:
+            self.session.open(MessageBox,
+                              "Plik nie zawiera kanałów lub błędny format.",
+                              MessageBox.TYPE_WARNING, timeout=4)
+            return
+        self.playlist = playlist
+        self.listname = name
+        self["status"].setText("Załadowano {} kanałów – NIEBIESKI=eksport".format(len(playlist)))
+        # ➜ automatycznie otwiera OKNO WYBORU BUKIETÓW dla źródeł 1-4
+        self.exportBouquet()
+
+    # ---------- wyjście ----------
+    def cancel(self):
+        self.close()

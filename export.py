@@ -7,14 +7,15 @@ BOUQUET_DIR = "/etc/enigma2"
 def sanit(name):
     return re.sub(r'[^\w\-_. ]', '_', name).strip()
 
-def export_bouquets(playlist, bouquet_name="IPTV-Export", keep_groups=True):
+def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
+    """Eksportuje playlistę – osobny plik dla każdej grupy."""
     groups = {}
     for ch in playlist:
-        grp = ch.get("group", "") if keep_groups else ""
+        grp = ch.get("group", "").strip() if keep_groups else ""
         groups.setdefault(grp, []).append(ch)
 
     for grp, chans in groups.items():
-        name = grp or bouquet_name
+        name = grp or bouquet_name or "IPTV-Export"   # zachowaj oryginalną nazwę
         safe = sanit(name)
         bq_file = os.path.join(BOUQUET_DIR, f"userbouquet.{safe}.tv")
         with open(bq_file, "w", encoding="utf-8") as f:
@@ -27,6 +28,7 @@ def export_bouquets(playlist, bouquet_name="IPTV-Export", keep_groups=True):
                 ref = f"5002:0:1:0:0:0:0:0:0:0:{url}:{title}"
                 f.write(f"#SERVICE {ref}\n#DESCRIPTION {title}\n")
         add_to_bouquets_tv(os.path.basename(bq_file))
+
     try:
         eDVBDB.getInstance().reloadBouquets()
     except Exception:
