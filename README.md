@@ -1,10 +1,6 @@
-# Wtyczka IPTV Dream v2.2
-
-<img src="plugin.png" alt="Ikona wtyczki IPTV Dream" width="250"/>
-
 # Wtyczka IPTV Dream v2.3
 
-![logo](https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plugin.png)
+<img src="https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plugin.png" alt="IPTV Dream Logo" width="150"/>
 
 Zaawansowana wtyczka do importowania list kanałów IPTV (M3U, Xtream, MAC Portal) i eksportowania ich do bukietów w dekoderach z oprogramowaniem Enigma2.
 
@@ -26,6 +22,10 @@ Zaawansowana wtyczka do importowania list kanałów IPTV (M3U, Xtream, MAC Porta
 
 ---
 
-## Instalacja
+## Instalacja 🚀
 
-Pobierz najnowszą wersję `.ipk` z sekcji **[Releases](https.github.com/OliOli2013/IPTV-Dream-Plugin/releases)**, a następnie zainstaluj na swoim dekoderze.
+### Metoda 1: Instalator Online (zalecana)
+Połącz się ze swoim dekoderem przez terminal (Telnet lub SSH) i wklej poniższą komendę:
+
+```shell
+wget -q "--no-check-certificate" [https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh](https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh) -O - | /bin/sh
