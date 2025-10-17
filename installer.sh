@@ -3,7 +3,7 @@
 # Skrypt instalacyjny dla wtyczki IPTV Dream
 # Pobiera najnowsze pliki wtyczki bezpośrednio z repozytorium GitHub.
 #
-# Wersja skryptu: 2.0 (metoda pobierania plików)
+# Wersja skryptu: 2.1 (poprawka ścieżki do vkb_input)
 #
 
 # --- Konfiguracja ---
@@ -19,8 +19,8 @@ file_pick.py
 icon.png
 plugin.png
 plugin.py
-vkb_input.py
-"
+" # <-- Usunięto stąd vkb_input.py
+
 # Lista plików w podkatalogu /tools
 FILES_TOOLS="
 bouquet_picker.py
@@ -29,7 +29,8 @@ lang.py
 mac_portal.py
 updater.py
 xtream_one_window.py
-"
+vkb_input.py
+" # <-- Dodano vkb_input.py tutaj
 
 # --- Logika skryptu ---
 echo "=================================================="
