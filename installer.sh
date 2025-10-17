@@ -3,7 +3,7 @@
 # Skrypt instalacyjny dla wtyczki IPTV Dream
 # Pobiera najnowsze pliki wtyczki bezpośrednio z repozytorium GitHub.
 #
-# Wersja skryptu: 2.1 (poprawka ścieżki do vkb_input)
+# Wersja skryptu: 2.3 (Finalna - Czysta struktura)
 #
 
 # --- Konfiguracja ---
@@ -19,7 +19,7 @@ file_pick.py
 icon.png
 plugin.png
 plugin.py
-" # <-- Usunięto stąd vkb_input.py
+"
 
 # Lista plików w podkatalogu /tools
 FILES_TOOLS="
@@ -30,14 +30,13 @@ mac_portal.py
 updater.py
 xtream_one_window.py
 vkb_input.py
-" # <-- Dodano vkb_input.py tutaj
+" # <-- Plik jest tylko tutaj
 
 # --- Logika skryptu ---
 echo "=================================================="
 echo "    Instalator wtyczki IPTV Dream by Paweł Pawłek"
 echo "=================================================="
 
-# Sprawdzenie, czy jest dostępne wget
 if ! command -v wget >/dev/null 2>&1; then
     echo "BŁĄD: Do instalacji wymagany jest program wget."
     exit 1
@@ -49,27 +48,22 @@ rm -rf "$PLUGIN_PATH"
 echo ">>> Tworzenie struktury katalogów..."
 mkdir -p "$PLUGIN_PATH/tools"
 
-# Funkcja do pobierania plików
 download_file() {
-    url=$1
-    dest=$2
+    url=$1; dest=$2
     wget -q "--no-check-certificate" "$url" -O "$dest"
     if [ $? -ne 0 ]; then
-        echo "BŁĄD: Nie udało się pobrać pliku $url"
-        exit 1
+        echo "BŁĄD: Nie udało się pobrać pliku $url"; exit 1;
     fi
 }
 
 echo ">>> Pobieranie plików głównych..."
 for file in $FILES_ROOT; do
-    echo "   - Pobieranie $file..."
-    download_file "$BASE_URL/$file" "$PLUGIN_PATH/$file"
+    echo "   - Pobieranie $file..."; download_file "$BASE_URL/$file" "$PLUGIN_PATH/$file";
 done
 
 echo ">>> Pobieranie plików z katalogu /tools..."
 for file in $FILES_TOOLS; do
-    echo "   - Pobieranie $file..."
-    download_file "$BASE_URL/tools/$file" "$PLUGIN_PATH/tools/$file"
+    echo "   - Pobieranie $file..."; download_file "$BASE_URL/tools/$file" "$PLUGIN_PATH/tools/$file";
 done
 
 echo "=================================================="
