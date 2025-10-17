@@ -3,7 +3,7 @@
 # Skrypt instalacyjny dla wtyczki IPTV Dream
 # Pobiera najnowsze pliki wtyczki bezpośrednio z repozytorium GitHub.
 #
-# Wersja skryptu: 2.2 (Finalna - poprawna lokalizacja vkb_input.py)
+# Wersja skryptu: 2.4 (Finalna - uwzględnia duplikację vkb_input.py)
 #
 
 # --- Konfiguracja ---
@@ -20,7 +20,7 @@ icon.png
 plugin.png
 plugin.py
 vkb_input.py
-" # <-- vkb_input.py jest tutaj, w głównym katalogu
+" # <-- vkb_input.py jest tutaj
 
 # Lista plików w podkatalogu /tools
 FILES_TOOLS="
@@ -30,7 +30,7 @@ lang.py
 mac_portal.py
 updater.py
 xtream_one_window.py
-" # <-- Usunięto stąd vkb_input.py
+" # <-- Tutaj go nie ma, bo zostanie skopiowany osobno
 
 # --- Logika skryptu ---
 echo "=================================================="
@@ -71,6 +71,16 @@ for file in $FILES_TOOLS; do
     echo "   - Pobieranie $file..."
     download_file "$BASE_URL/tools/$file" "$PLUGIN_PATH/tools/$file"
 done
+
+# --- KLUCZOWY KROK: DUPLIKACJA PLIKU ---
+echo ">>> Zapewnienie kompatybilności przez duplikację vkb_input.py..."
+if [ -f "$PLUGIN_PATH/vkb_input.py" ]; then
+    cp "$PLUGIN_PATH/vkb_input.py" "$PLUGIN_PATH/tools/vkb_input.py"
+else
+    echo "OSTRZEŻENIE: Nie znaleziono vkb_input.py do skopiowania, pobieram ponownie..."
+    download_file "$BASE_URL/vkb_input.py" "$PLUGIN_PATH/tools/vkb_input.py"
+fi
+
 
 echo "=================================================="
 echo "✅ Instalacja zakończona pomyślnie!"
