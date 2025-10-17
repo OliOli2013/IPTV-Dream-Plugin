@@ -24,8 +24,7 @@ Zaawansowana wtyczka do importowania list kanałów IPTV (M3U, Xtream, MAC Porta
 
 ## Instalacja 🚀
 
-### Metoda 1: Instalator Online (zalecana)
 Połącz się ze swoim dekoderem przez terminal (Telnet lub SSH) i wklej poniższą komendę:
 
 ```shell
-wget -q "--no-check-certificate" [https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh](https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh) -O - | /bin/sh
+wget -qO- --no-check-certificate [https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh](https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh) | sh
