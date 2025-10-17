@@ -15,20 +15,15 @@ CLR_CH    = "#555555"   # szary – tło kanałów
 class BouquetPicker(Screen):
     skin = """
     <screen name="BouquetPicker" position="center,center" size="1100,620" title="Wybór bukietów i kanałów">
-        <!-- ramka podświetlenia – przesuwana -->
         <widget name="hlight" position="5,5" size="410,460" zPosition="-1"
                 font="Regular;1" halign="center" valign="center"
                 backgroundColor="#1f771f" cornerRadius="8"/>
 
-        <!-- LEWA: bukiety -->
         <widget name="bqt_list" position="10,10" size="400,450" scrollbarMode="showOnDemand"/>
-        <!-- PRAWA: kanały -->
         <widget name="ch_list"  position="430,10" size="650,450" scrollbarMode="showOnDemand"/>
 
-        <!-- PODSUMOWANIE -->
         <widget name="sum" position="10,480" size="1080,30" font="Regular;22" halign="center" valign="center" foregroundColor="yellow"/>
 
-        <!-- PRZYCISKI -->
         <ePixmap pixmap="buttons/red.png"    position="20,560" size="140,40" alphatest="on"/>
         <ePixmap pixmap="buttons/green.png"  position="180,560" size="140,40" alphatest="on"/>
         <ePixmap pixmap="buttons/yellow.png" position="340,560" size="140,40" alphatest="on"/>
@@ -99,20 +94,18 @@ class BouquetPicker(Screen):
         self.focus = "right" if self.focus == "left" else "left"
         self.updateHighlight()
 
+    # === ZMIANA: Poprawiono logikę - lewo/prawo tylko przełącza fokus ===
     def moveLeft(self):
         if self.focus == "right":
             self.focus = "left"
             self.updateHighlight()
-        else:
-            self["bqt_list"].up()
-            self.previewChannels()
+            self.previewChannels() # Aktualizujemy podgląd po zmianie fokusu na listę bukietów
 
     def moveRight(self):
         if self.focus == "left":
             self.focus = "right"
             self.updateHighlight()
-        else:
-            self["ch_list"].up()
+    # === KONIEC ZMIANY ===
 
     def moveUp(self):
         if self.focus == "left":
@@ -131,29 +124,30 @@ class BouquetPicker(Screen):
     # ---------- logika ----------
     def reloadBouquets(self):
         items = []
-        for b in self.groups:
+        # Sortowanie kluczy (nazw grup) alfabetycznie dla porządku
+        sorted_groups = sorted(self.groups.keys())
+        for b in sorted_groups:
             mark = "☑" if b in self.sel else "☐"
-            prefix = "● " if b in self.sel else "○ "
-            items.append(f"{prefix}{mark}  {b}")
+            # Używamy `len(self.groups[b])` aby pokazać liczbę kanałów
+            items.append(f"{mark} {b} ({len(self.groups[b])})")
         self["bqt_list"].setList(items)
 
     def previewChannels(self):
         idx = self["bqt_list"].getSelectedIndex()
-        if idx >= len(self.groups):
+        sorted_groups = sorted(self.groups.keys())
+        if idx >= len(sorted_groups):
             self["ch_list"].setList([])
             return
-        b = list(self.groups.keys())[idx]
-        # oznacz kanały zaznaczonego bukietu
-        ch = []
-        for c in self.groups[b]:
-            mark = "► " if b in self.sel else "  "
-            ch.append(f"{mark}{c['title']}")
+        
+        b = sorted_groups[idx]
+        ch = [c['title'] for c in self.groups.get(b, [])]
         self["ch_list"].setList(ch)
 
     def markBouquet(self):
         idx = self["bqt_list"].getSelectedIndex()
-        if idx < len(self.groups):
-            b = list(self.groups.keys())[idx]
+        sorted_groups = sorted(self.groups.keys())
+        if idx < len(sorted_groups):
+            b = sorted_groups[idx]
             self.sel.add(b)
             self.reloadBouquets()
             self.previewChannels()
@@ -161,8 +155,9 @@ class BouquetPicker(Screen):
 
     def unmarkBouquet(self):
         idx = self["bqt_list"].getSelectedIndex()
-        if idx < len(self.groups):
-            b = list(self.groups.keys())[idx]
+        sorted_groups = sorted(self.groups.keys())
+        if idx < len(sorted_groups):
+            b = sorted_groups[idx]
             self.sel.discard(b)
             self.reloadBouquets()
             self.previewChannels()
