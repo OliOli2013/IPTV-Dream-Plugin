@@ -8,34 +8,83 @@ from Components.Language  import language
 from .export              import export_bouquets
 from .vkb_input           import VKInputBox
 from .file_pick           import M3UFilePick
-from .tools.mac_portal    import (load_mac_json, save_mac_json,
-                                  parse_mac_playlist, download_picon_url)
+from .tools.mac_portal    import (load_mac_json, save_mac_json, parse_mac_playlist)
 from .tools.updater       import check_update, do_update
 from .tools.lang          import _
 from .tools.xtream_one_window import XtreamOneWindow
 from .tools.bouquet_picker    import BouquetPicker
 from .tools.epg_picon         import fetch_epg_for_playlist, download_picon_url
-import os, json, urllib.request, requests
+import os, json, urllib.request, re, threading
+from enigma import eTimer
+
+# === Helper do uruchamiania zadań w tle, aby uniknąć blokowania UI ===
+def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
+    """
+    Uruchamia blokującą funkcję w osobnym wątku.
+    Po zakończeniu, wywołuje `on_done_callback` w głównym wątku Enigmy.
+    Callback otrzymuje dwa argumenty: (wynik, błąd).
+    """
+    def thread_target():
+        try:
+            result = blocking_func(*args, **kwargs)
+            # Używamy eTimer, aby bezpiecznie wrócić do głównego wątku Enigmy
+            eTimer().start(0, True, lambda: on_done_callback(result, None))
+        except Exception as e:
+            eTimer().start(0, True, lambda: on_done_callback(None, e))
+
+    thread = threading.Thread(target=thread_target)
+    thread.daemon = True
+    thread.start()
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
 USER_M3U_FILE = "/etc/enigma2/iptvdream_user_m3u.json"
+PLUGIN_VERSION = "2.3" # Ulepszona wersja
 
 # ---------- pomocnicze ----------
-def parse_m3u_bytes(data):
-    out, last = [], None
-    for raw in data.decode("utf-8", "ignore").splitlines():
-        s = raw.strip()
-        if not s or s.startswith("#EXTM3U"):
+# === Ulepszony parser M3U, który poprawnie odczytuje group-title i tvg-logo ===
+def parse_m3u_bytes_improved(data):
+    out = []
+    current_attrs = {}
+
+    for line in data.decode("utf-8", "ignore").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#EXTM3U"):
             continue
-        if s.startswith("#EXTINF"):
-            try:
-                last = s.split(",", 1)[1].strip()
-            except:
-                last = "IPTV"
-        elif "://" in s:
-            out.append({"title": last or s, "url": s, "epg": "", "logo": ""})
-            last = None
+
+        if line.startswith("#EXTINF"):
+            parts = line.split(',', 1)
+            title = parts[1] if len(parts) > 1 else "No Title"
+            
+            group_match = re.search(r'group-title="([^"]+)"', line)
+            logo_match = re.search(r'tvg-logo="([^"]+)"', line)
+            
+            current_attrs = {
+                "title": title.strip(),
+                "group": group_match.group(1).strip() if group_match else "",
+                "logo": logo_match.group(1).strip() if logo_match else ""
+            }
+
+        elif "://" in line:
+            if "title" in current_attrs:
+                channel_data = {
+                    "title": current_attrs.get("title"),
+                    "url": line,
+                    "group": current_attrs.get("group"),
+                    "logo": current_attrs.get("logo", ""),
+                    "epg": ""
+                }
+                out.append(channel_data)
+                current_attrs = {} # Reset po dodaniu kanału
+            else:
+                # Fallback dla linków bez #EXTINF
+                out.append({
+                    "title": line.split('/')[-1],
+                    "url": line,
+                    "group": "Inne",
+                    "logo": "",
+                    "epg": ""
+                })
     return out
 
 def load_profiles():
@@ -52,11 +101,9 @@ def save_profiles(data):
 # ---------- główne okno ----------
 class IPTVDreamMain(Screen):
     skin = """
-    <screen name="IPTVDreamMain" position="center,center" size="950,680" title="IPTV Dream v2.2">
-        <!-- NAGŁÓWEK -->
-        <eLabel text="IPTV Dream v2.2" position="700,10" size="230,35" font="Regular;28" halign="right" valign="center" foregroundColor="yellow" backgroundColor="#1f771f" cornerRadius="8"/>
+    <screen name="IPTVDreamMain" position="center,center" size="950,680" title="IPTV Dream">
+        <widget name="version_label" position="700,10" size="230,35" font="Regular;28" halign="right" valign="center" foregroundColor="yellow" backgroundColor="#1f771f" cornerRadius="8"/>
 
-        <!-- 6 ŹRÓDEŁ – kompaktowe -->
         <eLabel text="1" position="40,80"  size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
         <eLabel text="M3U URL"  position="130,80"  size="220,70" font="Regular;28" halign="left" valign="center"/>
         <eLabel text="2" position="40,160" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
@@ -70,7 +117,6 @@ class IPTVDreamMain(Screen):
         <eLabel text="6" position="40,480" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#800080" cornerRadius="12"/>
         <eLabel text="PL / EN" position="130,480" size="220,70" font="Regular;28" halign="left" valign="center"/>
 
-        <!-- OPISY PO PRAWEJ -->
         <widget name="lab1" position="380,80"  size="520,70" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab2" position="380,160" size="520,70" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab3" position="380,240" size="520,70" font="Regular;24" halign="left" valign="center"/>
@@ -78,17 +124,14 @@ class IPTVDreamMain(Screen):
         <widget name="lab5" position="380,400" size="520,70" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab6" position="380,480" size="520,70" font="Regular;24" halign="left" valign="center"/>
 
-        <!-- STATUS -->
         <widget name="info"   position="30,560" size="890,30" font="Regular;22" halign="center" valign="center" foregroundColor="yellow"/>
         <widget name="status" position="30,590" size="890,25" font="Regular;20" halign="center" valign="center"/>
 
-        <!-- PRZYCISKI -->
         <widget name="key_red"    position="0,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="red"/>
         <widget name="key_green"  position="237,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="green"/>
         <widget name="key_yellow" position="474,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="yellow"/>
         <widget name="key_blue"   position="711,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="blue"/>
 
-        <!-- STOPKA -->
         <widget name="foot" position="0,650" size="950,20" font="Regular;16" halign="center" valign="center" foregroundColor="grey"/>
     </screen>
     """
@@ -103,6 +146,20 @@ class IPTVDreamMain(Screen):
         if prof.get("lang") in ("pl", "en"):
             self.lang = prof.get("lang")
 
+        self.setTitle(f"IPTV Dream v{PLUGIN_VERSION}")
+        self["version_label"] = Label(f"IPTV Dream v{PLUGIN_VERSION}")
+        self["foot"]   = Label(f"IPTV Dream v{PLUGIN_VERSION} | by Paweł Pawelek | msisystem@t.pl")
+        
+        self.updateLangStrings()
+
+        self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
+            "1": self.openUrl, "2": self.openFile, "3": self.openXtream,
+            "4": self.openMac, "5": self.openMyLinks, "6": self.toggleLang,
+            "red": self.close, "green": self.checkUpdates, "yellow": self.toggleAutoUpdate,
+            "blue": self.exportBouquet, "cancel": self.close
+        }, -1)
+    
+    def updateLangStrings(self):
         self["key_red"]    = Label(_("exit", self.lang))
         self["key_green"]  = Label(_("check_upd", self.lang))
         self["key_yellow"] = Label(_("auto_up", self.lang))
@@ -117,154 +174,130 @@ class IPTVDreamMain(Screen):
 
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
-        self["foot"]   = Label("IPTV Dream v2.2 | by Paweł Pawelek | msisystem@t.pl")
-
-        self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
-            "1": self.openUrl,
-            "2": self.openFile,
-            "3": self.openXtream,
-            "4": self.openMac,
-            "5": self.openMyLinks,
-            "6": self.toggleLang,
-            "red": self.close,
-            "green": self.checkUpdates,
-            "yellow": self.toggleAutoUpdate,
-            "blue": self.exportBouquet,
-            "ok": self.openUrl,
-            "cancel": self.close
-        }, -1)
 
     # 1) M3U URL ----------------------------------------------------------
     def openUrl(self):
-        self.session.openWithCallback(self.onUrlOrJson, VKInputBox,
-                                      title=_("Wklej link M3U lub JSON:", self.lang),
-                                      text="")
-    def onUrlOrJson(self, txt):
-        if not txt:
-            self.session.openWithCallback(self.onUrlReady, VKInputBox,
-                                          title=_("load_url", self.lang),
-                                          text="http://")
-            return
-        try:
-            data = json.loads(txt)
-            if isinstance(data, list) and all("url" in x for x in data):
-                menu = [(x["name"], x["url"]) for x in data]
-                self.session.openWithCallback(self.onMyLink, ChoiceBox,
-                                              title=_("Wybierz link:", self.lang),
-                                              list=menu)
-                return
-        except Exception:
-            pass
-        self.onUrlReady(txt.strip())
+        last_url = load_profiles().get("last_url", "http://")
+        self.session.openWithCallback(self.onUrlReady, VKInputBox,
+                                      title=_("Wklej link M3U:", self.lang),
+                                      text=last_url)
 
     def onUrlReady(self, url):
-        if not url:
+        if not url or not url.startswith(('http://', 'https://')):
             return
-        try:
-            with urllib.request.urlopen(url, timeout=15) as r:
-                data = r.read()
-            playlist = parse_m3u_bytes(data)
-            prof = load_profiles()
-            prof["last_url"] = url
-            save_profiles(prof)
-            self.onListLoaded(playlist, "M3U-URL")
-        except Exception as e:
-            self.session.open(MessageBox, "URL error: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
+        self._current_url = url
+        self["status"].setText(_("downloading", self.lang))
+        
+        def do_download(url_to_fetch):
+            # Używamy requests dla lepszej obsługi timeoutów i nagłówków
+            headers = {'User-Agent': f'IPTVDream/{PLUGIN_VERSION}'}
+            r = requests.get(url_to_fetch, timeout=20, headers=headers)
+            r.raise_for_status() # Rzuci wyjątkiem dla kodów 4xx/5xx
+            return r.content
+
+        run_in_thread(do_download, self.onDataDownloaded, url)
+
+    def onDataDownloaded(self, data, error):
+        if error:
+            self["status"].setText(_("download_fail", self.lang))
+            self.session.open(MessageBox, f"URL error: {error}", MessageBox.TYPE_ERROR, timeout=5)
+            return
+
+        playlist = parse_m3u_bytes_improved(data)
+        prof = load_profiles()
+        prof["last_url"] = self._current_url
+        save_profiles(prof)
+        self.onListLoaded(playlist, "M3U-URL")
 
     # 2) M3U plik ---------------------------------------------------------
     def openFile(self):
         self.session.openWithCallback(self.onFileReady, M3UFilePick, start_dir="/tmp/")
 
     def onFileReady(self, path):
-        if not path:
-            return
+        if not path: return
         try:
             with open(path, "rb") as f:
                 data = f.read()
-            playlist = parse_m3u_bytes(data)
+            playlist = parse_m3u_bytes_improved(data)
             name = os.path.splitext(os.path.basename(path))[0] or "M3U-File"
             self.onListLoaded(playlist, name)
         except Exception as e:
-            self.session.open(MessageBox, "File error: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
+            self.session.open(MessageBox, f"File error: {e}", MessageBox.TYPE_ERROR, timeout=5)
 
     # 3) Xtream -----------------------------------------------------------
     def openXtream(self):
-        # ===== AUTOMATYCZNE wczytanie pliku =====
         xtream_file = "/etc/enigma2/iptvdream_xtream.json"
         if os.path.isfile(xtream_file):
             try:
                 with open(xtream_file, "r", encoding="utf-8") as f:
                     cfg = json.load(f)
                 if all(k in cfg for k in ("host", "user", "pass")):
-                    # od razu przekazujemy dane – użytkownik tylko ENTER
                     self.onXtreamOne((cfg["host"], cfg["user"], cfg["pass"]))
                     return
-            except Exception:
-                pass
-        # ===== standardowo – okno ręczne =====
+            except Exception: pass
         self.session.openWithCallback(self.onXtreamOne, XtreamOneWindow)
 
     def onXtreamOne(self, data):
-        if not data:
-            return
+        if not data: return
         host, user, pwd = data
-        try:
-            with urllib.request.urlopen(f"{host}/get.php?username={user}&password={pwd}&type=m3u_plus&output=ts", timeout=15) as r:
-                data = r.read()
-            playlist = parse_m3u_bytes(data)
-            fetch_epg_for_playlist(playlist)
-            for ch in playlist:
-                ch["picon"] = download_picon_url(ch.get("logo", ""), ch["title"])
-            self.onListLoaded(playlist, f"Xtream-{user}")
-        except Exception as e:
-            self.session.open(MessageBox, "Xtream error: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
+        self["status"].setText("Pobieranie listy Xtream...")
+        
+        def do_download_xtream():
+            url = f"{host}/get.php?username={user}&password={pwd}&type=m3u_plus&output=ts"
+            r = requests.get(url, timeout=20, headers={'User-Agent': f'IPTVDream/{PLUGIN_VERSION}'})
+            r.raise_for_status()
+            return r.content
+        
+        # Przekazujemy 'user' do callbacka za pomocą functools.partial
+        callback = lambda result, error: self.onXtreamDataDownloaded(result, error, user)
+        run_in_thread(do_download_xtream, callback)
+
+    def onXtreamDataDownloaded(self, data, error, user):
+        if error:
+            self["status"].setText("Błąd pobierania Xtream.")
+            self.session.open(MessageBox, f"Xtream error: {error}", MessageBox.TYPE_ERROR, timeout=5)
+            return
+        
+        playlist = parse_m3u_bytes_improved(data)
+        self.onListLoaded(playlist, f"Xtream-{user}")
 
     # 4) MAC Portal -------------------------------------------------------
     def openMac(self):
         data = load_mac_json()
         txt  = json.dumps(data, indent=2, ensure_ascii=False)
-        self.session.openWithCallback(self.onMacJson, VKInputBox,
-                                      title=_("mac_json", self.lang),
-                                      text=txt)
+        self.session.openWithCallback(self.onMacJson, VKInputBox, title=_("mac_json", self.lang), text=txt)
 
     def onMacJson(self, txt):
-        if txt is None:
-            return
+        if txt is None: return
         try:
-            data = json.loads(txt) if txt.strip() else {}
-            if not data.get("host"):
-                self.session.openWithCallback(self.onMacHost, VKInputBox,
-                                              title=_("mac_json", self.lang) + " – host:",
-                                              text="http://example.com")
-            else:
-                self.onMacHost(data["host"], data=data)
-        except Exception as e:
-            self.session.open(MessageBox, "JSON bad: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
+            self.data = json.loads(txt) if txt.strip() else {}
+            self.session.openWithCallback(self.onMacHost, VKInputBox, title=_("mac_json", self.lang) + " – host:", text=self.data.get("host", "http://"))
+        except json.JSONDecodeError as e:
+            self.session.open(MessageBox, f"JSON bad: {e}", MessageBox.TYPE_ERROR, timeout=5)
 
-    def onMacHost(self, host, data=None):
-        if not host:
-            return
-        if data is None:
-            data = {}
-        data["host"] = host
-        self.data = data
-        self.session.openWithCallback(self.onMacMac, VKInputBox,
-                                      title=_("mac_json", self.lang) + " – MAC:",
-                                      text=data.get("mac", ""))
+    def onMacHost(self, host):
+        if not host: return
+        self.data["host"] = host
+        self.session.openWithCallback(self.onMacMac, VKInputBox, title=_("mac_json", self.lang) + " – MAC:", text=self.data.get("mac", ""))
 
     def onMacMac(self, mac):
-        if not mac:
-            return
+        if not mac: return
         self.data["mac"] = mac
-        try:
-            playlist = parse_mac_playlist(self.data["host"], mac)
-            fetch_epg_for_playlist(playlist)
-            for ch in playlist:
-                ch["picon"] = download_picon_url(ch.get("logo", ""), ch["title"])
-            save_mac_json(self.data)
-            self.onListLoaded(playlist, "MAC-Portal")
-        except Exception as e:
-            self.session.open(MessageBox, "MAC error: " + str(e), MessageBox.TYPE_ERROR, timeout=5)
+        self["status"].setText("Pobieranie listy MAC Portal...")
+
+        def do_parse_mac():
+            return parse_mac_playlist(self.data["host"], self.data["mac"])
+
+        run_in_thread(do_parse_mac, self.onMacDataDownloaded)
+
+    def onMacDataDownloaded(self, playlist, error):
+        if error:
+            self["status"].setText("Błąd pobierania MAC.")
+            self.session.open(MessageBox, f"MAC error: {error}", MessageBox.TYPE_ERROR, timeout=5)
+            return
+
+        save_mac_json(self.data)
+        self.onListLoaded(playlist, "MAC-Portal")
 
     # 5) Własne linki -----------------------------------------------------
     def openMyLinks(self):
@@ -274,13 +307,10 @@ class IPTVDreamMain(Screen):
         except Exception:
             links = []
         if not links:
-            self.session.open(MessageBox, _("own_links", self.lang) + " – brak wpisów.",
-                              MessageBox.TYPE_INFO, timeout=4)
+            self.session.open(MessageBox, _("own_links", self.lang) + " – brak wpisów.", MessageBox.TYPE_INFO, timeout=4)
             return
         menu = [(x["name"], x["url"]) for x in links]
-        self.session.openWithCallback(self.onMyLink, ChoiceBox,
-                                      title=_("own_links", self.lang),
-                                      list=menu)
+        self.session.openWithCallback(self.onMyLink, ChoiceBox, title=_("own_links", self.lang), list=menu)
 
     def onMyLink(self, choice):
         if choice:
@@ -292,47 +322,71 @@ class IPTVDreamMain(Screen):
         prof = load_profiles()
         prof["lang"] = self.lang
         save_profiles(prof)
-        self["lab1"].setText(_("load_url", self.lang))
-        self["lab2"].setText(_("pick_file", self.lang))
-        self["lab3"].setText(_("xtream", self.lang))
-        self["lab4"].setText(_("mac_json", self.lang))
-        self["lab5"].setText(_("own_links", self.lang))
-        self["lab6"].setText(_("toggle_lang", self.lang))
-        self["key_red"].setText(_("exit", self.lang))
-        self["key_green"].setText(_("check_upd", self.lang))
-        self["key_yellow"].setText(_("auto_up", self.lang))
-        self["key_blue"].setText(_("export", self.lang))
-        self["info"].setText(_("press_1_6", self.lang))
-        self["foot"].setText("IPTV Dream v2.2 | by Paweł Pawelek | msisystem@t.pl")
-        self.session.open(MessageBox, _("lang_changed", self.lang) + " " + self.lang.upper(),
-                          MessageBox.TYPE_INFO, timeout=2)
+        self.updateLangStrings() # Wywołujemy jedną metodę do aktualizacji wszystkich tekstów
+        self.session.open(MessageBox, _("lang_changed", self.lang) + " " + self.lang.upper(), MessageBox.TYPE_INFO, timeout=2)
+
+    # ---------- Ujednolicona obsługa załadowanej listy i EPG/Piconów ----------
+    def onListLoaded(self, playlist, name):
+        if not playlist:
+            self.session.open(MessageBox, "Plik nie zawiera kanałów lub ma błędny format.", MessageBox.TYPE_WARNING, timeout=4)
+            self["status"].setText("")
+            return
+
+        self.session.openWithCallback(
+            lambda choice: self.onPostProcessChoice(playlist, name, choice),
+            MessageBox,
+            f"Załadowano {len(playlist)} kanałów.\nCzy chcesz spróbować pobrać EPG i ikony (picony)?\nMoże to zająć dłuższą chwilę.",
+            MessageBox.TYPE_YESNO,
+            default=False
+        )
+
+    def onPostProcessChoice(self, playlist, name, answer):
+        if answer:
+            self["status"].setText("Pobieranie EPG i Piconów... To może potrwać.")
+            run_in_thread(self._post_process_playlist, self.onPostProcessDone, playlist, name)
+        else:
+            # Uruchamiamy callback z pustym błędem, aby zachować spójność
+            self.onPostProcessDone((playlist, name), None)
+
+    def _post_process_playlist(self, playlist, name):
+        # Ta funkcja działa w tle
+        fetch_epg_for_playlist(playlist) # Pobiera EPG
+        for i, ch in enumerate(playlist):
+            logo_url = ch.get("logo", "")
+            if logo_url:
+                # picon_path nie jest już potrzebny, bo export tego nie używa
+                download_picon_url(logo_url, ch["title"])
+        return (playlist, name)
+
+    def onPostProcessDone(self, result, error):
+        if error:
+            self.session.open(MessageBox, f"Błąd podczas pobierania EPG/Picon: {error}", MessageBox.TYPE_ERROR)
+            if result is None:
+                self["status"].setText("Błąd EPG/Picon. Przerwano.")
+                return
+
+        playlist, name = result
+        self.playlist = playlist
+        self.listname = name
+        self["status"].setText(f"Gotowe. Naciśnij NIEBIESKI, aby wybrać bukiety i eksportować.")
+        # Automatycznie otwiera okno wyboru bukietów
+        self.exportBouquet()
 
     # ---------- GREEN – check updates -----------------------------------
     def checkUpdates(self):
         newer, local, remote = check_update()
         if not newer:
-            self.session.open(MessageBox,
-                              _("no_update", self.lang) + "\n" +
-                              _("local_ver", self.lang) + ": " + local + "\n" +
-                              _("remote_ver", self.lang) + ": " + remote,
-                              MessageBox.TYPE_INFO, timeout=5)
+            self.session.open(MessageBox, f"{_('no_update', self.lang)}\n{_('local_ver', self.lang)}: {local}\n{_('remote_ver', self.lang)}: {remote}", MessageBox.TYPE_INFO, timeout=5)
         else:
-            self.session.openWithCallback(self.confirmedUpdate, MessageBox,
-                                          _("local_ver", self.lang) + ": " + local + "\n" +
-                                          _("remote_ver", self.lang) + ": " + remote + "\n\n" +
-                                          _("update_ask", self.lang),
-                                          MessageBox.TYPE_YESNO)
+            self.session.openWithCallback(self.confirmedUpdate, MessageBox, f"{_('local_ver', self.lang)}: {local}\n{_('remote_ver', self.lang)}: {remote}\n\n{_('update_ask', self.lang)}", MessageBox.TYPE_YESNO)
 
     def confirmedUpdate(self, answer):
         if answer:
             try:
                 if do_update():
-                    self.session.openWithCallback(self.restartGUI, MessageBox,
-                                                  _("update_ok", self.lang),
-                                                  MessageBox.TYPE_YESNO)
+                    self.session.openWithCallback(self.restartGUI, MessageBox, _("update_ok", self.lang), MessageBox.TYPE_YESNO)
             except Exception as e:
-                self.session.open(MessageBox, _("update_fail", self.lang) + "\n" + str(e),
-                                  MessageBox.TYPE_ERROR, timeout=5)
+                self.session.open(MessageBox, f"{_('update_fail', self.lang)}\n{e}", MessageBox.TYPE_ERROR, timeout=5)
 
     def restartGUI(self, answer):
         if answer:
@@ -345,75 +399,56 @@ class IPTVDreamMain(Screen):
         os.makedirs(os.path.dirname(cron), exist_ok=True)
         enabled = False
         if os.path.exists(cron):
-            enabled = "IPTVDREAM_AUTO" in open(cron).read()
+            with open(cron) as f:
+                enabled = "IPTVDREAM_AUTO" in f.read()
+        
         if enabled:
-            lines = [l for l in open(cron).read().splitlines() if "IPTVDREAM_AUTO" not in l]
-            open(cron, "w").write("\n".join(lines) + ("\n" if lines else ""))
+            with open(cron) as f:
+                lines = [l for l in f.read().splitlines() if "IPTVDREAM_AUTO" not in l]
+            with open(cron, "w") as f:
+                f.write("\n".join(lines) + ("\n" if lines else ""))
             self["status"].setText(_("auto_off", self.lang))
         else:
             script = "/usr/lib/enigma2/python/Plugins/Extensions/IPTVDream/auto_update.sh"
             with open(cron, "a") as f:
-                f.write('0 5 * * * %s # IPTVDREAM_AUTO\n' % script)
+                f.write(f'0 5 * * * {script} # IPTVDREAM_AUTO\n')
             self["status"].setText(_("auto_on", self.lang))
 
     # ---------- BLUE – export z wyborem bukietów ------------------------
     def exportBouquet(self):
         if not self.playlist:
-            self.session.open(MessageBox, _("load_first", self.lang),
-                              MessageBox.TYPE_WARNING, timeout=4)
+            self.session.open(MessageBox, _("load_first", self.lang), MessageBox.TYPE_WARNING, timeout=4)
             return
 
-        # 1. tworzymy SŁOWNIK:  {nazwa_bukietu: [kanały]}
         groups = {}
         for ch in self.playlist:
-            g = ch.get("group", "").strip() or (ch["title"].split()[0] if ch["title"] else "Inne")
+            g = ch.get("group", "").strip() or "Inne" # Grupa pobrana z parsera
             groups.setdefault(g, []).append(ch)
 
         if groups:
-            # 2. otwieramy OKNO – przekazujemy SŁOWNIK
             self.session.openWithCallback(self.onBouquetsChosen, BouquetPicker, groups)
-            self._groups = groups          # zachowujemy do odczytu
+            self._groups = groups
             self._name   = self.listname
         else:
             self.finishLoad(self.playlist, self.listname)
 
-    # 3. odbieramy LISTĘ NAZW (string-i) – bezpieczne klucze
     def onBouquetsChosen(self, selected):
-        """
-        selected = lista NAZW bukietów (str) zaznaczonych przez użytkownika
-        BEZPIECZNIE – pomijamy elementy które nie są stringami
-        """
         if not selected:
             return
-        final = []
-        for g in selected:
-            # ➜ ZABEZPIECZENIE: tylko stringi mogą być kluczami
-            if isinstance(g, str) and g in self._groups:
-                final.extend(self._groups[g])
-        self.finishLoad(final, self._name)
+        final_playlist = []
+        for group_name in selected:
+            if isinstance(group_name, str) and group_name in self._groups:
+                final_playlist.extend(self._groups[group_name])
+        self.finishLoad(final_playlist, self._name)
 
     def finishLoad(self, playlist, name):
-        self.playlist = playlist
-        self.listname = name
-        self["status"].setText(_("loaded", self.lang) % len(playlist))
-        # osobny plik dla każdej grupy – zachowujemy oryginalne nazwy
-        export_bouquets(playlist, bouquet_name=None, keep_groups=True)
-        self.session.open(MessageBox, f"Eksport zakończony!\n{len(playlist)} kanałów w {len(set(ch.get('group','') for ch in playlist))} bukietach.",
-                          MessageBox.TYPE_INFO, timeout=3)
-
-    # -------------  UNIWERSALNA METODA – OTWIERA OKNO WYBORU  -------------
-    def onListLoaded(self, playlist, name):
-        """wywoływana gdy lista M3U/MAC/Xtream została pobrana i sparsowana"""
         if not playlist:
-            self.session.open(MessageBox,
-                              "Plik nie zawiera kanałów lub błędny format.",
-                              MessageBox.TYPE_WARNING, timeout=4)
+            self.session.open(MessageBox, "Nie wybrano żadnych kanałów do eksportu.", MessageBox.TYPE_INFO, timeout=3)
             return
-        self.playlist = playlist
-        self.listname = name
-        self["status"].setText("Załadowano {} kanałów – NIEBIESKI=eksport".format(len(playlist)))
-        # ➜ automatycznie otwiera OKNO WYBORU BUKIETÓW dla źródeł 1-4
-        self.exportBouquet()
+            
+        # keep_groups=True, aby każdy bukiet był w osobnym pliku
+        num_bouquets, num_channels = export_bouquets(playlist, bouquet_name=name, keep_groups=True)
+        self.session.open(MessageBox, f"Eksport zakończony!\n{num_channels} kanałów w {num_bouquets} bukietach.", MessageBox.TYPE_INFO, timeout=4)
 
     # ---------- wyjście ----------
     def cancel(self):
