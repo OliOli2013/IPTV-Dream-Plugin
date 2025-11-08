@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-import os, json, re, urllib.request, urllib.error
+import json, os, requests, re
+from datetime import datetime
 
 MAC_FILE = "/etc/enigma2/iptvdream_mac.json"
 
 def load_mac_json():
     try:
-        with open(MAC_FILE) as f:
+        with open(MAC_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
@@ -15,16 +16,26 @@ def save_mac_json(data):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 def parse_mac_playlist(host, mac):
-    mac = mac.upper().replace("-", ":")
-    url = f"{host}/get.php?mac={mac}&type=m3u_plus&output=ts"
-    req = urllib.request.Request(url, headers={"User-Agent": "IPTVDream/2.3"})
+    url = f"{host}/player_api.php?username={mac}&password={mac}&action=get_live_streams"
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = resp.read()
-    except urllib.error.HTTPError as e:
-        raise Exception(f"HTTP {e.code}")
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        return [{"title": ch["name"], "url": ch["stream_url"], "epg": "", "logo": ch.get("stream_icon", "")} for ch in r.json()]
     except Exception as e:
-        raise Exception(str(e))
+        raise Exception("Błąd MAC: " + str(e))
 
-    from ..dream import parse_m3u_bytes_improved
-    return parse_m3u_bytes_improved(data)
+def download_picon_url(url, title):
+    if not url:
+        return ""
+    safe = re.sub(r'\W+', '_', title).lower() + ".png"
+    path = f"/usr/share/enigma2/picon/{safe}"
+    if os.path.exists(path):
+        return path
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        with open(path, "wb") as f:
+            f.write(r.content)
+        return path
+    except Exception:
+        return ""
