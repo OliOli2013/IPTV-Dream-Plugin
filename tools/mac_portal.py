@@ -15,7 +15,6 @@ def save_mac_json(data):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 def parse_mac_playlist(host, mac):
-    """Prosty parser MAC-portalu – zwraca listę kanałów."""
     mac = mac.upper().replace("-", ":")
     url = f"{host}/get.php?mac={mac}&type=m3u_plus&output=ts"
     req = urllib.request.Request(url, headers={"User-Agent": "IPTVDream/2.3"})
