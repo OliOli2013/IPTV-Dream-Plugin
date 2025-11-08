@@ -16,7 +16,7 @@ class BouquetPicker(Screen):
         Screen.__init__(self, session)
         self.setTitle("Zaznacz bukiety do eksportu")
         self.groups = sorted(groups_dict.keys())
-        self["list"] = MenuList([ (g, g) for g in self.groups ], enableWrapAround=True)
+        self["list"] = MenuList([(g, g) for g in self.groups], enableWrapAround=True)
         self["key_red"]   = Label("Anuluj")
         self["key_green"] = Label("Eksportuj zaznaczone")
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
@@ -27,7 +27,8 @@ class BouquetPicker(Screen):
 
     def toggle(self):
         cur = self["list"].getCurrent()
-        if not cur: return
+        if not cur:
+            return
         g = cur[0]
         if g in self.selected:
             self.selected.remove(g)
