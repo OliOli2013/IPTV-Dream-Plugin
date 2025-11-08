@@ -12,7 +12,7 @@ def check_update():
     except Exception:
         remote_ver = "0"
 
-    local_ver = "2.3"  # taka sama jak PLUGIN_VERSION w dream.py
+    local_ver = "2.3"
     return remote_ver > local_ver, local_ver, remote_ver
 
 def do_update():
