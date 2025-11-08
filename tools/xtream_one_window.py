@@ -40,22 +40,30 @@ class XtreamOneWindow(Screen):
         self.session.openWithCallback(self.set_host, VKInputBox, title="Host (http...):", text=self["host"].getText())
 
     def set_host(self, txt):
-        if txt: self["host"].setText(txt); self.open_vkb_user()
-        else:   self.cancel()
+        if txt:
+            self["host"].setText(txt)
+            self.open_vkb_user()
+        else:
+            self.cancel()
 
     def open_vkb_user(self):
         self.session.openWithCallback(self.set_user, VKInputBox, title="Username:", text=self["user"].getText())
 
     def set_user(self, txt):
-        if txt: self["user"].setText(txt); self.open_vkb_pass()
-        else:   self.cancel()
+        if txt:
+            self["user"].setText(txt)
+            self.open_vkb_pass()
+        else:
+            self.cancel()
 
     def open_vkb_pass(self):
         self.session.openWithCallback(self.set_pass, VKInputBox, title="Password:", text=self["pass"].getText())
 
     def set_pass(self, txt):
-        if txt: self["pass"].setText(txt)
-        else:   self.cancel()
+        if txt:
+            self["pass"].setText(txt)
+        else:
+            self.cancel()
 
     def ok(self):
         self.close((self["host"].getText(), self["user"].getText(), self["pass"].getText()))
