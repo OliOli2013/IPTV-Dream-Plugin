@@ -2,7 +2,7 @@
 import json, os, requests, re, random, string
 
 MAC_FILE = "/etc/enigma2/iptvdream_mac.json"
-# Ujednolicony User-Agent dla całej wtyczki - KLUCZ DO ODTWARZANIA
+# Identyczny User-Agent jak w export.py - KLUCZOWE!
 COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
 def load_mac_json():
@@ -25,7 +25,7 @@ def get_random_sn():
 def parse_mac_playlist(host, mac):
     host = host.strip().rstrip('/')
     
-    # --- METODA 1: Xtream Codes (M3U) ---
+    # METODA 1: Xtream Codes (M3U)
     host_xc = host[:-2] if host.endswith('/c') else host
     url_xc = f"{host_xc}/get.php?username={mac}&password={mac}&type=m3u_plus&output=ts"
     
@@ -37,7 +37,7 @@ def parse_mac_playlist(host, mac):
     except:
         pass 
 
-    # --- METODA 2: STALKER ---
+    # METODA 2: STALKER
     if not host.endswith('/c'):
         host_stalker = f"{host}/c"
     else:
@@ -65,6 +65,7 @@ def parse_mac_playlist(host, mac):
         token = js["js"]["token"]
         s.headers.update({'Authorization': f'Bearer {token}'})
 
+        # Pobieranie Kategorii
         genres = {}
         try:
             r_g = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_genres&token={token}", timeout=10)
@@ -77,18 +78,15 @@ def parse_mac_playlist(host, mac):
                         genres[str(gid)] = title
         except: pass
 
+        # Pobieranie Kanałów
         s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=10)
-        
-        channels_url = f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}"
-        r = s.get(channels_url, timeout=20)
-        r.raise_for_status()
+        r = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}", timeout=20)
         
         data = r.json()
         if "js" not in data or "data" not in data["js"]:
              raise Exception("Pusta lista kanałów.")
              
         ch_list = data["js"]["data"]
-        
         out = []
         for item in ch_list:
             name = item.get("name", "No Name")
@@ -100,7 +98,6 @@ def parse_mac_playlist(host, mac):
             url_clean = cmd.replace("ffmpeg ", "").replace("auto ", "").replace("ch_id=", "")
             if "://" not in url_clean:
                  url_clean = f"{host_stalker}/mpegts_to_ts/{url_clean}"
-
             if logo and not logo.startswith('http'):
                 logo = f"{host_stalker}/{logo}"
 
@@ -111,9 +108,7 @@ def parse_mac_playlist(host, mac):
                 "logo":  logo,
                 "epg":   ""
             })
-            
         return out
-
     except Exception as e:
         raise Exception(f"Błąd Stalker: {str(e)}")
 
