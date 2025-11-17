@@ -2,6 +2,8 @@
 import json, os, requests, re, random, string
 
 MAC_FILE = "/etc/enigma2/iptvdream_mac.json"
+# Ujednolicony User-Agent dla całej wtyczki - KLUCZ DO ODTWARZANIA
+COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
 def load_mac_json():
     try:
@@ -28,14 +30,14 @@ def parse_mac_playlist(host, mac):
     url_xc = f"{host_xc}/get.php?username={mac}&password={mac}&type=m3u_plus&output=ts"
     
     try:
-        headers_xc = {'User-Agent': 'VLC/3.0.20 LibVLC/3.0.20'}
+        headers_xc = {'User-Agent': COMMON_UA}
         r = requests.get(url_xc, timeout=10, headers=headers_xc, verify=False)
         if r.status_code == 200 and "#EXTINF" in r.text:
             return parse_m3u_text(r.text)
     except:
         pass 
 
-    # --- METODA 2: STALKER (Z Kategoriami) ---
+    # --- METODA 2: STALKER ---
     if not host.endswith('/c'):
         host_stalker = f"{host}/c"
     else:
@@ -44,13 +46,12 @@ def parse_mac_playlist(host, mac):
     s = requests.Session()
     s.verify = False
     s.headers.update({
-        'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
+        'User-Agent': COMMON_UA,
         'Referer': f"{host_stalker}/",
         'Cookie': f'mac={mac}; stb_lang=en; timezone=Europe/London;'
     })
 
     try:
-        # 1. Handshake
         sn = get_random_sn()
         token_url = f"{host_stalker}/server/load.php?type=stb&action=handshake&token=&mac={mac}&stb_type=MAG250&ver=ImageDescription: 0.2.18-r14-250; ImageDate: Fri Jan 15 15:20:44 EET 2016; PORTAL version: 5.1.0; API Version: JS API version: 328; STB API version: 134;&sn={sn}"
         
@@ -64,7 +65,6 @@ def parse_mac_playlist(host, mac):
         token = js["js"]["token"]
         s.headers.update({'Authorization': f'Bearer {token}'})
 
-        # 2. Pobranie Kategorii (Genres) - NOWOŚĆ
         genres = {}
         try:
             r_g = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_genres&token={token}", timeout=10)
@@ -74,11 +74,9 @@ def parse_mac_playlist(host, mac):
                     gid = g.get("id")
                     title = g.get("title", "Inne")
                     if gid:
-                        genres[gid] = title
-        except:
-            pass # Jeśli się nie uda pobrać kategorii, trudno
+                        genres[str(gid)] = title
+        except: pass
 
-        # 3. Pobranie Kanałów
         s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=10)
         
         channels_url = f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}"
@@ -87,7 +85,7 @@ def parse_mac_playlist(host, mac):
         
         data = r.json()
         if "js" not in data or "data" not in data["js"]:
-             raise Exception("Błąd Stalkera: Pusta lista.")
+             raise Exception("Pusta lista kanałów.")
              
         ch_list = data["js"]["data"]
         
@@ -96,14 +94,8 @@ def parse_mac_playlist(host, mac):
             name = item.get("name", "No Name")
             cmd  = item.get("cmd", "")
             logo = item.get("logo", "")
-            gid  = item.get("tv_genre_id") # ID Kategorii
-            
-            # Przypisanie nazwy grupy na podstawie ID
+            gid  = str(item.get("tv_genre_id", ""))
             grp_name = genres.get(gid, "Stalker Inne")
-            # Jeśli ID jest stringiem, spróbujmy int
-            if grp_name == "Stalker Inne":
-                try: grp_name = genres.get(int(gid), "Stalker Inne")
-                except: pass
 
             url_clean = cmd.replace("ffmpeg ", "").replace("auto ", "").replace("ch_id=", "")
             if "://" not in url_clean:
@@ -115,7 +107,7 @@ def parse_mac_playlist(host, mac):
             out.append({
                 "title": name,
                 "url":   url_clean,
-                "group": grp_name, # Tutaj wstawiamy prawdziwą grupę!
+                "group": grp_name,
                 "logo":  logo,
                 "epg":   ""
             })
