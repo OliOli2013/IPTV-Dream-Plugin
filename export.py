@@ -5,40 +5,32 @@ from enigma import eDVBDB
 BOUQUET_DIR = "/etc/enigma2"
 
 def sanit(name):
-    # Bardziej rygorystyczne czyszczenie nazw plików
-    # Zamiana polskich znaków i spacji na bezpieczne znaki
     name = str(name).strip()
     name = re.sub(r'[\\/*?:"<>|]', '', name)
     name = name.replace(' ', '_')
     return name if name else "Unknown"
 
 def sanit_title(name):
-    # Dla tytułów wewnątrz pliku (mniej rygorystyczne)
-    return str(name).replace('\n', '').strip()
+    return str(name).replace('\n', '').replace(':', '').strip()
 
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
-    """
-    Zwraca liczbę wyeksportowanych kanałów.
-    """
     groups = {}
     for ch in playlist:
         grp = ch.get("group", "Main") if keep_groups else "Main"
         groups.setdefault(grp, []).append(ch)
 
     total_channels = 0
-    
-    # Czyścimy stare wpisy w bouquets.tv dotyczące tego pluginu?
-    # Tutaj bezpieczniej jest po prostu dodawać nowe.
-    
+    total_bouquets = 0
+
+    # ZMIANA 1: Uproszczony User-Agent (bez spacji), aby nie psuł parsowania listy
+    # Używamy Mozilla/5.0, bo to najbardziej uniwersalny "fałszywy dowód"
+    ua_suffix = "#User-Agent=Mozilla/5.0"
+
     for grp, chans in groups.items():
         safe_grp_name = sanit(grp)
         safe_bq_name  = sanit(bouquet_name or "IPTV")
         
-        # Nazwa pliku bukietu: userbouquet.iptv_dream_nazwagrupy.tv
-        filename_core = f"iptv_dream_{safe_bq_name}_{safe_grp_name}".lower()
-        # Skracamy jeśli za długa
-        if len(filename_core) > 60: filename_core = filename_core[:60]
-        
+        filename_core = f"iptv_dream_{safe_bq_name}_{safe_grp_name}".lower()[:60]
         bq_filename = f"userbouquet.{filename_core}.tv"
         bq_fullpath = os.path.join(BOUQUET_DIR, bq_filename)
         
@@ -51,11 +43,18 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             if not url: continue
             
             title = sanit_title(ch.get("title", "No Name"))
-            
-            # Stream type 5002 (IPTV) jest ok, czasem 4097 jest lepsze dla buforowania
-            # Używamy URL encoded space (%20) jeśli są spacje w linku
             url = url.replace(" ", "%20")
-            ref = f"5002:0:1:0:0:0:0:0:0:0:{url}:{title}"
+            
+            # Dodajemy User-Agent jeśli go nie ma
+            if "#User-Agent" not in url:
+                url += ua_suffix
+
+            # ZMIANA 2: Wymuszenie typu 5002 (Exteplayer3)
+            # 4097 = GStreamer (często nie działa z IPTV Stalker)
+            # 5002 = Exteplayer3 (wymaga ServiceApp, ale działa najlepiej)
+            service_type = "5002" 
+            
+            ref = f"{service_type}:0:1:0:0:0:0:0:0:0:{url}:{title}"
             
             content.append(f"#SERVICE {ref}\n")
             content.append(f"#DESCRIPTION {title}\n")
@@ -65,28 +64,24 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             f.write("".join(content))
             
         add_to_bouquets_index(bq_filename)
+        total_bouquets += 1
 
-    # Przeładowanie bazy
     try:
         eDVBDB.getInstance().reloadBouquets()
         eDVBDB.getInstance().reloadServicelist()
-    except Exception as e:
-        print(f"[IPTVDream] Reload failed: {e}")
+    except Exception:
+        pass
 
-    return total_channels
+    return total_bouquets, total_channels
 
 def add_to_bouquets_index(bq_filename):
     idx_file = os.path.join(BOUQUET_DIR, "bouquets.tv")
     entry = f'#SERVICE 1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "{bq_filename}" ORDER BY bouquet\n'
-    
     lines = []
     if os.path.exists(idx_file):
         with open(idx_file, "r", encoding="utf-8", errors="ignore") as f:
             lines = f.readlines()
-            
     if entry not in lines:
-        # Dodajemy przed ostatnim bukietem (często favorites) albo na końcu
-        # Bezpieczniej na końcu
         lines.append(entry)
         with open(idx_file, "w", encoding="utf-8") as f:
             f.writelines(lines)
