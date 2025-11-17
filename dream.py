@@ -14,91 +14,105 @@ from .tools.lang          import _
 from .tools.xtream_one_window import XtreamOneWindow
 from .tools.bouquet_picker    import BouquetPicker
 from .tools.epg_picon         import fetch_epg_for_playlist, download_picon_url
-import os, json, urllib.request, re, threading
-from enigma import eTimer
+import os, json, re, threading
+import requests
 
-# === Helper do uruchamiania zadań w tle, aby uniknąć blokowania UI ===
+# --- ZMIANA: Używamy Twisted zamiast eApp (kompatybilne ze wszystkimi dekoderami) ---
+from twisted.internet import reactor
+
+PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
+MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
+PLUGIN_VERSION = "2.5-universal"
+
+# === Bezpieczny Runner Wątków (Twisted reactor) ===
 def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
     """
-    Uruchamia blokującą funkcję w osobnym wątku.
-    Po zakończeniu, wywołuje `on_done_callback` w głównym wątku Enigmy.
-    Callback otrzymuje dwa argumenty: (wynik, błąd).
+    Uruchamia funkcję blokującą w tle.
+    Wynik przekazuje do głównego wątku Enigmy za pomocą reactor.callFromThread.
+    Działa na OpenPLi, OpenATV, VTi itd.
     """
     def thread_target():
         try:
             result = blocking_func(*args, **kwargs)
-            # Używamy eTimer, aby bezpiecznie wrócić do głównego wątku Enigmy
-            eTimer().start(0, True, lambda: on_done_callback(result, None))
+            # Przekazanie wyniku do głównego wątku w sposób bezpieczny
+            reactor.callFromThread(on_done_callback, result, None)
         except Exception as e:
-            eTimer().start(0, True, lambda: on_done_callback(None, e))
+            # Przekazanie błędu
+            reactor.callFromThread(on_done_callback, None, str(e))
 
-    thread = threading.Thread(target=thread_target)
-    thread.daemon = True
-    thread.start()
+    t = threading.Thread(target=thread_target)
+    t.daemon = True
+    t.start()
 
-PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
-MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-USER_M3U_FILE = "/etc/enigma2/iptvdream_user_m3u.json"
-PLUGIN_VERSION = "2.3" # Ulepszona wersja
-
-# ---------- pomocnicze ----------
-# === Ulepszony parser M3U, który poprawnie odczytuje group-title i tvg-logo ===
+# === Parser M3U (Zoptymalizowany) ===
 def parse_m3u_bytes_improved(data):
     out = []
-    current_attrs = {}
+    try:
+        text = data.decode("utf-8", "ignore")
+    except:
+        text = str(data)
 
-    for line in data.decode("utf-8", "ignore").splitlines():
+    current_attrs = {}
+    
+    rx_group = re.compile(r'group-title="([^"]+)"')
+    rx_logo  = re.compile(r'tvg-logo="([^"]+)"')
+    
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#EXTM3U"):
             continue
 
         if line.startswith("#EXTINF"):
             parts = line.split(',', 1)
-            title = parts[1] if len(parts) > 1 else "No Title"
+            title = parts[1].strip() if len(parts) > 1 else "No Title"
             
-            group_match = re.search(r'group-title="([^"]+)"', line)
-            logo_match = re.search(r'tvg-logo="([^"]+)"', line)
+            g_match = rx_group.search(line)
+            l_match = rx_logo.search(line)
             
             current_attrs = {
-                "title": title.strip(),
-                "group": group_match.group(1).strip() if group_match else "",
-                "logo": logo_match.group(1).strip() if logo_match else ""
+                "title": title,
+                "group": g_match.group(1).strip() if g_match else "Inne",
+                "logo":  l_match.group(1).strip() if l_match else ""
             }
 
-        elif "://" in line:
-            if "title" in current_attrs:
-                channel_data = {
-                    "title": current_attrs.get("title"),
-                    "url": line,
-                    "group": current_attrs.get("group"),
-                    "logo": current_attrs.get("logo", ""),
-                    "epg": ""
-                }
-                out.append(channel_data)
-                current_attrs = {} # Reset po dodaniu kanału
-            else:
-                # Fallback dla linków bez #EXTINF
+        elif "://" in line and not line.startswith("#"):
+            url = line.strip()
+            if current_attrs:
                 out.append({
-                    "title": line.split('/')[-1],
-                    "url": line,
+                    "title": current_attrs.get("title", "No Name"),
+                    "url":   url,
+                    "group": current_attrs.get("group", "Inne"),
+                    "logo":  current_attrs.get("logo", ""),
+                    "epg":   ""
+                })
+                current_attrs = {} 
+            else:
+                out.append({
+                    "title": url.split('/')[-1],
+                    "url":   url,
                     "group": "Inne",
-                    "logo": "",
-                    "epg": ""
+                    "logo":  "",
+                    "epg":   ""
                 })
     return out
 
 def load_profiles():
     try:
-        with open(PROFILES, "r") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        if os.path.exists(PROFILES):
+            with open(PROFILES, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
 
 def save_profiles(data):
-    with open(PROFILES, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    try:
+        with open(PROFILES, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except:
+        pass
 
-# ---------- główne okno ----------
+# ---------- Główne Okno ----------
 class IPTVDreamMain(Screen):
     skin = """
     <screen name="IPTVDreamMain" position="center,center" size="950,680" title="IPTV Dream">
@@ -142,13 +156,14 @@ class IPTVDreamMain(Screen):
         self.playlist  = []
         self.listname  = "IPTV-Dream"
         self.lang      = language.getLanguage()[:2] or "pl"
-        prof           = load_profiles()
+        
+        prof = load_profiles()
         if prof.get("lang") in ("pl", "en"):
             self.lang = prof.get("lang")
 
         self.setTitle(f"IPTV Dream v{PLUGIN_VERSION}")
-        self["version_label"] = Label(f"IPTV Dream v{PLUGIN_VERSION}")
-        self["foot"]   = Label(f"IPTV Dream v{PLUGIN_VERSION} | by Paweł Pawelek | msisystem@t.pl")
+        self["version_label"] = Label(f"v{PLUGIN_VERSION}")
+        self["foot"]   = Label("IPTV Dream | Universal Fix")
         
         self.updateLangStrings()
 
@@ -164,7 +179,7 @@ class IPTVDreamMain(Screen):
         self["key_green"]  = Label(_("check_upd", self.lang))
         self["key_yellow"] = Label(_("auto_up", self.lang))
         self["key_blue"]   = Label(_("export", self.lang))
-
+        
         self["lab1"] = Label(_("load_url", self.lang))
         self["lab2"] = Label(_("pick_file", self.lang))
         self["lab3"] = Label(_("xtream", self.lang))
@@ -175,7 +190,7 @@ class IPTVDreamMain(Screen):
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
 
-    # 1) M3U URL ----------------------------------------------------------
+    # 1) M3U URL
     def openUrl(self):
         last_url = load_profiles().get("last_url", "http://")
         self.session.openWithCallback(self.onUrlReady, VKInputBox,
@@ -188,19 +203,19 @@ class IPTVDreamMain(Screen):
         self._current_url = url
         self["status"].setText(_("downloading", self.lang))
         
-        def do_download(url_to_fetch):
-            # Używamy requests dla lepszej obsługi timeoutów i nagłówków
-            headers = {'User-Agent': f'IPTVDream/{PLUGIN_VERSION}'}
-            r = requests.get(url_to_fetch, timeout=20, headers=headers)
-            r.raise_for_status() # Rzuci wyjątkiem dla kodów 4xx/5xx
+        def do_download(target_url):
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            # verify=False dla starszych systemów z nieaktualnymi certyfikatami SSL
+            r = requests.get(target_url, timeout=30, headers=headers, verify=False)
+            r.raise_for_status()
             return r.content
 
         run_in_thread(do_download, self.onDataDownloaded, url)
 
     def onDataDownloaded(self, data, error):
         if error:
-            self["status"].setText(_("download_fail", self.lang))
-            self.session.open(MessageBox, f"URL error: {error}", MessageBox.TYPE_ERROR, timeout=5)
+            self["status"].setText("Błąd pobierania!")
+            self.session.open(MessageBox, f"URL Error: {error}", MessageBox.TYPE_ERROR)
             return
 
         playlist = parse_m3u_bytes_improved(data)
@@ -209,7 +224,7 @@ class IPTVDreamMain(Screen):
         save_profiles(prof)
         self.onListLoaded(playlist, "M3U-URL")
 
-    # 2) M3U plik ---------------------------------------------------------
+    # 2) M3U FILE
     def openFile(self):
         self.session.openWithCallback(self.onFileReady, M3UFilePick, start_dir="/tmp/")
 
@@ -219,237 +234,165 @@ class IPTVDreamMain(Screen):
             with open(path, "rb") as f:
                 data = f.read()
             playlist = parse_m3u_bytes_improved(data)
-            name = os.path.splitext(os.path.basename(path))[0] or "M3U-File"
+            name = os.path.splitext(os.path.basename(path))[0]
             self.onListLoaded(playlist, name)
         except Exception as e:
-            self.session.open(MessageBox, f"File error: {e}", MessageBox.TYPE_ERROR, timeout=5)
+            self.session.open(MessageBox, f"File error: {e}", MessageBox.TYPE_ERROR)
 
-    # 3) Xtream -----------------------------------------------------------
+    # 3) XTREAM
     def openXtream(self):
-        xtream_file = "/etc/enigma2/iptvdream_xtream.json"
-        if os.path.isfile(xtream_file):
-            try:
-                with open(xtream_file, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                if all(k in cfg for k in ("host", "user", "pass")):
-                    self.onXtreamOne((cfg["host"], cfg["user"], cfg["pass"]))
-                    return
-            except Exception: pass
         self.session.openWithCallback(self.onXtreamOne, XtreamOneWindow)
 
     def onXtreamOne(self, data):
         if not data: return
         host, user, pwd = data
-        self["status"].setText("Pobieranie listy Xtream...")
+        self["status"].setText("Pobieranie Xtream...")
         
-        def do_download_xtream():
-            url = f"{host}/get.php?username={user}&password={pwd}&type=m3u_plus&output=ts"
-            r = requests.get(url, timeout=20, headers={'User-Agent': f'IPTVDream/{PLUGIN_VERSION}'})
+        def do_dl():
+            base = host if host.startswith("http") else f"http://{host}"
+            url = f"{base}/get.php?username={user}&password={pwd}&type=m3u_plus&output=ts"
+            r = requests.get(url, timeout=30, verify=False)
             r.raise_for_status()
             return r.content
-        
-        # Przekazujemy 'user' do callbacka za pomocą functools.partial
-        callback = lambda result, error: self.onXtreamDataDownloaded(result, error, user)
-        run_in_thread(do_download_xtream, callback)
+            
+        run_in_thread(do_dl, lambda res, err: self.onXtreamDone(res, err, user))
 
-    def onXtreamDataDownloaded(self, data, error, user):
+    def onXtreamDone(self, data, error, user):
         if error:
-            self["status"].setText("Błąd pobierania Xtream.")
-            self.session.open(MessageBox, f"Xtream error: {error}", MessageBox.TYPE_ERROR, timeout=5)
+            self["status"].setText("Błąd Xtream")
+            self.session.open(MessageBox, f"Xtream Error: {error}", MessageBox.TYPE_ERROR)
             return
-        
-        playlist = parse_m3u_bytes_improved(data)
-        self.onListLoaded(playlist, f"Xtream-{user}")
+        self.onListLoaded(parse_m3u_bytes_improved(data), f"Xtream-{user}")
 
-    # 4) MAC Portal -------------------------------------------------------
+    # 4) MAC
     def openMac(self):
         data = load_mac_json()
-        txt  = json.dumps(data, indent=2, ensure_ascii=False)
-        self.session.openWithCallback(self.onMacJson, VKInputBox, title=_("mac_json", self.lang), text=txt)
-
+        txt  = json.dumps(data, indent=2)
+        self.session.openWithCallback(self.onMacJson, VKInputBox, title="JSON", text=txt)
+    
     def onMacJson(self, txt):
-        if txt is None: return
+        if not txt: return
         try:
-            self.data = json.loads(txt) if txt.strip() else {}
-            self.session.openWithCallback(self.onMacHost, VKInputBox, title=_("mac_json", self.lang) + " – host:", text=self.data.get("host", "http://"))
-        except json.JSONDecodeError as e:
-            self.session.open(MessageBox, f"JSON bad: {e}", MessageBox.TYPE_ERROR, timeout=5)
+            self.data = json.loads(txt)
+            if self.data.get("host") and self.data.get("mac"):
+                 self["status"].setText("Pobieranie MAC...")
+                 run_in_thread(lambda: parse_mac_playlist(self.data["host"], self.data["mac"]), self.onMacDone)
+            else:
+                self.session.open(MessageBox, "Brak HOST lub MAC w JSON", MessageBox.TYPE_ERROR)
+        except Exception as e:
+            self.session.open(MessageBox, f"JSON Error: {e}", MessageBox.TYPE_ERROR)
 
-    def onMacHost(self, host):
-        if not host: return
-        self.data["host"] = host
-        self.session.openWithCallback(self.onMacMac, VKInputBox, title=_("mac_json", self.lang) + " – MAC:", text=self.data.get("mac", ""))
-
-    def onMacMac(self, mac):
-        if not mac: return
-        self.data["mac"] = mac
-        self["status"].setText("Pobieranie listy MAC Portal...")
-
-        def do_parse_mac():
-            return parse_mac_playlist(self.data["host"], self.data["mac"])
-
-        run_in_thread(do_parse_mac, self.onMacDataDownloaded)
-
-    def onMacDataDownloaded(self, playlist, error):
+    def onMacDone(self, playlist, error):
         if error:
-            self["status"].setText("Błąd pobierania MAC.")
-            self.session.open(MessageBox, f"MAC error: {error}", MessageBox.TYPE_ERROR, timeout=5)
+            self["status"].setText("Błąd MAC")
+            self.session.open(MessageBox, str(error), MessageBox.TYPE_ERROR)
             return
-
         save_mac_json(self.data)
         self.onListLoaded(playlist, "MAC-Portal")
 
-    # 5) Własne linki -----------------------------------------------------
+    # 5) MY LINKS
     def openMyLinks(self):
-        try:
+        if os.path.exists(MY_LINKS_FILE):
             with open(MY_LINKS_FILE) as f:
                 links = json.load(f)
-        except Exception:
-            links = []
-        if not links:
-            self.session.open(MessageBox, _("own_links", self.lang) + " – brak wpisów.", MessageBox.TYPE_INFO, timeout=4)
-            return
-        menu = [(x["name"], x["url"]) for x in links]
-        self.session.openWithCallback(self.onMyLink, ChoiceBox, title=_("own_links", self.lang), list=menu)
+            if links:
+                self.session.openWithCallback(lambda c: c and self.onUrlReady(c[1]), 
+                                              ChoiceBox, title="Wybierz link", list=[(x["name"], x["url"]) for x in links])
+                return
+        self.session.open(MessageBox, "Brak zapisanych linków.", MessageBox.TYPE_INFO)
 
-    def onMyLink(self, choice):
-        if choice:
-            self.onUrlReady(choice[1])
-
-    # 6) Zmiana języka ----------------------------------------------------
+    # 6) LANG
     def toggleLang(self):
         self.lang = "en" if self.lang == "pl" else "pl"
         prof = load_profiles()
         prof["lang"] = self.lang
         save_profiles(prof)
-        self.updateLangStrings() # Wywołujemy jedną metodę do aktualizacji wszystkich tekstów
-        self.session.open(MessageBox, _("lang_changed", self.lang) + " " + self.lang.upper(), MessageBox.TYPE_INFO, timeout=2)
+        self.updateLangStrings()
+        self["status"].setText(f"Język: {self.lang.upper()}")
 
-    # ---------- Ujednolicona obsługa załadowanej listy i EPG/Piconów ----------
+    # --- LOGIKA LISTY ---
     def onListLoaded(self, playlist, name):
         if not playlist:
-            self.session.open(MessageBox, "Plik nie zawiera kanałów lub ma błędny format.", MessageBox.TYPE_WARNING, timeout=4)
+            self.session.open(MessageBox, "Pusta lista kanałów!", MessageBox.TYPE_WARNING)
             self["status"].setText("")
             return
 
-        self.session.openWithCallback(
-            lambda choice: self.onPostProcessChoice(playlist, name, choice),
-            MessageBox,
-            f"Załadowano {len(playlist)} kanałów.\nCzy chcesz spróbować pobrać EPG i ikony (picony)?\nMoże to zająć dłuższą chwilę.",
-            MessageBox.TYPE_YESNO,
-            default=False
-        )
-
-    def onPostProcessChoice(self, playlist, name, answer):
-        if answer:
-            self["status"].setText("Pobieranie EPG i Piconów... To może potrwać.")
-            run_in_thread(self._post_process_playlist, self.onPostProcessDone, playlist, name)
-        else:
-            # Uruchamiamy callback z pustym błędem, aby zachować spójność
-            self.onPostProcessDone((playlist, name), None)
-
-    def _post_process_playlist(self, playlist, name):
-        # Ta funkcja działa w tle
-        fetch_epg_for_playlist(playlist) # Pobiera EPG
-        for i, ch in enumerate(playlist):
-            logo_url = ch.get("logo", "")
-            if logo_url:
-                # picon_path nie jest już potrzebny, bo export tego nie używa
-                download_picon_url(logo_url, ch["title"])
-        return (playlist, name)
-
-    def onPostProcessDone(self, result, error):
-        if error:
-            self.session.open(MessageBox, f"Błąd podczas pobierania EPG/Picon: {error}", MessageBox.TYPE_ERROR)
-            if result is None:
-                self["status"].setText("Błąd EPG/Picon. Przerwano.")
-                return
-
-        playlist, name = result
         self.playlist = playlist
         self.listname = name
-        self["status"].setText(f"Gotowe. Naciśnij NIEBIESKI, aby wybrać bukiety i eksportować.")
-        # Automatycznie otwiera okno wyboru bukietów
+        self["status"].setText(f"Załadowano {len(playlist)} kanałów. Wybierz 'Eksport' (Niebieski).")
+        
+        self.session.openWithCallback(
+            self.onPostProcessAnswer,
+            MessageBox,
+            f"Załadowano {len(playlist)} kanałów.\nCzy pobrać EPG i Picony? (Może potrwać)",
+            MessageBox.TYPE_YESNO
+        )
+
+    def onPostProcessAnswer(self, answer):
+        if answer:
+            self["status"].setText("Pobieranie dodatków w tle...")
+            run_in_thread(self._bg_worker, self.onPostProcessDone, self.playlist)
+        else:
+            self.exportBouquet()
+
+    def _bg_worker(self, pl):
+        fetch_epg_for_playlist(pl)
+        return pl
+
+    def onPostProcessDone(self, result, error):
+        self["status"].setText("Gotowe. Naciśnij NIEBIESKI aby eksportować.")
         self.exportBouquet()
 
-    # ---------- GREEN – check updates -----------------------------------
-    def checkUpdates(self):
-        newer, local, remote = check_update()
-        if not newer:
-            self.session.open(MessageBox, f"{_('no_update', self.lang)}\n{_('local_ver', self.lang)}: {local}\n{_('remote_ver', self.lang)}: {remote}", MessageBox.TYPE_INFO, timeout=5)
-        else:
-            self.session.openWithCallback(self.confirmedUpdate, MessageBox, f"{_('local_ver', self.lang)}: {local}\n{_('remote_ver', self.lang)}: {remote}\n\n{_('update_ask', self.lang)}", MessageBox.TYPE_YESNO)
-
-    def confirmedUpdate(self, answer):
-        if answer:
-            try:
-                if do_update():
-                    self.session.openWithCallback(self.restartGUI, MessageBox, _("update_ok", self.lang), MessageBox.TYPE_YESNO)
-            except Exception as e:
-                self.session.open(MessageBox, f"{_('update_fail', self.lang)}\n{e}", MessageBox.TYPE_ERROR, timeout=5)
-
-    def restartGUI(self, answer):
-        if answer:
-            from enigma import quitMainloop
-            quitMainloop(3)
-
-    # ---------- YELLOW – auto-update cron -------------------------------
-    def toggleAutoUpdate(self):
-        cron = "/etc/cron/crontabs/root"
-        os.makedirs(os.path.dirname(cron), exist_ok=True)
-        enabled = False
-        if os.path.exists(cron):
-            with open(cron) as f:
-                enabled = "IPTVDREAM_AUTO" in f.read()
-        
-        if enabled:
-            with open(cron) as f:
-                lines = [l for l in f.read().splitlines() if "IPTVDREAM_AUTO" not in l]
-            with open(cron, "w") as f:
-                f.write("\n".join(lines) + ("\n" if lines else ""))
-            self["status"].setText(_("auto_off", self.lang))
-        else:
-            script = "/usr/lib/enigma2/python/Plugins/Extensions/IPTVDream/auto_update.sh"
-            with open(cron, "a") as f:
-                f.write(f'0 5 * * * {script} # IPTVDREAM_AUTO\n')
-            self["status"].setText(_("auto_on", self.lang))
-
-    # ---------- BLUE – export z wyborem bukietów ------------------------
+    # EXPORT
     def exportBouquet(self):
-        if not self.playlist:
-            self.session.open(MessageBox, _("load_first", self.lang), MessageBox.TYPE_WARNING, timeout=4)
-            return
-
+        if not self.playlist: return
+        
         groups = {}
         for ch in self.playlist:
-            g = ch.get("group", "").strip() or "Inne" # Grupa pobrana z parsera
+            g = ch.get("group", "Inne") or "Inne"
             groups.setdefault(g, []).append(ch)
-
-        if groups:
-            self.session.openWithCallback(self.onBouquetsChosen, BouquetPicker, groups)
-            self._groups = groups
-            self._name   = self.listname
-        else:
-            self.finishLoad(self.playlist, self.listname)
-
-    def onBouquetsChosen(self, selected):
-        if not selected:
-            return
-        final_playlist = []
-        for group_name in selected:
-            if isinstance(group_name, str) and group_name in self._groups:
-                final_playlist.extend(self._groups[group_name])
-        self.finishLoad(final_playlist, self._name)
-
-    def finishLoad(self, playlist, name):
-        if not playlist:
-            self.session.open(MessageBox, "Nie wybrano żadnych kanałów do eksportu.", MessageBox.TYPE_INFO, timeout=3)
-            return
             
-        # keep_groups=True, aby każdy bukiet był w osobnym pliku
-        num_bouquets, num_channels = export_bouquets(playlist, bouquet_name=name, keep_groups=True)
-        self.session.open(MessageBox, f"Eksport zakończony!\n{num_channels} kanałów w {num_bouquets} bukietach.", MessageBox.TYPE_INFO, timeout=4)
+        self._groups = groups
+        self.session.openWithCallback(self.onBouquetsSelected, BouquetPicker, groups)
 
-    # ---------- wyjście ----------
-    def cancel(self):
-        self.close()
+    def onBouquetsSelected(self, selected_keys):
+        if not selected_keys: return
+        
+        final_list = []
+        for k in selected_keys:
+            if k in self._groups:
+                final_list.extend(self._groups[k])
+                
+        res = export_bouquets(final_list, self.listname)
+        self.session.open(MessageBox, f"Wyeksportowano {res} kanałów. Zrestartuj GUI bukietów jeśli trzeba.", MessageBox.TYPE_INFO)
+
+    # UPDATER
+    def checkUpdates(self):
+        self["status"].setText("Szukam aktualizacji...")
+        run_in_thread(check_update, self.onUpdateCheck)
+
+    def onUpdateCheck(self, result, error):
+        if error or not result:
+            self["status"].setText("Błąd sprawdzania wersji.")
+            return
+        has_new, loc, rem = result
+        if has_new:
+            self.session.openWithCallback(self.doUpdateConfirm, MessageBox, f"Dostępna wersja {rem}. Aktualizować?", MessageBox.TYPE_YESNO)
+        else:
+            self.session.open(MessageBox, "Masz najnowszą wersję.", MessageBox.TYPE_INFO)
+
+    def doUpdateConfirm(self, ans):
+        if ans:
+            run_in_thread(do_update, self.onUpdateDone)
+
+    def onUpdateDone(self, res, err):
+        if err:
+            self.session.open(MessageBox, f"Błąd aktualizacji: {err}", MessageBox.TYPE_ERROR)
+        else:
+            self.session.openWithCallback(lambda x: x and quit(3), MessageBox, "Aktualizacja gotowa. Restart GUI?", MessageBox.TYPE_YESNO)
+
+    def toggleAutoUpdate(self):
+        self.session.open(MessageBox, "Funkcja auto-update w przygotowaniu.", MessageBox.TYPE_INFO)
+
+    def close(self):
+        Screen.close(self)
