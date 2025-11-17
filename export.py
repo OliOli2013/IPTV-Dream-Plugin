@@ -5,8 +5,7 @@ from enigma import eDVBDB
 BOUQUET_DIR = "/etc/enigma2"
 EPG_CHANNEL_FILE = "/etc/epgimport/iptvdream.channels.xml"
 
-# User-Agent identyczny jak przy pobieraniu (Stalker/Xtream)
-# Używamy długiego UA, bo taki jest często wymagany przez zabezpieczenia
+# User-Agent: Udajemy przeglądarkę Chrome/Mozilla (najbezpieczniejsza opcja)
 RAW_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
 def sanit(name):
@@ -17,9 +16,16 @@ def sanit(name):
 
 def sanit_title(name):
     name = str(name).replace('\n', '').strip()
-    # Agresywne czyszczenie: usuwa wszystko przed znakiem | (np. PL-VIP|)
+    
+    # --- AGRESYWNE CZYSZCZENIE NAZW ---
+    # 1. Usuwa wszystko w nawiasach kwadratowych na początku: [EN] ...
+    name = re.sub(r'^\[.*?\]\s*', '', name)
+    # 2. Usuwa wszystko pomiędzy pionowymi kreskami na początku: |NA| ...
+    name = re.sub(r'^\|.*?\|\s*', '', name)
+    # 3. Usuwa wszystko przed pierwszą kreską: PL-VIP| ...
     name = re.sub(r'^.*?\|\s*', '', name)
-    # Usuwa dwukropki i inne znaki psujące nazwy
+    
+    # Usuwa dwukropki i cudzysłowy (psują format)
     name = name.replace(':', '').replace('"', '')
     return name.strip()
 
@@ -33,9 +39,7 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
     total_bouquets = 0
     epg_mapping = []
 
-    # KODOWANIE URL (FIX):
-    # Spacje w User-Agent muszą być zamienione na %20, inaczej Enigma utnie link.
-    # Używamy quote() tylko na wartości UA.
+    # Kodowanie User-Agenta do formatu URL (spacja = %20)
     ua_encoded = urllib.parse.quote(RAW_UA)
     ua_suffix = f"#User-Agent={ua_encoded}"
 
@@ -54,34 +58,29 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             url = ch.get("url", "").strip()
             if not url: continue
             
-            # 1. Czysta nazwa
+            # Czyścimy nazwę z krzaków
             title = sanit_title(ch.get("title", "No Name"))
             
-            # 2. Poprawa URL (zamiana spacji na %20 w samym linku)
+            # Zamieniamy spacje w samym linku
             url = url.replace(" ", "%20")
             
-            # 3. Dodanie User-Agenta (jeśli go nie ma)
+            # Dodajemy User-Agent
             if "User-Agent" not in url:
                 url += ua_suffix
 
-            # 4. Unikalne ID (SID) dla EPG
+            # Generujemy unikalne ID dla EPG
             unique_sid = zlib.crc32(url.encode()) & 0xffff
             if unique_sid == 0: unique_sid = 1
             
-            # 5. TYP 4097 (GStreamer) - STABILNOŚĆ
-            # 5002 (Exteplayer3) powoduje zwiechy przy błędach strumienia.
-            # 4097 jest bezpieczniejszy.
+            # TYP 4097 (GStreamer) - Najstabilniejszy, nie wiesza tunera
             service_type = "4097"
             
-            # 6. Budowa referencji
-            # Format: Typ:0:1:SID:0:0:0:0:0:0:URL:NAZWA
             ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
             
             content.append(f"#SERVICE {ref_str}\n")
             content.append(f"#DESCRIPTION {title}\n")
             
-            # Mapowanie dla EPG Import
-            # Zapisujemy ID w HEX (szesnastkowo), bo tak lubi Enigma
+            # Dodajemy do mapy EPG (Hex ID)
             ref_pure = f"1:0:1:{unique_sid:X}:0:0:0:0:0:0"
             epg_mapping.append((ref_pure, title))
             
@@ -93,7 +92,6 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
         add_to_bouquets_index(bq_filename)
         total_bouquets += 1
 
-    # Generowanie pliku XML dla EPG
     create_epg_xml(epg_mapping)
 
     try:
@@ -117,13 +115,12 @@ def add_to_bouquets_index(bq_filename):
             f.writelines(lines)
 
 def create_epg_xml(mapping):
+    """Generuje plik dla EPG Import"""
     try:
         os.makedirs("/etc/epgimport", exist_ok=True)
         with open(EPG_CHANNEL_FILE, "w", encoding="utf-8") as f:
             f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n')
             for ref, name in mapping:
-                # Czyścimy nazwę do ID (XML nie lubi spacji w ID, ale EPG Import to przełknie)
-                # Ważne: escape znaków specjalnych
                 name_esc = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 f.write(f'  <channel id="{name_esc}">{ref}</channel>\n')
             f.write('</channels>')
