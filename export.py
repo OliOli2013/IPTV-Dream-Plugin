@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re
+import os, re, zlib
 from enigma import eDVBDB
 
 BOUQUET_DIR = "/etc/enigma2"
@@ -21,9 +21,6 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
 
     total_channels = 0
     total_bouquets = 0
-
-    # ZMIANA 1: Uproszczony User-Agent (bez spacji), aby nie psuł parsowania listy
-    # Używamy Mozilla/5.0, bo to najbardziej uniwersalny "fałszywy dowód"
     ua_suffix = "#User-Agent=Mozilla/5.0"
 
     for grp, chans in groups.items():
@@ -35,7 +32,6 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
         bq_fullpath = os.path.join(BOUQUET_DIR, bq_filename)
         
         display_name = f"{bouquet_name} - {grp}" if keep_groups else bouquet_name
-
         content = [f"#NAME {display_name}\n"]
         
         for ch in chans:
@@ -45,16 +41,18 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             title = sanit_title(ch.get("title", "No Name"))
             url = url.replace(" ", "%20")
             
-            # Dodajemy User-Agent jeśli go nie ma
             if "#User-Agent" not in url:
                 url += ua_suffix
 
-            # ZMIANA 2: Wymuszenie typu 5002 (Exteplayer3)
-            # 4097 = GStreamer (często nie działa z IPTV Stalker)
-            # 5002 = Exteplayer3 (wymaga ServiceApp, ale działa najlepiej)
-            service_type = "5002" 
+            # FIX EPG: Generowanie unikalnego Service ID z URL
+            # Używamy CRC32 z URL, aby uzyskać liczbę (SID)
+            # Zakres 1-65535 (16 bit), żeby było bezpiecznie
+            unique_sid = zlib.crc32(url.encode()) & 0xffff
+            if unique_sid == 0: unique_sid = 1
             
-            ref = f"{service_type}:0:1:0:0:0:0:0:0:0:{url}:{title}"
+            # Wstawiamy unique_sid w 3 pole referencji
+            service_type = "5002" 
+            ref = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
             
             content.append(f"#SERVICE {ref}\n")
             content.append(f"#DESCRIPTION {title}\n")
