@@ -4,8 +4,6 @@ from enigma import eDVBDB
 
 BOUQUET_DIR = "/etc/enigma2"
 EPG_CHANNEL_FILE = "/etc/epgimport/iptvdream.channels.xml"
-
-# User-Agent: Udajemy przeglądarkę Chrome/Mozilla (najbezpieczniejsza opcja)
 RAW_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
 def sanit(name):
@@ -17,17 +15,21 @@ def sanit(name):
 def sanit_title(name):
     name = str(name).replace('\n', '').strip()
     
-    # --- AGRESYWNE CZYSZCZENIE NAZW ---
-    # 1. Usuwa wszystko w nawiasach kwadratowych na początku: [EN] ...
+    # 1. Usuwamy nawiasy kwadratowe i ich zawartość na początku: [EN] ...
     name = re.sub(r'^\[.*?\]\s*', '', name)
-    # 2. Usuwa wszystko pomiędzy pionowymi kreskami na początku: |NA| ...
-    name = re.sub(r'^\|.*?\|\s*', '', name)
-    # 3. Usuwa wszystko przed pierwszą kreską: PL-VIP| ...
-    name = re.sub(r'^.*?\|\s*', '', name)
     
-    # Usuwa dwukropki i cudzysłowy (psują format)
-    name = name.replace(':', '').replace('"', '')
-    return name.strip()
+    # 2. Usuwamy wszystko przed pionową kreską | (włącznie z nią)
+    if '|' in name:
+        name = name.split('|')[-1] # Bierze ostatni człon
+        
+    # 3. Usuwamy krótkie prefiksy z myślnikiem (np. "IE - ", "PL - ")
+    # Szuka 2-3 liter na początku, potem spacja-myślnik-spacja
+    name = re.sub(r'^[A-Z]{2,3}\s-\s', '', name)
+
+    # 4. Usuwamy śmieci, które mogły zostać
+    name = name.replace(':', '').replace('"', '').strip()
+    
+    return name
 
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
     groups = {}
@@ -39,7 +41,6 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
     total_bouquets = 0
     epg_mapping = []
 
-    # Kodowanie User-Agenta do formatu URL (spacja = %20)
     ua_encoded = urllib.parse.quote(RAW_UA)
     ua_suffix = f"#User-Agent={ua_encoded}"
 
@@ -58,29 +59,21 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             url = ch.get("url", "").strip()
             if not url: continue
             
-            # Czyścimy nazwę z krzaków
             title = sanit_title(ch.get("title", "No Name"))
-            
-            # Zamieniamy spacje w samym linku
             url = url.replace(" ", "%20")
             
-            # Dodajemy User-Agent
             if "User-Agent" not in url:
                 url += ua_suffix
 
-            # Generujemy unikalne ID dla EPG
             unique_sid = zlib.crc32(url.encode()) & 0xffff
             if unique_sid == 0: unique_sid = 1
             
-            # TYP 4097 (GStreamer) - Najstabilniejszy, nie wiesza tunera
             service_type = "4097"
-            
             ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
             
             content.append(f"#SERVICE {ref_str}\n")
             content.append(f"#DESCRIPTION {title}\n")
             
-            # Dodajemy do mapy EPG (Hex ID)
             ref_pure = f"1:0:1:{unique_sid:X}:0:0:0:0:0:0"
             epg_mapping.append((ref_pure, title))
             
@@ -115,7 +108,6 @@ def add_to_bouquets_index(bq_filename):
             f.writelines(lines)
 
 def create_epg_xml(mapping):
-    """Generuje plik dla EPG Import"""
     try:
         os.makedirs("/etc/epgimport", exist_ok=True)
         with open(EPG_CHANNEL_FILE, "w", encoding="utf-8") as f:
