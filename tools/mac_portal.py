@@ -17,20 +17,13 @@ def save_mac_json(data):
     except Exception:
         pass
 
-# --- GENEROWANIE LOSOWEGO SERIAL NUMBER (wymagane przez niektóre portale) ---
 def get_random_sn():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=13))
 
 def parse_mac_playlist(host, mac):
-    # 1. Czyszczenie adresu
     host = host.strip().rstrip('/')
     
-    # Jeśli użytkownik NIE podał /c, a serwer to Stalker, dodajmy /c do bazy
-    # Ale najpierw sprawdźmy proste metody.
-    
-    # --- METODA 1: Xtream Codes (Standardowa) ---
-    # Dla serwerów, które pozwalają na get.php
-    # Spróbujmy bez /c/ jeśli tam jest
+    # --- METODA 1: Xtream Codes (M3U) ---
     host_xc = host[:-2] if host.endswith('/c') else host
     url_xc = f"{host_xc}/get.php?username={mac}&password={mac}&type=m3u_plus&output=ts"
     
@@ -40,28 +33,24 @@ def parse_mac_playlist(host, mac):
         if r.status_code == 200 and "#EXTINF" in r.text:
             return parse_m3u_text(r.text)
     except:
-        pass # Błąd? Idziemy do Metody 2 (Stalker)
+        pass 
 
-    # --- METODA 2: STALKER MIDDLEWARE (Dla błędu 513/404) ---
-    # Wymaga hosta z końcówką /c/ (zazwyczaj)
+    # --- METODA 2: STALKER (Z Kategoriami) ---
     if not host.endswith('/c'):
         host_stalker = f"{host}/c"
     else:
         host_stalker = host
 
-    # Przygotowanie sesji
     s = requests.Session()
     s.verify = False
     s.headers.update({
         'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
         'Referer': f"{host_stalker}/",
-        'Accept': '*/*',
         'Cookie': f'mac={mac}; stb_lang=en; timezone=Europe/London;'
     })
 
     try:
-        # KROK A: Handshake (Pobranie tokena)
-        # Generujemy losowy Serial Number, bo niektóre serwery blokują puste
+        # 1. Handshake
         sn = get_random_sn()
         token_url = f"{host_stalker}/server/load.php?type=stb&action=handshake&token=&mac={mac}&stb_type=MAG250&ver=ImageDescription: 0.2.18-r14-250; ImageDate: Fri Jan 15 15:20:44 EET 2016; PORTAL version: 5.1.0; API Version: JS API version: 328; STB API version: 134;&sn={sn}"
         
@@ -70,64 +59,71 @@ def parse_mac_playlist(host, mac):
         js = r.json()
         
         if not js or "js" not in js or "token" not in js["js"]:
-             raise Exception(f"Błąd Handshake: Serwer nie dał tokena. Odpowiedź: {str(js)}")
+             raise Exception(f"Błąd Handshake: {str(js)}")
              
         token = js["js"]["token"]
-        
-        # Aktualizacja nagłówków o token (Bearer)
         s.headers.update({'Authorization': f'Bearer {token}'})
 
-        # KROK B: Pobranie profilu (opcjonalne, ale czasem wymagane, żeby "aktywować" sesję)
-        s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=10)
+        # 2. Pobranie Kategorii (Genres) - NOWOŚĆ
+        genres = {}
+        try:
+            r_g = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_genres&token={token}", timeout=10)
+            data_g = r_g.json()
+            if "js" in data_g and isinstance(data_g["js"], list):
+                for g in data_g["js"]:
+                    gid = g.get("id")
+                    title = g.get("title", "Inne")
+                    if gid:
+                        genres[gid] = title
+        except:
+            pass # Jeśli się nie uda pobrać kategorii, trudno
 
-        # KROK C: Pobranie listy wszystkich kanałów
+        # 3. Pobranie Kanałów
+        s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=10)
+        
         channels_url = f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}"
         r = s.get(channels_url, timeout=20)
         r.raise_for_status()
         
         data = r.json()
         if "js" not in data or "data" not in data["js"]:
-             raise Exception("Błąd Stalkera: Nie znaleziono listy kanałów w odpowiedzi.")
+             raise Exception("Błąd Stalkera: Pusta lista.")
              
         ch_list = data["js"]["data"]
         
-        # Parsowanie specyficznego formatu Stalkera na nasz format
         out = []
         for item in ch_list:
             name = item.get("name", "No Name")
             cmd  = item.get("cmd", "")
             logo = item.get("logo", "")
+            gid  = item.get("tv_genre_id") # ID Kategorii
             
-            # URL w Stalkerze często wygląda tak: "ffmpeg http://..." lub "auto http://..."
-            # Musimy wyciągnąć czysty link http
+            # Przypisanie nazwy grupy na podstawie ID
+            grp_name = genres.get(gid, "Stalker Inne")
+            # Jeśli ID jest stringiem, spróbujmy int
+            if grp_name == "Stalker Inne":
+                try: grp_name = genres.get(int(gid), "Stalker Inne")
+                except: pass
+
             url_clean = cmd.replace("ffmpeg ", "").replace("auto ", "").replace("ch_id=", "")
-            
-            # Jeśli link nie jest pełnym adresem http, musimy go zbudować (rzadki przypadek)
             if "://" not in url_clean:
-                 # Czasem to tylko ID kanału, co wymagałoby create_link.php... 
-                 # Ale spróbujmy najprostszego playera
                  url_clean = f"{host_stalker}/mpegts_to_ts/{url_clean}"
 
-            # Jeśli logo jest ścieżką względną
             if logo and not logo.startswith('http'):
                 logo = f"{host_stalker}/{logo}"
 
             out.append({
                 "title": name,
                 "url":   url_clean,
-                "group": "Stalker", # Stalker API get_all_channels rzadko zwraca grupy w tym samym zapytaniu
+                "group": grp_name, # Tutaj wstawiamy prawdziwą grupę!
                 "logo":  logo,
                 "epg":   ""
             })
             
-        if not out:
-            raise Exception("Lista kanałów Stalker jest pusta.")
-            
         return out
 
     except Exception as e:
-        # Jeśli Stalker zawiedzie, rzuć błąd z opisem
-        raise Exception(f"Błąd Połączenia (Stalker/Xtream): {str(e)}")
+        raise Exception(f"Błąd Stalker: {str(e)}")
 
 def parse_m3u_text(content):
     channels = []
