@@ -2,7 +2,6 @@
 import json, os, requests, re, random, string
 
 MAC_FILE = "/etc/enigma2/iptvdream_mac.json"
-# Identyczny User-Agent jak w export.py - KLUCZOWE!
 COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
 def load_mac_json():
@@ -21,6 +20,25 @@ def save_mac_json(data):
 
 def get_random_sn():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=13))
+
+# --- TŁUMACZ BŁĘDÓW NA POLSKI ---
+def translate_error(e, url=""):
+    err_str = str(e)
+    
+    if "404" in err_str:
+        return "Nie znaleziono portalu (Błąd 404).\nSprawdź czy adres URL jest poprawny."
+    if "401" in err_str or "403" in err_str:
+        return "Odmowa dostępu (Błąd 401/403).\nTwój MAC może być zablokowany, wygasł lub jest błędny."
+    if "500" in err_str or "502" in err_str or "513" in err_str:
+        return f"Błąd serwera dostawcy (Kod {err_str[0:3]}).\nSpróbuj później lub użyj innego portalu."
+    if "ConnectTimeout" in err_str or "ReadTimeout" in err_str:
+        return "Serwer nie odpowiada (Timeout).\nSerwer jest przeciążony lub wyłączony."
+    if "ConnectionError" in err_str or "NameResolutionError" in err_str:
+        return "Nie można połączyć z serwerem.\nSprawdź adres hosta lub swoje połączenie internetowe."
+    if "No JSON" in err_str:
+        return "Błędna odpowiedź serwera.\nSerwer nie zwrócił listy kanałów."
+        
+    return f"Błąd połączenia:\n{err_str[:100]}..."
 
 def parse_mac_playlist(host, mac):
     host = host.strip().rstrip('/')
@@ -60,12 +78,12 @@ def parse_mac_playlist(host, mac):
         js = r.json()
         
         if not js or "js" not in js or "token" not in js["js"]:
-             raise Exception(f"Błąd Handshake: {str(js)}")
+             # Jeśli serwer odpowiedział 200 OK, ale bez tokena -> to też błąd logowania
+             raise Exception("Brak autoryzacji (Błędny MAC?)")
              
         token = js["js"]["token"]
         s.headers.update({'Authorization': f'Bearer {token}'})
 
-        # Pobieranie Kategorii
         genres = {}
         try:
             r_g = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_genres&token={token}", timeout=10)
@@ -78,15 +96,18 @@ def parse_mac_playlist(host, mac):
                         genres[str(gid)] = title
         except: pass
 
-        # Pobieranie Kanałów
         s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=10)
-        r = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}", timeout=20)
+        
+        channels_url = f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}"
+        r = s.get(channels_url, timeout=20)
+        r.raise_for_status()
         
         data = r.json()
         if "js" not in data or "data" not in data["js"]:
-             raise Exception("Pusta lista kanałów.")
+             raise Exception("Pusta lista (No JSON).")
              
         ch_list = data["js"]["data"]
+        
         out = []
         for item in ch_list:
             name = item.get("name", "No Name")
@@ -108,9 +129,13 @@ def parse_mac_playlist(host, mac):
                 "logo":  logo,
                 "epg":   ""
             })
+            
         return out
+
     except Exception as e:
-        raise Exception(f"Błąd Stalker: {str(e)}")
+        # Używamy naszej nowej funkcji tłumaczącej
+        friendly_msg = translate_error(e, host_stalker)
+        raise Exception(friendly_msg)
 
 def parse_m3u_text(content):
     channels = []
