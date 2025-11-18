@@ -21,29 +21,30 @@ def save_mac_json(data):
 def get_random_sn():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=13))
 
-# --- TŁUMACZ BŁĘDÓW NA POLSKI ---
 def translate_error(e, url=""):
     err_str = str(e)
-    
-    if "404" in err_str:
-        return "Nie znaleziono portalu (Błąd 404).\nSprawdź czy adres URL jest poprawny."
-    if "401" in err_str or "403" in err_str:
-        return "Odmowa dostępu (Błąd 401/403).\nTwój MAC może być zablokowany, wygasł lub jest błędny."
-    if "500" in err_str or "502" in err_str or "513" in err_str:
-        return f"Błąd serwera dostawcy (Kod {err_str[0:3]}).\nSpróbuj później lub użyj innego portalu."
-    if "ConnectTimeout" in err_str or "ReadTimeout" in err_str:
-        return "Serwer nie odpowiada (Timeout).\nSerwer jest przeciążony lub wyłączony."
-    if "ConnectionError" in err_str or "NameResolutionError" in err_str:
-        return "Nie można połączyć z serwerem.\nSprawdź adres hosta lub swoje połączenie internetowe."
-    if "No JSON" in err_str:
-        return "Błędna odpowiedź serwera.\nSerwer nie zwrócił listy kanałów."
-        
+    if "404" in err_str: return "Nie znaleziono portalu (Błąd 404).\nSprawdź czy adres URL jest poprawny."
+    if "401" in err_str or "403" in err_str: return "Odmowa dostępu (Błąd 401/403).\nTwój MAC może być zablokowany lub wygasł."
+    if "500" in err_str or "502" in err_str or "513" in err_str: return f"Błąd serwera dostawcy (Kod {err_str[0:3]}).\nSpróbuj później."
+    if "ConnectTimeout" in err_str: return "Serwer nie odpowiada (Timeout)."
+    if "ConnectionError" in err_str: return "Nie można połączyć z serwerem."
     return f"Błąd połączenia:\n{err_str[:100]}..."
+
+# --- NOWA FUNKCJA CZYSZCZĄCA ---
+def clean_name(name):
+    if not name: return "No Name"
+    name = str(name).strip()
+    # Usuwa wszystko w nawiasach kwadratowych na początku: [PL]
+    name = re.sub(r'^\[.*?\]\s*', '', name)
+    # Usuwa wszystko przed pionową kreską: PL| ...
+    name = re.sub(r'^.*?\|\s*', '', name)
+    # Usuwa krótkie prefiksy z myślnikiem: PL - ...
+    name = re.sub(r'^[A-Z0-9]{2,4}\s?-\s?', '', name)
+    return name.strip()
 
 def parse_mac_playlist(host, mac):
     host = host.strip().rstrip('/')
     
-    # METODA 1: Xtream Codes (M3U)
     host_xc = host[:-2] if host.endswith('/c') else host
     url_xc = f"{host_xc}/get.php?username={mac}&password={mac}&type=m3u_plus&output=ts"
     
@@ -55,11 +56,8 @@ def parse_mac_playlist(host, mac):
     except:
         pass 
 
-    # METODA 2: STALKER
-    if not host.endswith('/c'):
-        host_stalker = f"{host}/c"
-    else:
-        host_stalker = host
+    if not host.endswith('/c'): host_stalker = f"{host}/c"
+    else: host_stalker = host
 
     s = requests.Session()
     s.verify = False
@@ -78,7 +76,6 @@ def parse_mac_playlist(host, mac):
         js = r.json()
         
         if not js or "js" not in js or "token" not in js["js"]:
-             # Jeśli serwer odpowiedział 200 OK, ale bez tokena -> to też błąd logowania
              raise Exception("Brak autoryzacji (Błędny MAC?)")
              
         token = js["js"]["token"]
@@ -92,29 +89,28 @@ def parse_mac_playlist(host, mac):
                 for g in data_g["js"]:
                     gid = g.get("id")
                     title = g.get("title", "Inne")
-                    if gid:
-                        genres[str(gid)] = title
+                    # TUTAJ CZYŚCIMY NAZWĘ GRUPY/BUKIETU!
+                    genres[str(gid)] = clean_name(title)
         except: pass
 
         s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=10)
-        
-        channels_url = f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}"
-        r = s.get(channels_url, timeout=20)
-        r.raise_for_status()
+        r = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}", timeout=20)
         
         data = r.json()
         if "js" not in data or "data" not in data["js"]:
              raise Exception("Pusta lista (No JSON).")
              
         ch_list = data["js"]["data"]
-        
         out = []
         for item in ch_list:
-            name = item.get("name", "No Name")
+            name_raw = item.get("name", "No Name")
+            # TUTAJ CZYŚCIMY NAZWĘ KANAŁU!
+            name = clean_name(name_raw)
+            
             cmd  = item.get("cmd", "")
             logo = item.get("logo", "")
             gid  = str(item.get("tv_genre_id", ""))
-            grp_name = genres.get(gid, "Stalker Inne")
+            grp_name = genres.get(gid, "Inne")
 
             url_clean = cmd.replace("ffmpeg ", "").replace("auto ", "").replace("ch_id=", "")
             if "://" not in url_clean:
@@ -129,11 +125,9 @@ def parse_mac_playlist(host, mac):
                 "logo":  logo,
                 "epg":   ""
             })
-            
         return out
 
     except Exception as e:
-        # Używamy naszej nowej funkcji tłumaczącej
         friendly_msg = translate_error(e, host_stalker)
         raise Exception(friendly_msg)
 
@@ -145,12 +139,20 @@ def parse_m3u_text(content):
         if not line: continue
         if line.startswith('#EXTINF'):
             title_match = line.rsplit(',', 1)
-            title = title_match[1].strip() if len(title_match) > 1 else "Bez nazwy"
+            title_raw = title_match[1].strip() if len(title_match) > 1 else "Bez nazwy"
+            
             logo_match = re.search(r'tvg-logo="([^"]+)"', line)
             logo = logo_match.group(1) if logo_match else ""
+            
             group_match = re.search(r'group-title="([^"]+)"', line)
-            group = group_match.group(1) if group_match else "Inne"
-            current_info = {"title": title, "logo": logo, "group": group}
+            group_raw = group_match.group(1) if group_match else "Inne"
+            
+            # Czyścimy też tutaj
+            current_info = {
+                "title": clean_name(title_raw), 
+                "logo": logo, 
+                "group": clean_name(group_raw)
+            }
         elif line.startswith('http') and current_info:
             channels.append({
                 "title": current_info["title"],
