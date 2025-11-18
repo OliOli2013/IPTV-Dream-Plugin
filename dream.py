@@ -16,65 +16,44 @@ from .tools.bouquet_picker    import BouquetPicker
 from .tools.epg_picon         import fetch_epg_for_playlist, download_picon_url
 import os, json, re, threading
 import requests
-
-# --- ZMIANA: Używamy Twisted zamiast eApp (kompatybilne ze wszystkimi dekoderami) ---
 from twisted.internet import reactor
+from enigma import quitMainloop
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-PLUGIN_VERSION = "2.5-universal"
+PLUGIN_VERSION = "2.6-flow-fix"
 
-# === Bezpieczny Runner Wątków (Twisted reactor) ===
 def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
-    """
-    Uruchamia funkcję blokującą w tle.
-    Wynik przekazuje do głównego wątku Enigmy za pomocą reactor.callFromThread.
-    Działa na OpenPLi, OpenATV, VTi itd.
-    """
     def thread_target():
         try:
             result = blocking_func(*args, **kwargs)
-            # Przekazanie wyniku do głównego wątku w sposób bezpieczny
             reactor.callFromThread(on_done_callback, result, None)
         except Exception as e:
-            # Przekazanie błędu
             reactor.callFromThread(on_done_callback, None, str(e))
-
     t = threading.Thread(target=thread_target)
     t.daemon = True
     t.start()
 
-# === Parser M3U (Zoptymalizowany) ===
 def parse_m3u_bytes_improved(data):
     out = []
-    try:
-        text = data.decode("utf-8", "ignore")
-    except:
-        text = str(data)
-
+    try: text = data.decode("utf-8", "ignore")
+    except: text = str(data)
     current_attrs = {}
-    
     rx_group = re.compile(r'group-title="([^"]+)"')
     rx_logo  = re.compile(r'tvg-logo="([^"]+)"')
-    
     for line in text.splitlines():
         line = line.strip()
-        if not line or line.startswith("#EXTM3U"):
-            continue
-
+        if not line or line.startswith("#EXTM3U"): continue
         if line.startswith("#EXTINF"):
             parts = line.split(',', 1)
             title = parts[1].strip() if len(parts) > 1 else "No Title"
-            
             g_match = rx_group.search(line)
             l_match = rx_logo.search(line)
-            
             current_attrs = {
                 "title": title,
                 "group": g_match.group(1).strip() if g_match else "Inne",
                 "logo":  l_match.group(1).strip() if l_match else ""
             }
-
         elif "://" in line and not line.startswith("#"):
             url = line.strip()
             if current_attrs:
@@ -87,37 +66,25 @@ def parse_m3u_bytes_improved(data):
                 })
                 current_attrs = {} 
             else:
-                out.append({
-                    "title": url.split('/')[-1],
-                    "url":   url,
-                    "group": "Inne",
-                    "logo":  "",
-                    "epg":   ""
-                })
+                out.append({"title": url.split('/')[-1], "url": url, "group": "Inne", "logo": "", "epg": ""})
     return out
 
 def load_profiles():
     try:
         if os.path.exists(PROFILES):
-            with open(PROFILES, "r") as f:
-                return json.load(f)
-    except:
-        pass
+            with open(PROFILES, "r") as f: return json.load(f)
+    except: pass
     return {}
 
 def save_profiles(data):
     try:
-        with open(PROFILES, "w") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-    except:
-        pass
+        with open(PROFILES, "w") as f: json.dump(data, f, indent=2, ensure_ascii=False)
+    except: pass
 
-# ---------- Główne Okno ----------
 class IPTVDreamMain(Screen):
     skin = """
     <screen name="IPTVDreamMain" position="center,center" size="950,680" title="IPTV Dream">
         <widget name="version_label" position="700,10" size="230,35" font="Regular;28" halign="right" valign="center" foregroundColor="yellow" backgroundColor="#1f771f" cornerRadius="8"/>
-
         <eLabel text="1" position="40,80"  size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
         <eLabel text="M3U URL"  position="130,80"  size="220,70" font="Regular;28" halign="left" valign="center"/>
         <eLabel text="2" position="40,160" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
@@ -130,22 +97,18 @@ class IPTVDreamMain(Screen):
         <eLabel text="Własne M3U" position="130,400" size="220,70" font="Regular;28" halign="left" valign="center"/>
         <eLabel text="6" position="40,480" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#800080" cornerRadius="12"/>
         <eLabel text="PL / EN" position="130,480" size="220,70" font="Regular;28" halign="left" valign="center"/>
-
         <widget name="lab1" position="380,80"  size="520,70" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab2" position="380,160" size="520,70" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab3" position="380,240" size="520,70" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab4" position="380,320" size="520,70" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab5" position="380,400" size="520,70" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab6" position="380,480" size="520,70" font="Regular;24" halign="left" valign="center"/>
-
         <widget name="info"   position="30,560" size="890,30" font="Regular;22" halign="center" valign="center" foregroundColor="yellow"/>
         <widget name="status" position="30,590" size="890,25" font="Regular;20" halign="center" valign="center"/>
-
         <widget name="key_red"    position="0,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="red"/>
         <widget name="key_green"  position="237,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="green"/>
         <widget name="key_yellow" position="474,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="yellow"/>
         <widget name="key_blue"   position="711,620" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="blue"/>
-
         <widget name="foot" position="0,650" size="950,20" font="Regular;16" halign="center" valign="center" foregroundColor="grey"/>
     </screen>
     """
@@ -156,60 +119,47 @@ class IPTVDreamMain(Screen):
         self.playlist  = []
         self.listname  = "IPTV-Dream"
         self.lang      = language.getLanguage()[:2] or "pl"
-        
         prof = load_profiles()
-        if prof.get("lang") in ("pl", "en"):
-            self.lang = prof.get("lang")
-
+        if prof.get("lang") in ("pl", "en"): self.lang = prof.get("lang")
         self.setTitle(f"IPTV Dream v{PLUGIN_VERSION}")
         self["version_label"] = Label(f"v{PLUGIN_VERSION}")
         self["foot"]   = Label("IPTV Dream | Universal Fix")
-        
         self.updateLangStrings()
-
         self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
             "1": self.openUrl, "2": self.openFile, "3": self.openXtream,
             "4": self.openMac, "5": self.openMyLinks, "6": self.toggleLang,
             "red": self.close, "green": self.checkUpdates, "yellow": self.toggleAutoUpdate,
             "blue": self.exportBouquet, "cancel": self.close
         }, -1)
-    
+
     def updateLangStrings(self):
         self["key_red"]    = Label(_("exit", self.lang))
         self["key_green"]  = Label(_("check_upd", self.lang))
         self["key_yellow"] = Label(_("auto_up", self.lang))
         self["key_blue"]   = Label(_("export", self.lang))
-        
         self["lab1"] = Label(_("load_url", self.lang))
         self["lab2"] = Label(_("pick_file", self.lang))
         self["lab3"] = Label(_("xtream", self.lang))
         self["lab4"] = Label(_("mac_json", self.lang))
         self["lab5"] = Label(_("own_links", self.lang))
         self["lab6"] = Label(_("toggle_lang", self.lang))
-
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
 
-    # 1) M3U URL
+    # 1) URL
     def openUrl(self):
         last_url = load_profiles().get("last_url", "http://")
-        self.session.openWithCallback(self.onUrlReady, VKInputBox,
-                                      title=_("Wklej link M3U:", self.lang),
-                                      text=last_url)
+        self.session.openWithCallback(self.onUrlReady, VKInputBox, title=_("Wklej link M3U:", self.lang), text=last_url)
 
     def onUrlReady(self, url):
-        if not url or not url.startswith(('http://', 'https://')):
-            return
+        if not url or not url.startswith(('http://', 'https://')): return
         self._current_url = url
         self["status"].setText(_("downloading", self.lang))
-        
         def do_download(target_url):
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-            # verify=False dla starszych systemów z nieaktualnymi certyfikatami SSL
+            headers = {'User-Agent': 'Mozilla/5.0'}
             r = requests.get(target_url, timeout=30, headers=headers, verify=False)
             r.raise_for_status()
             return r.content
-
         run_in_thread(do_download, self.onDataDownloaded, url)
 
     def onDataDownloaded(self, data, error):
@@ -217,22 +167,20 @@ class IPTVDreamMain(Screen):
             self["status"].setText("Błąd pobierania!")
             self.session.open(MessageBox, f"URL Error: {error}", MessageBox.TYPE_ERROR)
             return
-
         playlist = parse_m3u_bytes_improved(data)
         prof = load_profiles()
         prof["last_url"] = self._current_url
         save_profiles(prof)
         self.onListLoaded(playlist, "M3U-URL")
 
-    # 2) M3U FILE
+    # 2) PLIK
     def openFile(self):
         self.session.openWithCallback(self.onFileReady, M3UFilePick, start_dir="/tmp/")
 
     def onFileReady(self, path):
         if not path: return
         try:
-            with open(path, "rb") as f:
-                data = f.read()
+            with open(path, "rb") as f: data = f.read()
             playlist = parse_m3u_bytes_improved(data)
             name = os.path.splitext(os.path.basename(path))[0]
             self.onListLoaded(playlist, name)
@@ -247,14 +195,12 @@ class IPTVDreamMain(Screen):
         if not data: return
         host, user, pwd = data
         self["status"].setText("Pobieranie Xtream...")
-        
         def do_dl():
             base = host if host.startswith("http") else f"http://{host}"
             url = f"{base}/get.php?username={user}&password={pwd}&type=m3u_plus&output=ts"
             r = requests.get(url, timeout=30, verify=False)
             r.raise_for_status()
             return r.content
-            
         run_in_thread(do_dl, lambda res, err: self.onXtreamDone(res, err, user))
 
     def onXtreamDone(self, data, error, user):
@@ -293,8 +239,7 @@ class IPTVDreamMain(Screen):
     # 5) MY LINKS
     def openMyLinks(self):
         if os.path.exists(MY_LINKS_FILE):
-            with open(MY_LINKS_FILE) as f:
-                links = json.load(f)
+            with open(MY_LINKS_FILE) as f: links = json.load(f)
             if links:
                 self.session.openWithCallback(lambda c: c and self.onUrlReady(c[1]), 
                                               ChoiceBox, title="Wybierz link", list=[(x["name"], x["url"]) for x in links])
@@ -316,10 +261,9 @@ class IPTVDreamMain(Screen):
             self.session.open(MessageBox, "Pusta lista kanałów!", MessageBox.TYPE_WARNING)
             self["status"].setText("")
             return
-
         self.playlist = playlist
         self.listname = name
-        self["status"].setText(f"Załadowano {len(playlist)} kanałów. Wybierz 'Eksport' (Niebieski).")
+        self["status"].setText(f"Załadowano {len(playlist)} kanałów.")
         
         self.session.openWithCallback(
             self.onPostProcessAnswer,
@@ -333,14 +277,16 @@ class IPTVDreamMain(Screen):
             self["status"].setText("Pobieranie dodatków w tle...")
             run_in_thread(self._bg_worker, self.onPostProcessDone, self.playlist)
         else:
-            self.exportBouquet()
+            # Jeśli NIE, od razu przechodzimy do eksportu
+            self.onPostProcessDone(self.playlist, None)
 
     def _bg_worker(self, pl):
         fetch_epg_for_playlist(pl)
         return pl
 
     def onPostProcessDone(self, result, error):
-        self["status"].setText("Gotowe. Naciśnij NIEBIESKI aby eksportować.")
+        self["status"].setText("Gotowe. Otwieram wybór bukietów...")
+        # FIX FLOW: Automatyczne przejście do okna wyboru bukietów
         self.exportBouquet()
 
     # EXPORT
@@ -363,8 +309,21 @@ class IPTVDreamMain(Screen):
             if k in self._groups:
                 final_list.extend(self._groups[k])
                 
-        res = export_bouquets(final_list, self.listname)
-        self.session.open(MessageBox, f"Wyeksportowano {res} kanałów. Zrestartuj GUI bukietów jeśli trzeba.", MessageBox.TYPE_INFO)
+        res, chans = export_bouquets(final_list, self.listname)
+        
+        # FIX FLOW: Pytanie o restart GUI i zamknięcie wtyczki
+        self.session.openWithCallback(
+            self.onExportFinished,
+            MessageBox,
+            f"Wyeksportowano {chans} kanałów w {res} bukietach.\n\nCzy chcesz zrestartować GUI teraz?",
+            MessageBox.TYPE_YESNO
+        )
+
+    def onExportFinished(self, answer):
+        if answer:
+            quitMainloop(3)
+        else:
+            self.close() # Zamknij wtyczkę
 
     # UPDATER
     def checkUpdates(self):
@@ -382,14 +341,13 @@ class IPTVDreamMain(Screen):
             self.session.open(MessageBox, "Masz najnowszą wersję.", MessageBox.TYPE_INFO)
 
     def doUpdateConfirm(self, ans):
-        if ans:
-            run_in_thread(do_update, self.onUpdateDone)
+        if ans: run_in_thread(do_update, self.onUpdateDone)
 
     def onUpdateDone(self, res, err):
         if err:
             self.session.open(MessageBox, f"Błąd aktualizacji: {err}", MessageBox.TYPE_ERROR)
         else:
-            self.session.openWithCallback(lambda x: x and quit(3), MessageBox, "Aktualizacja gotowa. Restart GUI?", MessageBox.TYPE_YESNO)
+            self.session.openWithCallback(lambda x: x and quitMainloop(3), MessageBox, "Aktualizacja gotowa. Restart GUI?", MessageBox.TYPE_YESNO)
 
     def toggleAutoUpdate(self):
         self.session.open(MessageBox, "Funkcja auto-update w przygotowaniu.", MessageBox.TYPE_INFO)
