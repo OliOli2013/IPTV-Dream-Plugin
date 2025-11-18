@@ -4,6 +4,7 @@ from enigma import eDVBDB
 
 BOUQUET_DIR = "/etc/enigma2"
 EPG_CHANNEL_FILE = "/etc/epgimport/iptvdream.channels.xml"
+
 RAW_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
 def sanit(name):
@@ -14,10 +15,15 @@ def sanit(name):
 
 def sanit_title(name):
     name = str(name).replace('\n', '').strip()
+    # 1. Usuwamy [XX]
     name = re.sub(r'^\[.*?\]\s*', '', name)
+    # 2. Usuwamy |XX|
     name = re.sub(r'^\|.*?\|\s*', '', name)
+    # 3. Usuwamy XXX|
     name = re.sub(r'^.*?\|\s*', '', name)
+    # 4. Usuwamy XX - 
     name = re.sub(r'^[A-Z0-9]{2,4}\s?-\s?', '', name)
+    
     name = name.replace(':', '').replace('"', '').strip()
     return name
 
@@ -51,19 +57,20 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             
             title = sanit_title(ch.get("title", "No Name"))
             url = url.replace(" ", "%20")
-            if "User-Agent" not in url: url += ua_suffix
+            
+            if "User-Agent" not in url:
+                url += ua_suffix
 
             unique_sid = zlib.crc32(url.encode()) & 0xffff
             if unique_sid == 0: unique_sid = 1
             
-            # Typ 4097 (Najbezpieczniejszy)
             service_type = "4097"
             ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
             
             content.append(f"#SERVICE {ref_str}\n")
             content.append(f"#DESCRIPTION {title}\n")
             
-            # Ref dla EPG
+            # Mapowanie EPG
             ref_pure = f"1:0:1:{unique_sid:X}:0:0:0:0:0:0"
             epg_mapping.append((ref_pure, title))
             
@@ -98,31 +105,41 @@ def add_to_bouquets_index(bq_filename):
             f.writelines(lines)
 
 def create_epg_xml(mapping):
-    """Generuje mapowanie z ALIASAMI (zwiększa szansę na EPG)"""
+    """Generuje MULTI-ALIAS dla EPG Import"""
     try:
         os.makedirs("/etc/epgimport", exist_ok=True)
         with open(EPG_CHANNEL_FILE, "w", encoding="utf-8") as f:
             f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n')
+            
             for ref, name in mapping:
-                # 1. Wersja oryginalna ("TVP 1 HD")
+                # Przygotowanie bazy
                 name_clean = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                f.write(f'  <channel id="{name_clean}">{ref}</channel>\n')
                 
-                # 2. Wersja bez spacji ("TVP1HD")
-                name_nospace = name_clean.replace(" ", "")
-                if name_nospace != name_clean:
-                    f.write(f'  <channel id="{name_nospace}">{ref}</channel>\n')
+                # Zbiór ID do wygenerowania dla tego jednego kanału
+                ids_to_generate = set()
                 
-                # 3. Wersja bez "HD/FHD/4K" ("TVP 1")
-                name_nohd = re.sub(r'\s?(HD|FHD|UHD|4K|PL)', '', name_clean, flags=re.IGNORECASE).strip()
-                if name_nohd != name_clean and len(name_nohd) > 2:
-                    f.write(f'  <channel id="{name_nohd}">{ref}</channel>\n')
+                # 1. Oryginał: "TVP ABC"
+                ids_to_generate.add(name_clean)
                 
-                # 4. Wersja bez "HD" i bez spacji ("TVP1") - To najczęściej pasuje do EPG.OVH
-                name_nohd_nospace = name_nohd.replace(" ", "")
-                if name_nohd_nospace != name_nospace and len(name_nohd_nospace) > 2:
-                    f.write(f'  <channel id="{name_nohd_nospace}">{ref}</channel>\n')
-                    
+                # 2. Bez spacji: "TVPABC"
+                nospace = name_clean.replace(" ", "")
+                ids_to_generate.add(nospace)
+                
+                # 3. Wersja z .pl (standard OVH): "TVPABC.pl"
+                ids_to_generate.add(f"{nospace}.pl")
+                
+                # 4. Bez końcówki HD/FHD: "TVP ABC" (jeśli było TVP ABC HD)
+                nohd = re.sub(r'\s(HD|FHD|UHD|4K)', '', name_clean, flags=re.IGNORECASE).strip()
+                if nohd != name_clean:
+                    ids_to_generate.add(nohd)
+                    # I wersja bez spacji bez HD: "TVPABC"
+                    ids_to_generate.add(nohd.replace(" ", ""))
+
+                # Zapisujemy wszystkie warianty dla tej samej referencji
+                for eid in ids_to_generate:
+                    if len(eid) > 1: # Ignorujemy puste/krótkie
+                        f.write(f'  <channel id="{eid}">{ref}</channel>\n')
+                        
             f.write('</channels>')
     except Exception:
         pass
