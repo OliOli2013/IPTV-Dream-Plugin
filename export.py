@@ -14,25 +14,11 @@ def sanit(name):
 
 def sanit_title(name):
     name = str(name).replace('\n', '').strip()
-    
-    # --- NOWE REGUŁY CZYSZCZENIA ---
-    
-    # 1. Usuwa nawiasy OKRĄGŁE na początku i ich zawartość: (AL) ... (PL) ...
-    name = re.sub(r'^\(.*?\)\s*', '', name)
-    
-    # 2. Usuwa nawiasy KWADRATOWE na początku: [EN] ...
     name = re.sub(r'^\[.*?\]\s*', '', name)
-    
-    # 3. Usuwa wszystko przed pionową kreską | (włącznie z nią)
-    if '|' in name:
-        name = name.split('|')[-1]
-        
-    # 4. Usuwa krótkie prefiksy z myślnikiem (np. "AL - ")
+    name = re.sub(r'^\|.*?\|\s*', '', name)
+    name = re.sub(r'^.*?\|\s*', '', name)
     name = re.sub(r'^[A-Z0-9]{2,4}\s?-\s?', '', name)
-
-    # Usuwamy dwukropki i cudzysłowy
     name = name.replace(':', '').replace('"', '').strip()
-    
     return name
 
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
@@ -63,25 +49,21 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             url = ch.get("url", "").strip()
             if not url: continue
             
-            # Tutaj następuje czyszczenie nazwy (funkcja sanit_title wyżej)
             title = sanit_title(ch.get("title", "No Name"))
-            
             url = url.replace(" ", "%20")
-            
-            if "User-Agent" not in url:
-                url += ua_suffix
+            if "User-Agent" not in url: url += ua_suffix
 
             unique_sid = zlib.crc32(url.encode()) & 0xffff
             if unique_sid == 0: unique_sid = 1
             
-            # TYP 4097 (GStreamer) - Stabilny
+            # Typ 4097 (Najbezpieczniejszy)
             service_type = "4097"
-            
             ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
             
             content.append(f"#SERVICE {ref_str}\n")
             content.append(f"#DESCRIPTION {title}\n")
             
+            # Ref dla EPG
             ref_pure = f"1:0:1:{unique_sid:X}:0:0:0:0:0:0"
             epg_mapping.append((ref_pure, title))
             
@@ -116,13 +98,31 @@ def add_to_bouquets_index(bq_filename):
             f.writelines(lines)
 
 def create_epg_xml(mapping):
+    """Generuje mapowanie z ALIASAMI (zwiększa szansę na EPG)"""
     try:
         os.makedirs("/etc/epgimport", exist_ok=True)
         with open(EPG_CHANNEL_FILE, "w", encoding="utf-8") as f:
             f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n')
             for ref, name in mapping:
-                name_esc = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                f.write(f'  <channel id="{name_esc}">{ref}</channel>\n')
+                # 1. Wersja oryginalna ("TVP 1 HD")
+                name_clean = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                f.write(f'  <channel id="{name_clean}">{ref}</channel>\n')
+                
+                # 2. Wersja bez spacji ("TVP1HD")
+                name_nospace = name_clean.replace(" ", "")
+                if name_nospace != name_clean:
+                    f.write(f'  <channel id="{name_nospace}">{ref}</channel>\n')
+                
+                # 3. Wersja bez "HD/FHD/4K" ("TVP 1")
+                name_nohd = re.sub(r'\s?(HD|FHD|UHD|4K|PL)', '', name_clean, flags=re.IGNORECASE).strip()
+                if name_nohd != name_clean and len(name_nohd) > 2:
+                    f.write(f'  <channel id="{name_nohd}">{ref}</channel>\n')
+                
+                # 4. Wersja bez "HD" i bez spacji ("TVP1") - To najczęściej pasuje do EPG.OVH
+                name_nohd_nospace = name_nohd.replace(" ", "")
+                if name_nohd_nospace != name_nospace and len(name_nohd_nospace) > 2:
+                    f.write(f'  <channel id="{name_nohd_nospace}">{ref}</channel>\n')
+                    
             f.write('</channels>')
     except Exception:
         pass
