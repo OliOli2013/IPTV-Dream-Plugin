@@ -15,18 +15,22 @@ def sanit(name):
 def sanit_title(name):
     name = str(name).replace('\n', '').strip()
     
-    # 1. Usuwamy nawiasy kwadratowe i ich zawartość na początku: [EN] ...
+    # --- NOWE REGUŁY CZYSZCZENIA ---
+    
+    # 1. Usuwa nawiasy OKRĄGŁE na początku i ich zawartość: (AL) ... (PL) ...
+    name = re.sub(r'^\(.*?\)\s*', '', name)
+    
+    # 2. Usuwa nawiasy KWADRATOWE na początku: [EN] ...
     name = re.sub(r'^\[.*?\]\s*', '', name)
     
-    # 2. Usuwamy wszystko przed pionową kreską | (włącznie z nią)
+    # 3. Usuwa wszystko przed pionową kreską | (włącznie z nią)
     if '|' in name:
-        name = name.split('|')[-1] # Bierze ostatni człon
+        name = name.split('|')[-1]
         
-    # 3. Usuwamy krótkie prefiksy z myślnikiem (np. "IE - ", "PL - ")
-    # Szuka 2-3 liter na początku, potem spacja-myślnik-spacja
-    name = re.sub(r'^[A-Z]{2,3}\s-\s', '', name)
+    # 4. Usuwa krótkie prefiksy z myślnikiem (np. "AL - ")
+    name = re.sub(r'^[A-Z0-9]{2,4}\s?-\s?', '', name)
 
-    # 4. Usuwamy śmieci, które mogły zostać
+    # Usuwamy dwukropki i cudzysłowy
     name = name.replace(':', '').replace('"', '').strip()
     
     return name
@@ -59,7 +63,9 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             url = ch.get("url", "").strip()
             if not url: continue
             
+            # Tutaj następuje czyszczenie nazwy (funkcja sanit_title wyżej)
             title = sanit_title(ch.get("title", "No Name"))
+            
             url = url.replace(" ", "%20")
             
             if "User-Agent" not in url:
@@ -68,7 +74,9 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             unique_sid = zlib.crc32(url.encode()) & 0xffff
             if unique_sid == 0: unique_sid = 1
             
+            # TYP 4097 (GStreamer) - Stabilny
             service_type = "4097"
+            
             ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
             
             content.append(f"#SERVICE {ref_str}\n")
