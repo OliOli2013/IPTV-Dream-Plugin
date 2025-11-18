@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-import os, requests, re, gzip, shutil
+import os, requests, re
 
-# Link użytkownika
-EPG_URL      = "https://epg.ovh/pl.xml"
-PICON_BASE   = "https://epg.ovh/logo/"
+# Używamy HTTP, bo jest pewniejsze na starszych dekoderach w EPG Import
+EPG_URL      = "http://epg.ovh/pl.xml"
+PICON_BASE   = "http://epg.ovh/logo/"
 
-# Ścieżki
 EPG_DIR      = "/etc/epgimport"
-LOCAL_EPG    = os.path.join(EPG_DIR, "iptvdream.xml") # Plik rozpakowany
 SOURCE_FILE  = os.path.join(EPG_DIR, "iptvdream.sources.xml")
 CHANNEL_FILE = os.path.join(EPG_DIR, "iptvdream.channels.xml")
 PICON_DIR    = "/usr/share/enigma2/picon/"
@@ -15,43 +13,37 @@ PICON_DIR    = "/usr/share/enigma2/picon/"
 COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 
 def create_epg_import_source():
-    """Tworzy źródło wskazujące na PLIK LOKALNY"""
+    """Tworzy plik źródła widoczny w EPG Import"""
     try:
         if not os.path.exists(EPG_DIR):
             os.makedirs(EPG_DIR)
 
-        # Wskazujemy na plik na dysku, a nie URL. To eliminuje błędy pobierania w EPG Import.
+        # Wskazujemy na kanały generowane przez export.py oraz URL online
         source_content = f"""<?xml version="1.0" encoding="utf-8"?>
 <sources>
     <sourcecat sourcecatname="IPTV Dream - Polska">
         <source type="gen_xmltv" channels="iptvdream.channels.xml">
-            <description>Polska (EPG.OVH - Lokalny)</description>
-            <url>file://{LOCAL_EPG}</url>
+            <description>Polska (EPG.OVH - Online)</description>
+            <url>{EPG_URL}</url>
         </source>
     </sourcecat>
 </sources>
 """
         with open(SOURCE_FILE, "w") as f:
             f.write(source_content)
+            
+        # Tworzymy pusty plik kanałów, jeśli go nie ma (żeby EPG Import nie krzyczał błędem)
+        if not os.path.exists(CHANNEL_FILE):
+            with open(CHANNEL_FILE, "w") as f:
+                f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n</channels>')
+                
     except Exception:
         pass
 
 def fetch_epg_for_playlist(pl):
-    """Pobiera plik EPG fizycznie na dysk"""
+    """Uruchamia się po pobraniu listy"""
     create_epg_import_source()
-    
-    try:
-        headers = {'User-Agent': COMMON_UA}
-        # Pobieramy plik
-        r = requests.get(EPG_URL, timeout=60, headers=headers, verify=False, stream=True)
-        if r.status_code == 200:
-            # Zapisujemy bezpośrednio jako xml (serwer ovh może zwracać xml lub gzip)
-            with open(LOCAL_EPG, "wb") as f:
-                for chunk in r.iter_content(chunk_size=1024):
-                    if chunk:
-                        f.write(chunk)
-    except Exception:
-        pass
+    # Nie pobieramy tu pliku XML ręcznie, zostawiamy to wtyczce EPG Import
 
 def download_picon_url(url, title):
     if not url: return ""
