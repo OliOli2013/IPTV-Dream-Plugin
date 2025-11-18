@@ -1,86 +1,83 @@
 # -*- coding: utf-8 -*-
-import os, requests, re
+import os, requests, re, gzip, shutil
 
-# URL do EPG (Domyślny Polski). 
-# Jeśli Twój dostawca IPTV daje własny link EPG, podmień go tutaj!
-EPG_URL      = "https://cyfrowypolsat.eu/epg/epg.xml.gz"
+# Link użytkownika
+EPG_URL      = "https://epg.ovh/pl.xml"
+PICON_BASE   = "https://epg.ovh/logo/"
 
-# Ścieżki dla EPG Import
+# Ścieżki
 EPG_DIR      = "/etc/epgimport"
-EPG_FILE     = os.path.join(EPG_DIR, "iptvdream.xml.gz")
+LOCAL_EPG    = os.path.join(EPG_DIR, "iptvdream.xml") # Plik rozpakowany
 SOURCE_FILE  = os.path.join(EPG_DIR, "iptvdream.sources.xml")
-CHANNEL_FILE = os.path.join(EPG_DIR, "iptvdream.channels.xml") # Wymagany przez EPG Import, nawet pusty
-
+CHANNEL_FILE = os.path.join(EPG_DIR, "iptvdream.channels.xml")
 PICON_DIR    = "/usr/share/enigma2/picon/"
 
-def create_epg_import_source():
-    """Tworzy plik konfiguracyjny, aby EPG Import widział nasze EPG"""
-    if not os.path.exists(EPG_DIR):
-        try: os.makedirs(EPG_DIR)
-        except: return
+COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 
-    # 1. Tworzymy plik sources.xml
-    source_content = """<?xml version="1.0" encoding="utf-8"?>
+def create_epg_import_source():
+    """Tworzy źródło wskazujące na PLIK LOKALNY"""
+    try:
+        if not os.path.exists(EPG_DIR):
+            os.makedirs(EPG_DIR)
+
+        # Wskazujemy na plik na dysku, a nie URL. To eliminuje błędy pobierania w EPG Import.
+        source_content = f"""<?xml version="1.0" encoding="utf-8"?>
 <sources>
-    <sourcecat sourcecatname="IPTV Dream">
+    <sourcecat sourcecatname="IPTV Dream - Polska">
         <source type="gen_xmltv" channels="iptvdream.channels.xml">
-            <description>IPTV Dream EPG (Pobranie)</description>
-            <url>{}</url>
+            <description>Polska (EPG.OVH - Lokalny)</description>
+            <url>file://{LOCAL_EPG}</url>
         </source>
     </sourcecat>
 </sources>
-""".format(EPG_FILE) # Wskazujemy na plik lokalny, który pobierzemy
-
-    try:
+"""
         with open(SOURCE_FILE, "w") as f:
             f.write(source_content)
-            
-        # 2. Tworzymy pusty plik channels.xml (wymagany przez strukturę EPG Import)
-        if not os.path.exists(CHANNEL_FILE):
-            with open(CHANNEL_FILE, "w") as f:
-                f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n</channels>')
     except Exception:
         pass
 
 def fetch_epg_for_playlist(pl):
-    """Pobiera plik EPG i zapisuje go lokalnie"""
+    """Pobiera plik EPG fizycznie na dysk"""
     create_epg_import_source()
     
     try:
-        # Udajemy przeglądarkę
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        r = requests.get(EPG_URL, timeout=30, headers=headers, verify=False)
-        r.raise_for_status()
-        
-        with open(EPG_FILE, "wb") as f:
-            f.write(r.content)
-            
-        # Opcjonalnie: Przypisz nazwę pliku do playlisty (choć EPG Import działa niezależnie)
-        for ch in pl:
-            ch["epg"] = "iptvdream.xml.gz"
+        headers = {'User-Agent': COMMON_UA}
+        # Pobieramy plik
+        r = requests.get(EPG_URL, timeout=60, headers=headers, verify=False, stream=True)
+        if r.status_code == 200:
+            # Zapisujemy bezpośrednio jako xml (serwer ovh może zwracać xml lub gzip)
+            with open(LOCAL_EPG, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1024):
+                    if chunk:
+                        f.write(chunk)
     except Exception:
         pass
 
 def download_picon_url(url, title):
-    """Pobiera piconę (logo) kanału"""
-    if not url:
-        return ""
+    if not url: return ""
+    safe_filename = re.sub(r'[^\w]', '_', title).strip().lower() + ".png"
+    path = os.path.join(PICON_DIR, safe_filename)
+    if os.path.exists(path): return path
         
-    # Bezpieczna nazwa pliku (bez spacji i znaków specjalnych)
-    safe = re.sub(r'[^\w]', '_', title).strip().lower() + ".png"
-    path = os.path.join(PICON_DIR, safe)
+    headers = {'User-Agent': COMMON_UA}
     
-    if os.path.exists(path):
-        return path
-        
+    # 1. Próba oryginalna
     try:
-        # Dodano User-Agent i verify=False (FIX dla blokowanych picon)
-        headers = {'User-Agent': 'Mozilla/5.0'}
         r = requests.get(url, timeout=10, headers=headers, verify=False)
-        r.raise_for_status()
-        
-        with open(path, "wb") as f:
-            f.write(r.content)
-        return path
-    except Exception:
-        return ""
+        if r.status_code == 200:
+            with open(path, "wb") as f:
+                f.write(r.content)
+            return path
+    except: pass
+
+    # 2. Próba z OVH
+    try:
+        clean_name = title.replace(" ", "").replace("-", "")
+        ovh_url = f"{PICON_BASE}{clean_name}.png"
+        r = requests.get(ovh_url, timeout=5, headers=headers, verify=False)
+        if r.status_code == 200:
+            with open(path, "wb") as f:
+                f.write(r.content)
+            return path
+    except: pass
+    return ""
