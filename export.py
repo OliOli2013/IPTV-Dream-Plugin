@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re, zlib, urllib.parse
+import os, re, urllib.parse
 from enigma import eDVBDB
 
 BOUQUET_DIR = "/etc/enigma2"
@@ -15,7 +15,7 @@ def sanit(name):
 
 def sanit_title(name):
     name = str(name).replace('\n', '').strip()
-    # Agresywne usuwanie śmieci z nazw
+    # Agresywne czyszczenie nazw
     name = re.sub(r'^\[.*?\]\s*', '', name)
     name = re.sub(r'^\|.*?\|\s*', '', name)
     name = re.sub(r'^.*?\|\s*', '', name)
@@ -57,31 +57,28 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             if "User-Agent" not in url:
                 url += ua_suffix
 
-            # Unikalne ID (SID)
-            unique_sid = zlib.crc32(url.encode()) & 0xffff
-            if unique_sid == 0: unique_sid = 1
+            # --- ZMIANA KLUCZOWA: ID = 1 dla wszystkich ---
+            # Dzięki temu EPG Import ignoruje referencję i patrzy tylko na nazwę.
+            service_id = 1
             
-            # Typ 4097 (GStreamer)
+            # Typ 4097 (Stabilny)
             service_type = "4097"
             
-            # Zapis do bukietu (Dec SID)
-            ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
+            # Referencja w bukiecie
+            # Format: 4097:0:1:1:0:0:0:0:0:0:URL:NAZWA
+            ref_str = f"{service_type}:0:1:{service_id}:0:0:0:0:0:0:{url}:{title}"
+            
             content.append(f"#SERVICE {ref_str}\n")
             content.append(f"#DESCRIPTION {title}\n")
             
-            # --- MAPOWANIE EPG (Najważniejsza część) ---
-            # Generujemy referencję w formacie HEX (takim jak używa Enigma wewnętrznie)
-            # Dodajemy wersję z namespace 1 (DVB) oraz 4097 (IPTV), żeby mieć pewność
-            sid_hex = f"{unique_sid:X}"
+            # Referencja do pliku XML (również prosta)
+            # 1:0:1:1:0:0:0:0:0:0
+            ref_pure = f"1:0:1:{service_id}:0:0:0:0:0:0"
             
-            # Wersja 1: Standardowa DVB (najczęściej używana przez EPG Import)
-            ref_dvb = f"1:0:1:{sid_hex}:0:0:0:0:0:0"
+            # Dodajemy też wersję z prefixem 4097, bo niektóre Image tego wymagają
+            ref_iptv = f"4097:0:1:{service_id}:0:0:0:0:0:0"
             
-            # Wersja 2: IPTV (dokładna kopia typu serwisu)
-            ref_iptv = f"4097:0:1:{sid_hex}:0:0:0:0:0:0"
-            
-            # Przekazujemy obie do generatora XML
-            epg_mapping.append((ref_dvb, title))
+            epg_mapping.append((ref_pure, title))
             epg_mapping.append((ref_iptv, title))
             
             total_channels += 1
@@ -92,7 +89,6 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
         add_to_bouquets_index(bq_filename)
         total_bouquets += 1
 
-    # Generujemy plik XML z aliasami
     create_epg_xml(epg_mapping)
 
     try:
@@ -116,41 +112,32 @@ def add_to_bouquets_index(bq_filename):
             f.writelines(lines)
 
 def create_epg_xml(mapping):
-    """Generuje plik z wieloma wariantami nazw (Aliasami)"""
+    """Generuje plik aliasów (Nazwa -> Ref)"""
     try:
         os.makedirs("/etc/epgimport", exist_ok=True)
         with open(EPG_CHANNEL_FILE, "w", encoding="utf-8") as f:
             f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n')
             
             for ref, name in mapping:
-                # Baza: Czysta nazwa
                 name_clean = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 
-                # Lista ID do wypróbowania
-                ids = set()
+                # Generujemy warianty nazw dla pewności
+                names_to_try = set()
+                names_to_try.add(name_clean) # "TVP 1 HD"
+                names_to_try.add(name_clean.replace(" ", "")) # "TVP1HD"
                 
-                # 1. Oryginał: "TVP 1 HD"
-                ids.add(name_clean)
-                
-                # 2. Bez spacji: "TVP1HD"
-                nospace = name_clean.replace(" ", "")
-                ids.add(nospace)
-                
-                # 3. Standard OVH (Bez spacji + .pl): "TVP1HD.pl"
-                ids.add(f"{nospace}.pl")
-                
-                # 4. Bez HD i spacji + .pl (Najczęstsze!): "TVP1.pl"
-                # Usuwa HD, FHD, UHD, 4K, PL
-                nohd = re.sub(r'(HD|FHD|UHD|4K|PL)', '', nospace, flags=re.IGNORECASE)
-                ids.add(f"{nohd}.pl")
-                
-                # 5. Małe litery + .pl: "tvp1.pl"
-                ids.add(f"{nohd.lower()}.pl")
+                # Wersja bez HD/FHD
+                nohd = re.sub(r'(HD|FHD|UHD|4K|PL)', '', name_clean, flags=re.IGNORECASE).strip()
+                if nohd != name_clean:
+                    names_to_try.add(nohd) # "TVP 1"
+                    names_to_try.add(nohd.replace(" ", "")) # "TVP1"
 
-                # Zapisz wszystkie warianty dla tej jednej referencji
-                for xid in ids:
-                    if len(xid) > 2: 
-                        f.write(f'  <channel id="{xid}">{ref}</channel>\n')
+                for n in names_to_try:
+                    if len(n) > 1:
+                        # Kluczowa linia: przypisujemy nazwę (id) do referencji (1:0:1:1...)
+                        f.write(f'  <channel id="{n}">{ref}</channel>\n')
+                        # Dla EPG OVH często id musi mieć .pl
+                        f.write(f'  <channel id="{n}.pl">{ref}</channel>\n')
                         
             f.write('</channels>')
     except Exception:
