@@ -81,13 +81,10 @@ else
     download_file "$BASE_URL/vkb_input.py" "$PLUGIN_PATH/tools/vkb_input.py"
 fi
 
-# =========================================================================
 # === KRYTYCZNA POPRAWKA: USTAWIENIE UPRAWNIEŃ WYKONYWANIA DLA PLIKÓW PY ===
-# =========================================================================
 echo ">>> Ustawianie uprawnień wykonywania (chmod 755) dla plików Python..."
 chmod 755 "$PLUGIN_PATH"/*.py
 chmod 755 "$PLUGIN_PATH"/tools/*.py
-# =========================================================================
 
 
 echo "=================================================="
