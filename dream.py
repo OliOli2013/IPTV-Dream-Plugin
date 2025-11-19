@@ -20,7 +20,7 @@ from twisted.internet import reactor
 from enigma import quitMainloop
 from datetime import date 
 from Components.SystemInfo import SystemInfo
-from enigma import eDVBDB 
+from enigma import eDVBDB # ZADBAŁEM, ŻEBY TEN KLUCZOWY IMPORT ZOSTAŁ!
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
@@ -371,7 +371,7 @@ class IPTVDreamMain(Screen):
             MessageBox.TYPE_INFO
         )
 
-    # ZMIANA: Teraz po prostu zamykamy wtyczkę po komunikacie INFO
+    # ZMIANA: Teraz po prostu zamykamy wtyczkę po komunikacie INFO (CZYLI POWRÓT DO OKNA GŁÓWNEGO ENIGMY)
     def onExportFinished(self, answer=None):
         self.close()
 
