@@ -42,23 +42,33 @@ def do_update():
             f.write(r.content)
         shutil.unpack_archive(zip_path, tmp)
         
-        # POPRAWKA KLUCZOWA: Sprawdzamy, czy pliki są w katalogu głównym repozytorium (Twoja struktura)
-        src = os.path.join(tmp, "IPTV-Dream-Plugin-main", "IPTVDream")
+        # POPRAWKA KLUCZOWA: Bierzemy główny folder rozpakowanego repozytorium
+        main_folder_name = "IPTV-Dream-Plugin-main"
+        src = os.path.join(tmp, main_folder_name)
         
-        # Jeśli nowa ścieżka nie istnieje, sprawdzamy starą (oryginalną)
+        # Ścieżka docelowa to PLUGIN_DIR. 
+        # Musimy przenieść zawartość SRC do PLUGIN_DIR.
+        
+        # Weryfikacja: Jeśli nie ma głównego folderu repo, coś jest źle
         if not os.path.isdir(src):
-            src = os.path.join(tmp, "IPTV-Dream-Plugin-main", "enigma2-plugin", "Extensions", "IPTVDream")
-            if not os.path.isdir(src):
-                # Jeśli żadna z dróg nie działa, zgłaszamy błąd
-                raise Exception("bad archive structure")
+            raise Exception("bad archive structure: main folder missing")
 
-        # backup & replace (Metoda bezpiecznego przenoszenia)
+        # Nowa, bardziej tolerancyjna logika przenoszenia:
+        # 1. Usuń poprzedni backup
         bak = PLUGIN_DIR + ".bak"
         if os.path.exists(bak):
             shutil.rmtree(bak)
+            
+        # 2. Tworzymy nowy folder IPTVDream tymczasowo obok
+        temp_dest = os.path.join(tmp, "IPTVDream_new")
+        shutil.copytree(src, temp_dest)
+
+        # 3. Przenosimy stary PLUGIN_DIR do backupu
         shutil.move(PLUGIN_DIR, bak)
-        shutil.move(src, PLUGIN_DIR)
         
+        # 4. Przenosimy nową zawartość do PLUGIN_DIR
+        shutil.move(temp_dest, PLUGIN_DIR)
+
         # przywróć uprawnienia
         os.chmod(PLUGIN_DIR, 0o755)
         for root, dirs, files in os.walk(PLUGIN_DIR):
@@ -73,7 +83,13 @@ def do_update():
         with open(os.path.join(PLUGIN_DIR, "VERSION"), "w") as v:
             v.write(_get_remote_version())
         return True
+        
     except Exception as e:
+        # W przypadku błędu przenoszenia, spróbuj przywrócić starą wersję z backupu (choć to trudne)
+        if os.path.exists(bak) and not os.path.exists(PLUGIN_DIR):
+            print("Przywracam backup...")
+            shutil.move(bak, PLUGIN_DIR)
         raise e
+        
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
