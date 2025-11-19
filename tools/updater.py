@@ -5,6 +5,7 @@ REPO_ZIP   = "https://github.com/OliOli2013/IPTV-Dream-Plugin/archive/refs/heads
 PLUGIN_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/IPTVDream"
 
 def _get_local_version():
+    # ... (kod bez zmian) ...
     """wersja = data commitu zapisana w pliku VERSION"""
     try:
         with open(os.path.join(PLUGIN_DIR, "VERSION"), "r") as f:
@@ -13,6 +14,7 @@ def _get_local_version():
         return "unknown"
 
 def _get_remote_version():
+    # ... (kod bez zmian) ...
     """pobiera datę ostatniego commitu z API GitHub"""
     try:
         api = "https://api.github.com/repos/OliOli2013/IPTV-Dream-Plugin/commits?per_page=1"
@@ -23,6 +25,7 @@ def _get_remote_version():
         return None
 
 def check_update():
+    # ... (kod bez zmian) ...
     local  = _get_local_version()
     remote = _get_remote_version()
     if not remote:
@@ -35,6 +38,10 @@ def do_update():
     """ściąga i rozpakowuje (wywoływane TYLKO po potwierdzeniu)"""
     tmp = tempfile.mkdtemp()
     zip_path = os.path.join(tmp, "main.zip")
+    
+    # ZMIENNA DLA BACKUPU: Nazwa nie może zawierać .bak na końcu
+    SAFE_BAK_DIR = os.path.join(os.path.dirname(PLUGIN_DIR), ".IPTVDream_BAK")
+    
     try:
         r = requests.get(REPO_ZIP, timeout=30)
         r.raise_for_status()
@@ -42,37 +49,29 @@ def do_update():
             f.write(r.content)
         shutil.unpack_archive(zip_path, tmp)
         
-        # Bierzemy główny folder rozpakowanego repozytorium
+        # Logika wyboru ścieżki
         main_folder_name = "IPTV-Dream-Plugin-main"
-        src = os.path.join(tmp, main_folder_name)
+        src = os.path.join(tmp, main_folder_name, "IPTVDream")
         
-        # Weryfikacja: Jeśli nie ma głównego folderu repo, coś jest źle
         if not os.path.isdir(src):
-            raise Exception("bad archive structure: main folder missing")
+            src = os.path.join(tmp, main_folder_name, "enigma2-plugin", "Extensions", "IPTVDream")
+            if not os.path.isdir(src):
+                raise Exception("bad archive structure")
 
-        # Nowa, bardziej tolerancyjna logika przenoszenia:
-        
-        # 1. NAZWA KATALOGU BACKUPU: Używamy kropki, aby ukryć go przed skanerem Enigmy2
-        bak = PLUGIN_DIR + ".bak"
-        hidden_bak = PLUGIN_DIR + ".bak_hidden" # Używamy tymczasowej nazwy
+        # backup & replace: Zabezpieczamy się przed skanerem Enigmy2
+        if os.path.exists(SAFE_BAK_DIR):
+            shutil.rmtree(SAFE_BAK_DIR)
 
-        if os.path.exists(bak):
-            shutil.rmtree(bak)
-
-        # 2. Tworzymy nowy folder IPTVDream tymczasowo obok
-        temp_dest = os.path.join(tmp, "IPTVDream_new")
-        shutil.copytree(src, temp_dest)
-
-        # 3. Przenosimy stary PLUGIN_DIR do UKRYTEGO backupu
+        # 1. Przenosimy stary PLUGIN_DIR do UKRYTEGO backupu
         if os.path.exists(PLUGIN_DIR):
-             shutil.move(PLUGIN_DIR, hidden_bak)
+             shutil.move(PLUGIN_DIR, SAFE_BAK_DIR)
         
-        # 4. Przenosimy nową zawartość do PLUGIN_DIR
-        shutil.move(temp_dest, PLUGIN_DIR)
+        # 2. Przenosimy nową zawartość (znalezioną ścieżkę SRC) do PLUGIN_DIR
+        shutil.move(src, PLUGIN_DIR)
 
-        # 5. Bezpieczne usunięcie starego backupu
-        if os.path.exists(hidden_bak):
-             shutil.rmtree(hidden_bak)
+        # 3. Usuwamy backup, aby nie zajmował miejsca
+        if os.path.exists(SAFE_BAK_DIR):
+             shutil.rmtree(SAFE_BAK_DIR)
 
 
         # przywróć uprawnienia
@@ -91,9 +90,10 @@ def do_update():
         return True
         
     except Exception as e:
-        if os.path.exists(hidden_bak) and not os.path.exists(PLUGIN_DIR):
+        # W przypadku błędu, próbujemy przywrócić ukryty backup
+        if os.path.exists(SAFE_BAK_DIR) and not os.path.exists(PLUGIN_DIR):
              print("Przywracam backup...")
-             shutil.move(hidden_bak, PLUGIN_DIR)
+             shutil.move(SAFE_BAK_DIR, PLUGIN_DIR)
         raise e
         
     finally:
