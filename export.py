@@ -28,8 +28,9 @@ def sanit_title(name):
     # 3. Usuń powtarzające się sufiksy (HD, RAW, 4K, VIP, itp.)
     TAGS_TO_REMOVE = r'(HD|FHD|UHD|4K|RAW|PL|VIP|DE|FR|IT|ES|EN|GR|BG|CZ|SK|HU|UA|TR|RO|\d+H|TEST|\d+P|SD|FHD|TVP|TTV)'
     
+    # KOREKTA BŁĘDU LITEROWEGO: Poprawna nazwa TAGS_TO_REMOVE
     name = re.sub(r'\s+[\-\+\s]*%s$' % TAGS_TO_REMOVE, '', name, flags=re.IGNORECASE)
-    name = re.sub(r'%s$' % TAGS_TOVE, '', name, flags=re.IGNORECASE)
+    name = re.sub(r'%s$' % TAGS_TO_REMOVE, '', name, flags=re.IGNORECASE)
     
     # 4. Dodatkowe czyszczenie i podwójne spacje
     name = name.replace(':', '').replace('"', '').replace('|', '').replace('-', ' ').strip()
@@ -51,7 +52,7 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
     ua_encoded = urllib.parse.quote(RAW_UA)
     referer_encoded = urllib.parse.quote(DEFAULT_REFERER) 
     
-    # UZUPELNIONY SUFIX O REFERER (poprawny format dla Enigmy to #param1=val1&param2=val2...)
+    # UZUPELNIONY SUFIX O REFERER
     ua_suffix = f"#User-Agent={ua_encoded}&Referer={referer_encoded}" 
 
     for grp, chans in groups.items():
