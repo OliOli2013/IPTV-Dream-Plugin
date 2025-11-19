@@ -24,7 +24,7 @@ from enigma import eDVBDB
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-PLUGIN_VERSION = "3.0"  
+PLUGIN_VERSION = "3.0"
 
 def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
     def thread_target():
@@ -363,20 +363,17 @@ class IPTVDreamMain(Screen):
         except Exception:
              pass
 
+        # ZMIANA: Zamiast pytania o restart, wyświetlamy MessageBox i wracamy do menu głównego
         self.session.openWithCallback(
             self.onExportFinished,
             MessageBox,
-            f"Wyeksportowano {chans} kanałów w {res} bukietach.\n\nCzy chcesz zrestartować GUI teraz?",
-            MessageBox.TYPE_YESNO,
-            default=1 # Ustawienie domyślnej odpowiedzi na NIE
+            f"Wyeksportowano {chans} kanałów w {res} bukietach. Zmiany będą widoczne po restarcie GUI.",
+            MessageBox.TYPE_INFO
         )
 
-    def onExportFinished(self, answer):
-        # Jeśli użytkownik wybierze TAK (0), robimy restart.
-        if answer == True: 
-            quitMainloop(3)
-        else:
-            self.close()
+    # ZMIANA: Teraz po prostu zamykamy wtyczkę po komunikacie INFO
+    def onExportFinished(self, answer=None):
+        self.close()
 
     # UPDATER
     def checkUpdates(self):
