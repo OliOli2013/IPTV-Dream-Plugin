@@ -4,7 +4,6 @@ from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Components.Input import Input
 from Components.Label import Label
 from Components.ActionMap import ActionMap
-from twisted.internet import reactor # Dodanie importu reactora
 
 class VKInputBox(Screen):
     # Jeszcze większe okno (900x400)
@@ -23,7 +22,8 @@ class VKInputBox(Screen):
         self.input = Input(text)
         self["text"]  = Label(title)
         self["input"] = self.input
-        self["help"]  = Label("Zmiana danych nastąpi po naciśnięciu ZIELONY lub po zamknięciu klawiatury.")
+        # Zmieniamy komunikat pomocy na bardziej sensowny:
+        self["help"]  = Label("Naciśnij OK, aby otworzyć pełną klawiaturę i edytować dane.") 
         
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
             "ok":     self.openVKB,
@@ -32,8 +32,7 @@ class VKInputBox(Screen):
             "red":    self.cancel,
         }, -1)
         
-        # POPRAWKA: Używamy reactora do opóźnienia, co pozwala VKInputBox stać się modalnym
-        self.onLayoutFinish.append(lambda: reactor.callLater(0.1, self.openVKB)) 
+        # USUNIĘTO: self.onLayoutFinish.append(lambda: reactor.callLater(0.1, self.openVKB))
 
     def openVKB(self):
         self.session.openWithCallback(self.vkbDone, VirtualKeyBoard,
