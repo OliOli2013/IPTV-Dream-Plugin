@@ -4,9 +4,9 @@ from enigma import eDVBDB
 
 BOUQUET_DIR = "/etc/enigma2"
 EPG_CHANNEL_FILE = "/etc/epgimport/iptvdream.channels.xml"
-# Zmieniony User-Agent na mniej specyficzny/starszy (częściej akceptowany przez portale)
-RAW_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36"
-# Dodanie domyślnego Referer, który często stabilizuje odtwarzanie (np. dla HLS)
+# Stabilny User-Agent
+RAW_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+# Dodanie domyślnego Referer dla stabilności streamu
 DEFAULT_REFERER = "http://localhost" 
 
 def sanit(name):
@@ -29,7 +29,7 @@ def sanit_title(name):
     TAGS_TO_REMOVE = r'(HD|FHD|UHD|4K|RAW|PL|VIP|DE|FR|IT|ES|EN|GR|BG|CZ|SK|HU|UA|TR|RO|\d+H|TEST|\d+P|SD|FHD|TVP|TTV)'
     
     name = re.sub(r'\s+[\-\+\s]*%s$' % TAGS_TO_REMOVE, '', name, flags=re.IGNORECASE)
-    name = re.sub(r'%s$' % TAGS_TO_REMOVE, '', name, flags=re.IGNORECASE)
+    name = re.sub(r'%s$' % TAGS_TOVE, '', name, flags=re.IGNORECASE)
     
     # 4. Dodatkowe czyszczenie i podwójne spacje
     name = name.replace(':', '').replace('"', '').replace('|', '').replace('-', ' ').strip()
@@ -49,7 +49,7 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
 
     # Kodowanie User-Agenta i Referer dla ServiceApp
     ua_encoded = urllib.parse.quote(RAW_UA)
-    referer_encoded = urllib.parse.quote(DEFAULT_REFERER) # Dodanie Referer
+    referer_encoded = urllib.parse.quote(DEFAULT_REFERER) 
     
     # UZUPELNIONY SUFIX O REFERER (poprawny format dla Enigmy to #param1=val1&param2=val2...)
     ua_suffix = f"#User-Agent={ua_encoded}&Referer={referer_encoded}" 
@@ -68,7 +68,7 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             
             title = sanit_title(ch.get("title", "No Name"))
             
-            # Dodajemy nagłówki, jeśli nie ma ich w URL
+            # Dodajemy nagłówki, jeśli ich brakuje
             if "User-Agent" not in url and "#User-Agent" not in url:
                 url += ua_suffix
             
