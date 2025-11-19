@@ -41,15 +41,25 @@ def do_update():
         with open(zip_path, "wb") as f:
             f.write(r.content)
         shutil.unpack_archive(zip_path, tmp)
-        src = os.path.join(tmp, "IPTV-Dream-Plugin-main", "enigma2-plugin", "Extensions", "IPTVDream")
+        
+        # POPRAWKA: Zmieniona oczekiwana ścieżka do plików
+        # Zakładamy, że katalog 'IPTVDream' jest bezpośrednio w głównym folderze ZIP
+        src = os.path.join(tmp, "IPTV-Dream-Plugin-main", "IPTVDream")
+        
         if not os.path.isdir(src):
-            raise Exception("bad archive structure")
+            # Jeśli nie znaleziono w nowej ścieżce, spróbujmy starej,
+            # by zachować wsteczną kompatybilność na wszelki wypadek
+            src = os.path.join(tmp, "IPTV-Dream-Plugin-main", "enigma2-plugin", "Extensions", "IPTVDream")
+            if not os.path.isdir(src):
+                raise Exception("bad archive structure")
+
         # backup & replace
         bak = PLUGIN_DIR + ".bak"
         if os.path.exists(bak):
             shutil.rmtree(bak)
         shutil.move(PLUGIN_DIR, bak)
         shutil.move(src, PLUGIN_DIR)
+        
         # przywróć uprawnienia
         os.chmod(PLUGIN_DIR, 0o755)
         for root, dirs, files in os.walk(PLUGIN_DIR):
@@ -59,6 +69,7 @@ def do_update():
                 os.chmod(os.path.join(root, f), 0o644)
                 if f.endswith(".py"):
                     os.chmod(os.path.join(root, f), 0o755)
+                    
         # zapisz nową wersję
         with open(os.path.join(PLUGIN_DIR, "VERSION"), "w") as v:
             v.write(_get_remote_version())
