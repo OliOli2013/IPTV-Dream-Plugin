@@ -19,13 +19,12 @@ import requests
 from twisted.internet import reactor
 from enigma import quitMainloop
 from datetime import date 
-# Dodatkowy import dla wymuszenia przeładowania serwisów
 from Components.SystemInfo import SystemInfo
-from enigma import eDVBDB # Potrzebne do reloadBouquets/Servicelist
+from enigma import eDVBDB 
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-PLUGIN_VERSION = "3.0"
+PLUGIN_VERSION = "3.0"  
 
 def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
     def thread_target():
@@ -368,11 +367,13 @@ class IPTVDreamMain(Screen):
             self.onExportFinished,
             MessageBox,
             f"Wyeksportowano {chans} kanałów w {res} bukietach.\n\nCzy chcesz zrestartować GUI teraz?",
-            MessageBox.TYPE_YESNO
+            MessageBox.TYPE_YESNO,
+            default=1 # Ustawienie domyślnej odpowiedzi na NIE
         )
 
     def onExportFinished(self, answer):
-        if answer:
+        # Jeśli użytkownik wybierze TAK (0), robimy restart.
+        if answer == True: 
             quitMainloop(3)
         else:
             self.close()
