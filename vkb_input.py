@@ -22,7 +22,7 @@ class VKInputBox(Screen):
         self.input = Input(text)
         self["text"]  = Label(title)
         self["input"] = self.input
-        self["help"]  = Label("Naciśnij OK, aby otworzyć pełną klawiaturę")
+        self["help"]  = Label("Zmiana danych nastąpi po naciśnięciu ZIELONY lub po zamknięciu klawiatury.")
         
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
             "ok":     self.openVKB,
@@ -30,6 +30,9 @@ class VKInputBox(Screen):
             "green":  self.ok,
             "red":    self.cancel,
         }, -1)
+        
+        # DODATKOWY KROK: Otwarcie klawiatury automatycznie przy starcie
+        self.onLayoutFinish.append(self.openVKB) 
 
     def openVKB(self):
         self.session.openWithCallback(self.vkbDone, VirtualKeyBoard,
