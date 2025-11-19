@@ -22,7 +22,8 @@ class VKInputBox(Screen):
         self.input = Input(text)
         self["text"]  = Label(title)
         self["input"] = self.input
-        self["help"]  = Label("Naciśnij OK, aby otworzyć pełną klawiaturę")
+        # Działający tekst pomocy
+        self["help"]  = Label("Naciśnij OK, aby otworzyć pełną klawiaturę i edytować dane.") 
         
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
             "ok":     self.openVKB,
