@@ -6,11 +6,13 @@ from Components.Label import Label
 from Components.ActionMap import ActionMap
 
 class VKInputBox(Screen):
+    # Jeszcze większe okno (900x400)
     skin = """
-    <screen name="VKInputBox" position="center,center" size="600,300" title="Wprowadź dane">
-        <widget name="text"   position="30,20"  size="540,60"  font="Regular;24" halign="center" valign="center"/>
-        <widget name="input"  position="30,100" size="540,40"  font="Regular;26" halign="center" valign="center" transparent="0"/>
-        <widget name="help"   position="30,160" size="540,30"  font="Regular;20" halign="center" valign="center" foregroundColor="grey"/>
+    <screen name="VKInputBox" position="center,center" size="900,400" title="Wprowadź dane">
+        <widget name="text"   position="20,20"  size="860,60"  font="Regular;28" halign="center" valign="center"/>
+        <widget name="input"  position="20,100" size="860,60"  font="Regular;24" halign="left" valign="center" transparent="0" backgroundColor="#202020"/>
+        <widget name="help"   position="20,200" size="860,40"  font="Regular;22" halign="center" valign="center" foregroundColor="grey"/>
+        <eLabel text="OK: Edytuj (Klawiatura) | ZIELONY: Zapisz | EXIT: Anuluj" position="20,320" size="860,40" font="Regular;24" halign="center" valign="center" foregroundColor="yellow"/>
     </screen>
     """
 
@@ -20,14 +22,14 @@ class VKInputBox(Screen):
         self.input = Input(text)
         self["text"]  = Label(title)
         self["input"] = self.input
-        self["help"]  = Label("OK=zapisz  EXIT=anuluj  ←→=znaki  ↕=kursor")
+        self["help"]  = Label("Naciśnij OK, aby otworzyć pełną klawiaturę")
+        
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
-            "ok":     self.ok,
+            "ok":     self.openVKB,
             "cancel": self.cancel,
             "green":  self.ok,
             "red":    self.cancel,
         }, -1)
-        self.onFirstExecBegin.append(self.openVKB)
 
     def openVKB(self):
         self.session.openWithCallback(self.vkbDone, VirtualKeyBoard,
@@ -38,8 +40,6 @@ class VKInputBox(Screen):
         if text is not None:
             self.input.setText(text)
             self.close(text)
-        else:
-            self.cancel()
 
     def ok(self):
         self.close(self.input.getText())

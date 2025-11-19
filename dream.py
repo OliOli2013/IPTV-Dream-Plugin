@@ -18,10 +18,14 @@ import os, json, re, threading
 import requests
 from twisted.internet import reactor
 from enigma import quitMainloop
+from datetime import date 
+# Dodatkowy import dla wymuszenia przeładowania serwisów
+from Components.SystemInfo import SystemInfo
+from enigma import eDVBDB # Potrzebne do reloadBouquets/Servicelist
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-PLUGIN_VERSION = "2.6-flow-fix"
+PLUGIN_VERSION = "3.0"
 
 def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
     def thread_target():
@@ -83,7 +87,7 @@ def save_profiles(data):
 
 class IPTVDreamMain(Screen):
     skin = """
-    <screen name="IPTVDreamMain" position="center,center" size="950,680" title="IPTV Dream">
+    <screen name="IPTVDreamMain" position="center,center" size="950,680" title="IPTV Dream v3.0">
         <widget name="version_label" position="700,10" size="230,35" font="Regular;28" halign="right" valign="center" foregroundColor="yellow" backgroundColor="#1f771f" cornerRadius="8"/>
         <eLabel text="1" position="40,80"  size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
         <eLabel text="M3U URL"  position="130,80"  size="220,70" font="Regular;28" halign="left" valign="center"/>
@@ -121,9 +125,15 @@ class IPTVDreamMain(Screen):
         self.lang      = language.getLanguage()[:2] or "pl"
         prof = load_profiles()
         if prof.get("lang") in ("pl", "en"): self.lang = prof.get("lang")
+        
+        # Ustawienie tytułu i wersji
         self.setTitle(f"IPTV Dream v{PLUGIN_VERSION}")
-        self["version_label"] = Label(f"v{PLUGIN_VERSION}")
-        self["foot"]   = Label("IPTV Dream | Universal Fix")
+        self["version_label"] = Label(f"IPTV Dream v{PLUGIN_VERSION}")
+        
+        # Stopka
+        today_date = date.today().strftime("%Y-%m-%d")
+        self["foot"]   = Label(f"Twórca: Paweł Pawełek, {today_date} | msisystem@t.pl")
+        
         self.updateLangStrings()
         self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
             "1": self.openUrl, "2": self.openFile, "3": self.openXtream,
@@ -210,7 +220,7 @@ class IPTVDreamMain(Screen):
             return
         self.onListLoaded(parse_m3u_bytes_improved(data), f"Xtream-{user}")
 
-    # 4) MAC
+    # 4) MAC – BEZPIECZNY WĄTEK
     def openMac(self):
         data = load_mac_json()
         txt  = json.dumps(data, indent=2)
@@ -221,19 +231,39 @@ class IPTVDreamMain(Screen):
         try:
             self.data = json.loads(txt)
             if self.data.get("host") and self.data.get("mac"):
-                 self["status"].setText("Pobieranie MAC...")
-                 run_in_thread(lambda: parse_mac_playlist(self.data["host"], self.data["mac"]), self.onMacDone)
+                self["status"].setText("Pobieranie MAC...")
+                reactor.callInThread(self._mac_thread_worker, self.data["host"], self.data["mac"])
             else:
                 self.session.open(MessageBox, "Brak HOST lub MAC w JSON", MessageBox.TYPE_ERROR)
         except Exception as e:
             self.session.open(MessageBox, f"JSON Error: {e}", MessageBox.TYPE_ERROR)
 
-    def onMacDone(self, playlist, error):
+    def _mac_thread_worker(self, host, mac):
+        try:
+            playlist = parse_mac_playlist(host, mac)
+            reactor.callFromThread(self._mac_thread_done, playlist, None)
+        except Exception as e:
+            reactor.callFromThread(self._mac_thread_done, None, str(e))
+
+    def _mac_thread_done(self, playlist, error):
         if error:
             self["status"].setText("Błąd MAC")
             self.session.open(MessageBox, str(error), MessageBox.TYPE_ERROR)
             return
-        save_mac_json(self.data)
+
+        try:
+            save_mac_json(self.data)
+
+            if not playlist:
+                self["status"].setText("Błąd: Pusta lista kanałów")
+                self.session.open(MessageBox, "Portal zwrócił 0 kanałów lub błąd struktury.", MessageBox.TYPE_ERROR)
+                self.onListLoaded([], "MAC-Portal")
+                return
+
+        except Exception as e:
+            self["status"].setText("Wczytano, ale błąd wewnętrzny!")
+            print(f"[IPTVDream] Krytyczny błąd przetwarzania listy MAC w GUI: {e}")
+
         self.onListLoaded(playlist, "MAC-Portal")
 
     # 5) MY LINKS
@@ -258,7 +288,6 @@ class IPTVDreamMain(Screen):
     # --- LOGIKA LISTY ---
     def onListLoaded(self, playlist, name):
         if not playlist:
-            self.session.open(MessageBox, "Pusta lista kanałów!", MessageBox.TYPE_WARNING)
             self["status"].setText("")
             return
         self.playlist = playlist
@@ -277,16 +306,33 @@ class IPTVDreamMain(Screen):
             self["status"].setText("Pobieranie dodatków w tle...")
             run_in_thread(self._bg_worker, self.onPostProcessDone, self.playlist)
         else:
-            # Jeśli NIE, od razu przechodzimy do eksportu
             self.onPostProcessDone(self.playlist, None)
 
     def _bg_worker(self, pl):
+        from .export import create_epg_xml
+        import zlib
+        
+        epg_mapping = []
+        for ch in pl:
+            title = ch.get("title", "No Name")
+            url   = ch.get("url", "")
+            if not url: continue
+            
+            unique_sid = zlib.crc32(url.encode()) & 0xffff
+            if unique_sid == 0: unique_sid = 1
+            sid_hex = f"{unique_sid:X}"
+            
+            ref_dvb  = f"1:0:1:{sid_hex}:0:0:0:0:0:0"
+            ref_iptv = f"4097:0:1:{sid_hex}:0:0:0:0:0:0"
+            epg_mapping.append((ref_dvb, title))
+            epg_mapping.append((ref_iptv, title))
+
+        create_epg_xml(epg_mapping)
         fetch_epg_for_playlist(pl)
         return pl
 
     def onPostProcessDone(self, result, error):
         self["status"].setText("Gotowe. Otwieram wybór bukietów...")
-        # FIX FLOW: Automatyczne przejście do okna wyboru bukietów
         self.exportBouquet()
 
     # EXPORT
@@ -311,7 +357,13 @@ class IPTVDreamMain(Screen):
                 
         res, chans = export_bouquets(final_list, self.listname)
         
-        # FIX FLOW: Pytanie o restart GUI i zamknięcie wtyczki
+        # DODATKOWE WYWOŁANIE RELOAD NA POZIOMIE DVBDB
+        try:
+             eDVBDB.getInstance().reloadBouquets()
+             eDVBDB.getInstance().reloadServicelist()
+        except Exception:
+             pass
+
         self.session.openWithCallback(
             self.onExportFinished,
             MessageBox,
@@ -323,7 +375,7 @@ class IPTVDreamMain(Screen):
         if answer:
             quitMainloop(3)
         else:
-            self.close() # Zamknij wtyczkę
+            self.close()
 
     # UPDATER
     def checkUpdates(self):

@@ -26,38 +26,39 @@ def translate_error(e, url=""):
     if "404" in err_str: return "Nie znaleziono portalu (Błąd 404).\nSprawdź czy adres URL jest poprawny."
     if "401" in err_str or "403" in err_str: return "Odmowa dostępu (Błąd 401/403).\nTwój MAC może być zablokowany lub wygasł."
     if "500" in err_str or "502" in err_str or "513" in err_str: return f"Błąd serwera dostawcy (Kod {err_str[0:3]}).\nSpróbuj później."
-    if "ConnectTimeout" in err_str: return "Serwer nie odpowiada (Timeout)."
-    if "ConnectionError" in err_str: return "Nie można połączyć z serwerem."
+    # Zmieniono 'ConnectTimeout' na ogólne, by wyłapać zamrożenia
+    if "timeout" in err_str.lower() or "connection" in err_str.lower(): return "Serwer nie odpowiada (Timeout/Brak połączenia).\nSpróbuj ponownie za chwilę."
     return f"Błąd połączenia:\n{err_str[:100]}..."
 
-# --- NOWA FUNKCJA CZYSZCZĄCA ---
 def clean_name(name):
     if not name: return "No Name"
     name = str(name).strip()
-    # Usuwa wszystko w nawiasach kwadratowych na początku: [PL]
     name = re.sub(r'^\[.*?\]\s*', '', name)
-    # Usuwa wszystko przed pionową kreską: PL| ...
+    name = re.sub(r'^\(.*?\)\s*', '', name)
+    name = re.sub(r'^\|.*?\|\s*', '', name)
     name = re.sub(r'^.*?\|\s*', '', name)
-    # Usuwa krótkie prefiksy z myślnikiem: PL - ...
     name = re.sub(r'^[A-Z0-9]{2,4}\s?-\s?', '', name)
     return name.strip()
 
 def parse_mac_playlist(host, mac):
     host = host.strip().rstrip('/')
-    
+
+    # 1. Próba Xtream (szybka)
     host_xc = host[:-2] if host.endswith('/c') else host
     url_xc = f"{host_xc}/get.php?username={mac}&password={mac}&type=m3u_plus&output=ts"
-    
     try:
-        headers_xc = {'User-Agent': COMMON_UA}
-        r = requests.get(url_xc, timeout=10, headers=headers_xc, verify=False)
+        # Skrócony timeout dla szybkiej próby
+        r = requests.get(url_xc, timeout=8, headers={'User-Agent': COMMON_UA}, verify=False)
         if r.status_code == 200 and "#EXTINF" in r.text:
             return parse_m3u_text(r.text)
     except:
-        pass 
+        pass
 
-    if not host.endswith('/c'): host_stalker = f"{host}/c"
-    else: host_stalker = host
+    # 2. Próba Stalker
+    if not host.endswith('/c'):
+        host_stalker = f"{host}/c"
+    else:
+        host_stalker = host
 
     s = requests.Session()
     s.verify = False
@@ -71,59 +72,53 @@ def parse_mac_playlist(host, mac):
         sn = get_random_sn()
         token_url = f"{host_stalker}/server/load.php?type=stb&action=handshake&token=&mac={mac}&stb_type=MAG250&ver=ImageDescription: 0.2.18-r14-250; ImageDate: Fri Jan 15 15:20:44 EET 2016; PORTAL version: 5.1.0; API Version: JS API version: 328; STB API version: 134;&sn={sn}"
         
-        r = s.get(token_url, timeout=15)
+        # Agresywny timeout
+        r = s.get(token_url, timeout=10)
         r.raise_for_status()
         js = r.json()
-        
         if not js or "js" not in js or "token" not in js["js"]:
-             raise Exception("Brak autoryzacji (Błędny MAC?)")
-             
+            raise Exception("Brak autoryzacji (Błędny MAC?)")
         token = js["js"]["token"]
         s.headers.update({'Authorization': f'Bearer {token}'})
 
+        # Pobieranie Kategorii
         genres = {}
         try:
-            r_g = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_genres&token={token}", timeout=10)
+            r_g = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_genres&token={token}", timeout=8)
             data_g = r_g.json()
             if "js" in data_g and isinstance(data_g["js"], list):
                 for g in data_g["js"]:
-                    gid = g.get("id")
-                    title = g.get("title", "Inne")
-                    # TUTAJ CZYŚCIMY NAZWĘ GRUPY/BUKIETU!
-                    genres[str(gid)] = clean_name(title)
-        except: pass
+                    genres[str(g.get("id"))] = clean_name(g.get("title", "Inne"))
+        except:
+            pass
 
-        s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=10)
-        r = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}", timeout=20)
-        
+        # Pobieranie Kanałów
+        s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=8)
+        # Finalny timeout na listę
+        r = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}", timeout=15)
         data = r.json()
         if "js" not in data or "data" not in data["js"]:
-             raise Exception("Pusta lista (No JSON).")
-             
+            raise Exception("Pusta lista (No JSON).")
         ch_list = data["js"]["data"]
         out = []
         for item in ch_list:
             name_raw = item.get("name", "No Name")
-            # TUTAJ CZYŚCIMY NAZWĘ KANAŁU!
             name = clean_name(name_raw)
-            
-            cmd  = item.get("cmd", "")
+            cmd = item.get("cmd", "")
             logo = item.get("logo", "")
-            gid  = str(item.get("tv_genre_id", ""))
+            gid = str(item.get("tv_genre_id", ""))
             grp_name = genres.get(gid, "Inne")
-
             url_clean = cmd.replace("ffmpeg ", "").replace("auto ", "").replace("ch_id=", "")
             if "://" not in url_clean:
-                 url_clean = f"{host_stalker}/mpegts_to_ts/{url_clean}"
+                url_clean = f"{host_stalker}/mpegts_to_ts/{url_clean}"
             if logo and not logo.startswith('http'):
                 logo = f"{host_stalker}/{logo}"
-
             out.append({
                 "title": name,
-                "url":   url_clean,
+                "url": url_clean,
                 "group": grp_name,
-                "logo":  logo,
-                "epg":   ""
+                "logo": logo,
+                "epg": ""
             })
         return out
 
@@ -138,28 +133,19 @@ def parse_m3u_text(content):
         line = line.strip()
         if not line: continue
         if line.startswith('#EXTINF'):
-            title_match = line.rsplit(',', 1)
-            title_raw = title_match[1].strip() if len(title_match) > 1 else "Bez nazwy"
-            
-            logo_match = re.search(r'tvg-logo="([^"]+)"', line)
-            logo = logo_match.group(1) if logo_match else ""
-            
-            group_match = re.search(r'group-title="([^"]+)"', line)
-            group_raw = group_match.group(1) if group_match else "Inne"
-            
-            # Czyścimy też tutaj
-            current_info = {
-                "title": clean_name(title_raw), 
-                "logo": logo, 
-                "group": clean_name(group_raw)
-            }
+            title = line.rsplit(',', 1)[1].strip() if ',' in line else "No Name"
+            logo_m = re.search(r'tvg-logo="([^"]+)"', line)
+            logo = logo_m.group(1) if logo_m else ""
+            grp_m = re.search(r'group-title="([^"]+)"', line)
+            group = grp_m.group(1) if grp_m else "Inne"
+            current_info = {"title": clean_name(title), "logo": logo, "group": clean_name(group)}
         elif line.startswith('http') and current_info:
             channels.append({
                 "title": current_info["title"],
-                "url":   line,
+                "url": current_info["url"],
                 "group": current_info["group"],
-                "logo":  current_info["logo"],
-                "epg":   ""
+                "logo": current_info["logo"],
+                "epg": ""
             })
             current_info = {}
     return channels

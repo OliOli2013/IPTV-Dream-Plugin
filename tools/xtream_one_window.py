@@ -17,22 +17,18 @@ class XtreamOneWindow(Screen):
     skin = """
     <screen name="XtreamOneWindow" position="center,center" size="600,380" title="Xtream Codes – nawigacja">
 
-        <!-- opisy -->
         <eLabel text="Host (z portem):" position="20,20"  size="200,30" font="Regular;22" halign="left"  valign="center"/>
         <eLabel text="Username:"        position="20,70"  size="200,30" font="Regular;22" halign="left"  valign="center"/>
         <eLabel text="Password:"        position="20,120" size="200,30" font="Regular;22" halign="left"  valign="center"/>
 
-        <!-- pola edycyjne -->
         <widget name="host" position="230,20"  size="350,35" font="Regular;22" halign="left" valign="center" transparent="1"/>
         <widget name="user" position="230,70"  size="350,35" font="Regular;22" halign="left" valign="center" transparent="1"/>
         <widget name="pass" position="230,120" size="350,35" font="Regular;22" halign="left" valign="center" transparent="1"/>
 
-        <!-- jedna ramka – podświetlenie -->
         <widget name="hlight" position="225,15" size="360,45" zPosition="-1"
                 font="Regular;1" halign="center" valign="center"
                 backgroundColor="#1f771f" cornerRadius="8"/>
 
-        <!-- przyciski -->
         <ePixmap pixmap="buttons/red.png"   position="20,320" size="140,40" alphatest="on"/>
         <ePixmap pixmap="buttons/green.png" position="440,320" size="140,40" alphatest="on"/>
         <widget source="key_red"   render="Label" position="20,320"  size="140,40" zPosition="1"
@@ -40,7 +36,6 @@ class XtreamOneWindow(Screen):
         <widget source="key_green" render="Label" position="440,320" size="140,40" zPosition="1"
                 font="Regular;20" halign="center" valign="center" backgroundColor="#1f771f" transparent="1"/>
 
-        <!-- pomoc -->
         <widget name="help" position="20,270" size="560,40" font="Regular;18"
                 halign="center" valign="center" foregroundColor="yellow"/>
     </screen>
