@@ -4,6 +4,7 @@ from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Components.Input import Input
 from Components.Label import Label
 from Components.ActionMap import ActionMap
+from enigma import eTimer, eActionMap # DODANE IMPORTY
 
 class VKInputBox(Screen):
     # Jeszcze większe okno (900x400)
@@ -22,8 +23,7 @@ class VKInputBox(Screen):
         self.input = Input(text)
         self["text"]  = Label(title)
         self["input"] = self.input
-        # Działający tekst pomocy
-        self["help"]  = Label("Naciśnij OK, aby otworzyć pełną klawiaturę i edytować dane.") 
+        self["help"]  = Label("Automatyczne otwieranie klawiatury...") 
         
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
             "ok":     self.openVKB,
@@ -31,6 +31,17 @@ class VKInputBox(Screen):
             "green":  self.ok,
             "red":    self.cancel,
         }, -1)
+
+        # KRYTYCZNE: Użycie eTimer do symulacji naciśnięcia OK
+        self.timer = eTimer()
+        self.timer.callback.append(self.simulateOk)
+        
+        # Uruchom symulację po załadowaniu
+        self.onLayoutFinish.append(lambda: self.timer.start(100, True)) 
+
+    def simulateOk(self):
+        # Symulacja naciśnięcia klawisza OK w domyślnej ActionMap
+        eActionMap.getInstance().action('OkCancelActions', 'ok')
 
     def openVKB(self):
         self.session.openWithCallback(self.vkbDone, VirtualKeyBoard,
