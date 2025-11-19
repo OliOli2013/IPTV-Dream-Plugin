@@ -42,32 +42,38 @@ def do_update():
             f.write(r.content)
         shutil.unpack_archive(zip_path, tmp)
         
-        # POPRAWKA KLUCZOWA: Bierzemy główny folder rozpakowanego repozytorium
+        # Bierzemy główny folder rozpakowanego repozytorium
         main_folder_name = "IPTV-Dream-Plugin-main"
         src = os.path.join(tmp, main_folder_name)
-        
-        # Ścieżka docelowa to PLUGIN_DIR. 
-        # Musimy przenieść zawartość SRC do PLUGIN_DIR.
         
         # Weryfikacja: Jeśli nie ma głównego folderu repo, coś jest źle
         if not os.path.isdir(src):
             raise Exception("bad archive structure: main folder missing")
 
         # Nowa, bardziej tolerancyjna logika przenoszenia:
-        # 1. Usuń poprzedni backup
+        
+        # 1. NAZWA KATALOGU BACKUPU: Używamy kropki, aby ukryć go przed skanerem Enigmy2
         bak = PLUGIN_DIR + ".bak"
+        hidden_bak = PLUGIN_DIR + ".bak_hidden" # Używamy tymczasowej nazwy
+
         if os.path.exists(bak):
             shutil.rmtree(bak)
-            
+
         # 2. Tworzymy nowy folder IPTVDream tymczasowo obok
         temp_dest = os.path.join(tmp, "IPTVDream_new")
         shutil.copytree(src, temp_dest)
 
-        # 3. Przenosimy stary PLUGIN_DIR do backupu
-        shutil.move(PLUGIN_DIR, bak)
+        # 3. Przenosimy stary PLUGIN_DIR do UKRYTEGO backupu
+        if os.path.exists(PLUGIN_DIR):
+             shutil.move(PLUGIN_DIR, hidden_bak)
         
         # 4. Przenosimy nową zawartość do PLUGIN_DIR
         shutil.move(temp_dest, PLUGIN_DIR)
+
+        # 5. Bezpieczne usunięcie starego backupu
+        if os.path.exists(hidden_bak):
+             shutil.rmtree(hidden_bak)
+
 
         # przywróć uprawnienia
         os.chmod(PLUGIN_DIR, 0o755)
@@ -85,10 +91,9 @@ def do_update():
         return True
         
     except Exception as e:
-        # W przypadku błędu przenoszenia, spróbuj przywrócić starą wersję z backupu (choć to trudne)
-        if os.path.exists(bak) and not os.path.exists(PLUGIN_DIR):
-            print("Przywracam backup...")
-            shutil.move(bak, PLUGIN_DIR)
+        if os.path.exists(hidden_bak) and not os.path.exists(PLUGIN_DIR):
+             print("Przywracam backup...")
+             shutil.move(hidden_bak, PLUGIN_DIR)
         raise e
         
     finally:
