@@ -4,6 +4,7 @@ from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Components.Input import Input
 from Components.Label import Label
 from Components.ActionMap import ActionMap
+from twisted.internet import reactor # Dodanie importu reactora
 
 class VKInputBox(Screen):
     # Jeszcze większe okno (900x400)
@@ -31,8 +32,8 @@ class VKInputBox(Screen):
             "red":    self.cancel,
         }, -1)
         
-        # DODATKOWY KROK: Otwarcie klawiatury automatycznie przy starcie
-        self.onLayoutFinish.append(self.openVKB) 
+        # POPRAWKA: Używamy reactora do opóźnienia, co pozwala VKInputBox stać się modalnym
+        self.onLayoutFinish.append(lambda: reactor.callLater(0.1, self.openVKB)) 
 
     def openVKB(self):
         self.session.openWithCallback(self.vkbDone, VirtualKeyBoard,
