@@ -46,9 +46,13 @@ class M3UFilePick(Screen):
             self["filelist"].descent()
             self["path"].setText(self["filelist"].getCurrentDirectory() or "")
         else:
-            file = self["filelist"].getFilename()
-            if file:
-                self.close(file)
+            # ZMIANA: Pobieramy nazwę i katalog osobno, a potem je łączymy
+            filename = self["filelist"].getFilename()
+            directory = self["filelist"].getCurrentDirectory()
+            
+            if filename and directory:
+                full_path = os.path.join(directory, filename)
+                self.close(full_path)
 
     def cancel(self):
         self.close(None)
