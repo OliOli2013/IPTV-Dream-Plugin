@@ -5,8 +5,9 @@ from Components.Sources.StaticText import StaticText
 from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.Input import Input
-from .vkb_input import VKInputBox
-from enigma import ePoint  # ← brakujący import
+# ZMIANA: Pełna ścieżka importu zamiast relatywnej
+from Plugins.Extensions.IPTVDream.vkb_input import VKInputBox
+from enigma import ePoint
 
 # współrzędne ramki dla każdego pola
 POS = [(225, 15),   # host
