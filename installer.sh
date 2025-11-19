@@ -3,7 +3,7 @@
 # Skrypt instalacyjny dla wtyczki IPTV Dream
 # Pobiera najnowsze pliki wtyczki bezpośrednio z repozytorium GitHub.
 #
-# Wersja skryptu: 2.4 (Finalna - uwzględnia duplikację vkb_input.py)
+# Wersja skryptu: 2.5 (Fix uprawnień)
 #
 
 # --- Konfiguracja ---
@@ -20,7 +20,7 @@ icon.png
 plugin.png
 plugin.py
 vkb_input.py
-" # <-- vkb_input.py jest tutaj
+" 
 
 # Lista plików w podkatalogu /tools
 FILES_TOOLS="
@@ -30,7 +30,7 @@ lang.py
 mac_portal.py
 updater.py
 xtream_one_window.py
-" # <-- Tutaj go nie ma, bo zostanie skopiowany osobno
+" 
 
 # --- Logika skryptu ---
 echo "=================================================="
@@ -80,6 +80,14 @@ else
     echo "OSTRZEŻENIE: Nie znaleziono vkb_input.py do skopiowania, pobieram ponownie..."
     download_file "$BASE_URL/vkb_input.py" "$PLUGIN_PATH/tools/vkb_input.py"
 fi
+
+# =========================================================================
+# === KRYTYCZNA POPRAWKA: USTAWIENIE UPRAWNIEŃ WYKONYWANIA DLA PLIKÓW PY ===
+# =========================================================================
+echo ">>> Ustawianie uprawnień wykonywania (chmod 755) dla plików Python..."
+chmod 755 "$PLUGIN_PATH"/*.py
+chmod 755 "$PLUGIN_PATH"/tools/*.py
+# =========================================================================
 
 
 echo "=================================================="
