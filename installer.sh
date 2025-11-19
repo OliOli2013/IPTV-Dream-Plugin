@@ -3,7 +3,7 @@
 # Skrypt instalacyjny dla wtyczki IPTV Dream
 # Pobiera najnowsze pliki wtyczki bezpośrednio z repozytorium GitHub.
 #
-# Wersja skryptu: 2.5 (Fix uprawnień)
+# Wersja skryptu: 3.0 (Clean Install)
 #
 
 # --- Konfiguracja ---
@@ -23,6 +23,7 @@ vkb_input.py
 " 
 
 # Lista plików w podkatalogu /tools
+# UWAGA: vkb_input.py usunięte z tej listy, bo jest już w root
 FILES_TOOLS="
 bouquet_picker.py
 epg_picon.py
@@ -72,20 +73,15 @@ for file in $FILES_TOOLS; do
     download_file "$BASE_URL/tools/$file" "$PLUGIN_PATH/tools/$file"
 done
 
-# --- KLUCZOWY KROK: DUPLIKACJA PLIKU ---
-echo ">>> Zapewnienie kompatybilności przez duplikację vkb_input.py..."
-if [ -f "$PLUGIN_PATH/vkb_input.py" ]; then
-    cp "$PLUGIN_PATH/vkb_input.py" "$PLUGIN_PATH/tools/vkb_input.py"
-else
-    echo "OSTRZEŻENIE: Nie znaleziono vkb_input.py do skopiowania, pobieram ponownie..."
-    download_file "$BASE_URL/vkb_input.py" "$PLUGIN_PATH/tools/vkb_input.py"
-fi
+# --- FIX DLA PYTHON PACKAGE ---
+# Tworzymy __init__.py w tools, jeśli go nie ma (naprawia importy)
+echo ">>> Tworzenie brakującego __init__.py w tools..."
+touch "$PLUGIN_PATH/tools/__init__.py"
 
-# === KRYTYCZNA POPRAWKA: USTAWIENIE UPRAWNIEŃ WYKONYWANIA DLA PLIKÓW PY ===
-echo ">>> Ustawianie uprawnień wykonywania (chmod 755) dla plików Python..."
+# === USTAWIENIE UPRAWNIEŃ ===
+echo ">>> Ustawianie uprawnień wykonywania (chmod 755)..."
 chmod 755 "$PLUGIN_PATH"/*.py
 chmod 755 "$PLUGIN_PATH"/tools/*.py
-
 
 echo "=================================================="
 echo "✅ Instalacja zakończona pomyślnie!"
