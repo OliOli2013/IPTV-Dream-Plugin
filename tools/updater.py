@@ -42,18 +42,17 @@ def do_update():
             f.write(r.content)
         shutil.unpack_archive(zip_path, tmp)
         
-        # POPRAWKA: Zmieniona oczekiwana ścieżka do plików
-        # Zakładamy, że katalog 'IPTVDream' jest bezpośrednio w głównym folderze ZIP
+        # POPRAWKA KLUCZOWA: Sprawdzamy, czy pliki są w katalogu głównym repozytorium (Twoja struktura)
         src = os.path.join(tmp, "IPTV-Dream-Plugin-main", "IPTVDream")
         
+        # Jeśli nowa ścieżka nie istnieje, sprawdzamy starą (oryginalną)
         if not os.path.isdir(src):
-            # Jeśli nie znaleziono w nowej ścieżce, spróbujmy starej,
-            # by zachować wsteczną kompatybilność na wszelki wypadek
             src = os.path.join(tmp, "IPTV-Dream-Plugin-main", "enigma2-plugin", "Extensions", "IPTVDream")
             if not os.path.isdir(src):
+                # Jeśli żadna z dróg nie działa, zgłaszamy błąd
                 raise Exception("bad archive structure")
 
-        # backup & replace
+        # backup & replace (Metoda bezpiecznego przenoszenia)
         bak = PLUGIN_DIR + ".bak"
         if os.path.exists(bak):
             shutil.rmtree(bak)
