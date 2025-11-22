@@ -2,8 +2,8 @@
 import os, requests, json, tempfile, shutil
 
 REPO_ZIP      = "https://github.com/OliOli2013/IPTV-Dream-Plugin/archive/refs/heads/main.zip"
-# Poprawiona ścieżka do CHANGELOG (jest w tools/, a nie w root)
-CHANGELOG_URL = "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/tools/CHANGELOG.txt"
+# POPRAWIONA ŚCIEŻKA DO CHANGELOG (Główny katalog)
+CHANGELOG_URL = "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/CHANGELOG.txt"
 VERSION_URL   = "https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/VERSION"
 PLUGIN_DIR    = "/usr/lib/enigma2/python/Plugins/Extensions/IPTVDream"
 
@@ -16,7 +16,7 @@ def _get_local_version():
 
 def _get_remote_info():
     try:
-        # Pobieramy wersję z pliku VERSION na GitHub (np. "3.2")
+        # Pobieramy wersję z pliku VERSION
         r_ver = requests.get(VERSION_URL, timeout=5)
         r_ver.raise_for_status()
         remote_ver = r_ver.text.strip()
@@ -40,7 +40,6 @@ def check_update():
     if not remote:
         return False, local, "Błąd sieci", None
     
-    # Porównujemy wersje (np. "3.2" != "3.1")
     if remote != local:
         return True, local, remote, changelog
         
@@ -58,33 +57,31 @@ def do_update():
             f.write(r.content)
         shutil.unpack_archive(zip_path, tmp)
         
-        # --- NOWA LOGIKA ŚCIEŻEK ---
-        # Struktura ZIP: IPTV-Dream-Plugin-main/ (zawiera pliki wtyczki luzem)
+        # Struktura ZIP z GitHuba: IPTV-Dream-Plugin-main/ (pliki luzem)
         extracted_folder = os.path.join(tmp, "IPTV-Dream-Plugin-main")
         
-        # Sprawdzamy, czy to na pewno ten folder
-        if not os.path.isdir(extracted_folder):
-            raise Exception("Nieprawidłowa struktura ZIP (brak folderu głównego)")
-            
-        # Sprawdzamy czy są kluczowe pliki, żeby potwierdzić że to wtyczka
+        # Weryfikacja, czy to na pewno pliki wtyczki
         if not os.path.exists(os.path.join(extracted_folder, "plugin.py")):
-             # Może jednak jest w podkatalogu IPTVDream? (dla kompatybilności)
+             # Jeśli nie ma plugin.py w głównym, szukamy w podfolderze (dla bezpieczeństwa)
              sub_folder = os.path.join(extracted_folder, "IPTVDream")
              if os.path.isdir(sub_folder) and os.path.exists(os.path.join(sub_folder, "plugin.py")):
                  extracted_folder = sub_folder
              else:
-                 raise Exception("Nie znaleziono plików wtyczki (plugin.py) w archiwum.")
+                 raise Exception("Błąd struktury ZIP: Nie znaleziono plugin.py w głównym katalogu.")
 
-        # Instalacja
+        # Instalacja (Bezpieczne przenoszenie)
         if os.path.exists(SAFE_BAK_DIR): shutil.rmtree(SAFE_BAK_DIR)
+        
+        # Przenosimy obecną wersję do ukrytego backupu
         if os.path.exists(PLUGIN_DIR): shutil.move(PLUGIN_DIR, SAFE_BAK_DIR)
         
-        # Przenosimy ZAWARTOŚĆ extracted_folder do PLUGIN_DIR
-        # shutil.move przenosi katalog, więc musimy zmienić jego nazwę na docelową
+        # Przenosimy nową wersję na miejsce (zmieniając nazwę folderu na IPTVDream)
         shutil.move(extracted_folder, PLUGIN_DIR)
         
+        # Usuwamy backup
         if os.path.exists(SAFE_BAK_DIR): shutil.rmtree(SAFE_BAK_DIR)
 
+        # Nadajemy uprawnienia
         os.chmod(PLUGIN_DIR, 0o755)
         for r, d, f in os.walk(PLUGIN_DIR):
             for i in d: os.chmod(os.path.join(r, i), 0o755)
@@ -92,6 +89,7 @@ def do_update():
             
         return True
     except Exception as e:
+        # Przywracanie backupu w razie awarii
         if os.path.exists(SAFE_BAK_DIR) and not os.path.exists(PLUGIN_DIR):
              shutil.move(SAFE_BAK_DIR, PLUGIN_DIR)
         raise e
