@@ -2,19 +2,19 @@
 from Screens.Screen       import Screen
 from Screens.MessageBox   import MessageBox
 from Screens.ChoiceBox    import ChoiceBox
+from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Components.ActionMap import ActionMap
 from Components.Label     import Label
 from Components.Language  import language
 from .export              import export_bouquets
 from .vkb_input           import VKInputBox
 from .file_pick           import M3UFilePick
-# Pamiętaj o imporcie z odpowiednich ścieżek (teraz tools)
 from .tools.mac_portal    import (load_mac_json, save_mac_json, parse_mac_playlist)
 from .tools.updater       import check_update, do_update
 from .tools.lang          import _
 from .tools.xtream_one_window import XtreamOneWindow
 from .tools.bouquet_picker    import BouquetPicker
-from .tools.epg_picon         import fetch_epg_for_playlist, download_picon_url
+from .tools.epg_picon         import fetch_epg_for_playlist, download_picon_url, install_epg_sources
 import os, json, re, threading
 import requests
 from twisted.internet import reactor
@@ -25,7 +25,7 @@ from enigma import eDVBDB
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-PLUGIN_VERSION = "3.1"  
+PLUGIN_VERSION = "3.2"  
 
 def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
     def thread_target():
@@ -123,16 +123,11 @@ class IPTVDreamMain(Screen):
         self.playlist  = []
         self.listname  = "IPTV-Dream"
         self.lang      = language.getLanguage()[:2] or "pl"
-        
-        # Ładowanie profilu
         self.prof = load_profiles()
         if self.prof.get("lang") in ("pl", "en"): self.lang = self.prof.get("lang")
         
-        # Ustawienie tytułu i wersji
         self.setTitle(f"IPTV Dream v{PLUGIN_VERSION}")
         self["version_label"] = Label(f"IPTV Dream v{PLUGIN_VERSION}")
-        
-        # Stopka
         today_date = date.today().strftime("%Y-%m-%d")
         self["foot"]   = Label(f"Twórca: Paweł Pawełek, {today_date} | msisystem@t.pl")
         
@@ -140,27 +135,20 @@ class IPTVDreamMain(Screen):
         self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
             "1": self.openUrl, "2": self.openFile, "3": self.openXtream,
             "4": self.openMac, "5": self.openMyLinks, "6": self.toggleLang,
-            "red": self.close, "green": self.checkUpdates, "yellow": self.toggleAutoUpdate,
+            "red": self.close, "green": self.checkUpdates, 
+            "yellow": self.forceInstallEPG,
             "blue": self.exportBouquet, "cancel": self.close
         }, -1)
-        
-        # === AUTO AKTUALIZACJA PRZY STARCIE ===
         self.onLayoutFinish.append(self.startAutoCheck)
 
     def startAutoCheck(self):
         if self.prof.get("auto_update", False):
-            # Uruchamiamy w trybie cichym (silent=True)
             self.checkUpdates(silent=True)
 
     def updateLangStrings(self):
         self["key_red"]    = Label(_("exit", self.lang))
         self["key_green"]  = Label(_("check_upd", self.lang))
-        
-        # Dynamiczny opis przycisku żółtego
-        is_auto = self.prof.get("auto_update", False)
-        state_txt = "ON" if is_auto else "OFF"
-        self["key_yellow"] = Label(f"Auto-update: {state_txt}")
-        
+        self["key_yellow"] = Label("Instaluj źródła EPG")
         self["key_blue"]   = Label(_("export", self.lang))
         self["lab1"] = Label(_("load_url", self.lang))
         self["lab2"] = Label(_("pick_file", self.lang))
@@ -171,10 +159,16 @@ class IPTVDreamMain(Screen):
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
 
-    # 1) URL
+    def forceInstallEPG(self):
+        success, msg = install_epg_sources()
+        if success:
+            self.session.open(MessageBox, f"{msg}\n\nTeraz wejdź w EPG Import -> Źródła i zaznacz 'IPTV Dream EPG (MEGA)'.", MessageBox.TYPE_INFO)
+        else:
+            self.session.open(MessageBox, f"Błąd: {msg}", MessageBox.TYPE_ERROR)
+
     def openUrl(self):
         last_url = self.prof.get("last_url", "http://")
-        self.session.openWithCallback(self.onUrlReady, VKInputBox, title=_("Wklej link M3U:", self.lang), text=last_url)
+        self.session.openWithCallback(self.onUrlReady, VirtualKeyBoard, title=_("Wklej link M3U:", self.lang), text=last_url)
 
     def onUrlReady(self, url):
         if not url or not url.startswith(('http://', 'https://')): return
@@ -197,7 +191,6 @@ class IPTVDreamMain(Screen):
         save_profiles(self.prof)
         self.onListLoaded(playlist, "M3U-URL")
 
-    # 2) PLIK
     def openFile(self):
         self.session.openWithCallback(self.onFileReady, M3UFilePick, start_dir="/tmp/")
 
@@ -211,7 +204,6 @@ class IPTVDreamMain(Screen):
         except Exception as e:
             self.session.open(MessageBox, f"File error: {e}", MessageBox.TYPE_ERROR)
 
-    # 3) XTREAM
     def openXtream(self):
         self.session.openWithCallback(self.onXtreamOne, XtreamOneWindow)
 
@@ -234,11 +226,10 @@ class IPTVDreamMain(Screen):
             return
         self.onListLoaded(parse_m3u_bytes_improved(data), f"Xtream-{user}")
 
-    # 4) MAC
     def openMac(self):
         data = load_mac_json()
         txt  = json.dumps(data, indent=2)
-        self.session.openWithCallback(self.onMacJson, VKInputBox, title="JSON", text=txt)
+        self.session.openWithCallback(self.onMacJson, VirtualKeyBoard, title="JSON", text=txt)
     
     def onMacJson(self, txt):
         if not txt: return
@@ -264,7 +255,6 @@ class IPTVDreamMain(Screen):
             self["status"].setText("Błąd MAC")
             self.session.open(MessageBox, str(error), MessageBox.TYPE_ERROR)
             return
-
         try:
             save_mac_json(self.data)
             if not playlist:
@@ -274,10 +264,8 @@ class IPTVDreamMain(Screen):
                 return
         except Exception as e:
             print(f"[IPTVDream] Błąd: {e}")
-
         self.onListLoaded(playlist, "MAC-Portal")
 
-    # 5) MY LINKS
     def openMyLinks(self):
         if os.path.exists(MY_LINKS_FILE):
             with open(MY_LINKS_FILE) as f: links = json.load(f)
@@ -287,7 +275,6 @@ class IPTVDreamMain(Screen):
                 return
         self.session.open(MessageBox, "Brak zapisanych linków.", MessageBox.TYPE_INFO)
 
-    # 6) LANG
     def toggleLang(self):
         self.lang = "en" if self.lang == "pl" else "pl"
         self.prof["lang"] = self.lang
@@ -295,7 +282,6 @@ class IPTVDreamMain(Screen):
         self.updateLangStrings()
         self["status"].setText(f"Język: {self.lang.upper()}")
 
-    # --- LOGIKA LISTY ---
     def onListLoaded(self, playlist, name):
         if not playlist:
             self["status"].setText("")
@@ -303,20 +289,9 @@ class IPTVDreamMain(Screen):
         self.playlist = playlist
         self.listname = name
         self["status"].setText(f"Załadowano {len(playlist)} kanałów.")
-        
-        self.session.openWithCallback(
-            self.onPostProcessAnswer,
-            MessageBox,
-            f"Załadowano {len(playlist)} kanałów.\nCzy pobrać EPG i Picony?",
-            MessageBox.TYPE_YESNO
-        )
-
-    def onPostProcessAnswer(self, answer):
-        if answer:
-            self["status"].setText("Pobieranie dodatków w tle...")
-            run_in_thread(self._bg_worker, self.onPostProcessDone, self.playlist)
-        else:
-            self.onPostProcessDone(self.playlist, None)
+        install_epg_sources() 
+        self["status"].setText("Generowanie danych EPG w tle...")
+        run_in_thread(self._bg_worker, self.onPostProcessDone, self.playlist)
 
     def _bg_worker(self, pl):
         from .export import create_epg_xml
@@ -333,7 +308,6 @@ class IPTVDreamMain(Screen):
             ref_iptv = f"4097:0:1:{sid_hex}:0:0:0:0:0:0"
             epg_mapping.append((ref_dvb, title))
             epg_mapping.append((ref_iptv, title))
-
         create_epg_xml(epg_mapping)
         fetch_epg_for_playlist(pl)
         return pl
@@ -342,7 +316,6 @@ class IPTVDreamMain(Screen):
         self["status"].setText("Gotowe. Otwieram wybór bukietów...")
         self.exportBouquet()
 
-    # EXPORT
     def exportBouquet(self):
         if not self.playlist: return
         groups = {}
@@ -363,28 +336,20 @@ class IPTVDreamMain(Screen):
              eDVBDB.getInstance().reloadBouquets()
              eDVBDB.getInstance().reloadServicelist()
         except Exception: pass
+        
         self.session.openWithCallback(
             self.onExportFinished,
             MessageBox,
-            f"Wyeksportowano {chans} kanałów w {res} bukietach.\nRestart GUI?",
-            MessageBox.TYPE_YESNO,
-            default=1
+            f"Wyeksportowano {chans} kanałów w {res} bukietach.\nZmiany będą widoczne po restarcie GUI.",
+            MessageBox.TYPE_INFO
         )
 
-    def onExportFinished(self, answer):
-        if answer == True: quitMainloop(3)
-        else: self.close()
+    def onExportFinished(self, answer=None):
+        self.close()
 
-    # UPDATER (ZMODYFIKOWANY DLA AUTO-UPDATE)
     def checkUpdates(self, silent=False):
-        """
-        silent=True -> nie pokazuj komunikatu 'brak aktualizacji', 
-        ale pokaż pytanie 'czy aktualizować' jeśli znajdzie nową wersję.
-        """
         if not silent:
             self["status"].setText("Szukam aktualizacji...")
-        
-        # Używamy lambdy, żeby przekazać parametr silent do callbacka
         run_in_thread(check_update, lambda res, err: self.onUpdateCheck(res, err, silent))
 
     def onUpdateCheck(self, result, error, silent):
@@ -393,10 +358,8 @@ class IPTVDreamMain(Screen):
                 self["status"].setText("Błąd sprawdzania wersji.")
                 self.session.open(MessageBox, "Nie udało się sprawdzić wersji.", MessageBox.TYPE_ERROR)
             return
-
         has_new, loc, rem = result
         if has_new:
-            # Zawsze pytamy, nawet w trybie silent
             self.session.openWithCallback(self.doUpdateConfirm, MessageBox, 
                                           f"Dostępna nowa wersja: {rem}\nObecna: {loc}\n\nCzy zaktualizować?", 
                                           MessageBox.TYPE_YESNO)
@@ -416,16 +379,12 @@ class IPTVDreamMain(Screen):
                                           "Aktualizacja zakończona sukcesem!\nWymagany restart GUI. Restartować?", 
                                           MessageBox.TYPE_YESNO)
 
-    # NOWA LOGIKA AUTO-UPDATE
     def toggleAutoUpdate(self):
         current_state = self.prof.get("auto_update", False)
         new_state = not current_state
         self.prof["auto_update"] = new_state
         save_profiles(self.prof)
-        
-        # Aktualizacja UI
         self.updateLangStrings()
-        
         msg = "WŁĄCZONA" if new_state else "WYŁĄCZONA"
         self.session.open(MessageBox, f"Automatyczna aktualizacja została {msg}.\nBędzie sprawdzana przy każdym uruchomieniu wtyczki.", MessageBox.TYPE_INFO)
 
