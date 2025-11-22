@@ -1,0 +1,6 @@
+Wersja 3.2:
+- Naprawiono czarny ekran na kanałach MAC (User-Agent Fix)
+- Dodano Mega Pack źródeł EPG (PL, UK, US, DE, Afryka)
+- Ulepszono dopasowywanie EPG (Shotgun mode)
+- Usunięto zbędne okna dialogowe (Szybka klawiatura)
+- Poprawki stabilności dla OpenATV
