@@ -229,6 +229,7 @@ class IPTVDreamMain(Screen):
     def openMac(self):
         data = load_mac_json()
         txt  = json.dumps(data, indent=2)
+        # Otwiera BEZPOŚREDNIO KLAWIATURĘ (Bez okna pośredniego)
         self.session.openWithCallback(self.onMacJson, VirtualKeyBoard, title="JSON", text=txt)
     
     def onMacJson(self, txt):
@@ -282,6 +283,7 @@ class IPTVDreamMain(Screen):
         self.updateLangStrings()
         self["status"].setText(f"Język: {self.lang.upper()}")
 
+    # --- LOGIKA LISTY ---
     def onListLoaded(self, playlist, name):
         if not playlist:
             self["status"].setText("")
@@ -289,7 +291,11 @@ class IPTVDreamMain(Screen):
         self.playlist = playlist
         self.listname = name
         self["status"].setText(f"Załadowano {len(playlist)} kanałów.")
+        
+        # AUTOMATYZACJA: Instalujemy źródła EPG w tle
         install_epg_sources() 
+        
+        # AUTOMATYZACJA: Zamiast pytać, od razu uruchamiamy przetwarzanie w tle
         self["status"].setText("Generowanie danych EPG w tle...")
         run_in_thread(self._bg_worker, self.onPostProcessDone, self.playlist)
 
@@ -358,15 +364,21 @@ class IPTVDreamMain(Screen):
                 self["status"].setText("Błąd sprawdzania wersji.")
                 self.session.open(MessageBox, "Nie udało się sprawdzić wersji.", MessageBox.TYPE_ERROR)
             return
-        has_new, loc, rem = result
+
+        has_new, local_ver, remote_ver, changelog = result
+
         if has_new:
-            self.session.openWithCallback(self.doUpdateConfirm, MessageBox, 
-                                          f"Dostępna nowa wersja: {rem}\nObecna: {loc}\n\nCzy zaktualizować?", 
-                                          MessageBox.TYPE_YESNO)
+            msg = f"Dostępna nowa wersja: v{remote_ver}\n"
+            msg += f"Obecna wersja: v{local_ver}\n\n"
+            msg += "ZMIANY:\n"
+            msg += f"{changelog}\n\n"
+            msg += "Czy chcesz zaktualizować teraz?"
+            
+            self.session.openWithCallback(self.doUpdateConfirm, MessageBox, msg, MessageBox.TYPE_YESNO)
         else:
             if not silent:
-                self["status"].setText("Wersja aktualna.")
-                self.session.open(MessageBox, "Masz najnowszą wersję wtyczki.", MessageBox.TYPE_INFO)
+                self["status"].setText(f"Wersja v{local_ver} jest aktualna.")
+                self.session.open(MessageBox, f"Masz najnowszą wersję (v{local_ver}).", MessageBox.TYPE_INFO)
 
     def doUpdateConfirm(self, ans):
         if ans: run_in_thread(do_update, self.onUpdateDone)
