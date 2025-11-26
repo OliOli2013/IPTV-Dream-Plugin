@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 import json, os, requests, re, random, string
+from .lang import _ # DODANO
+from Components.Language import language # DODANO
 
 MAC_FILE = "/etc/enigma2/iptvdream_mac.json"
 COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
+# ... (load_mac_json, save_mac_json, get_random_sn - bez zmian) ...
 def load_mac_json():
     try:
         with open(MAC_FILE, "r", encoding="utf-8") as f:
@@ -22,13 +25,14 @@ def get_random_sn():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=13))
 
 def translate_error(e, url=""):
+    lang = language.getLanguage()[:2] or "pl"
     err_str = str(e)
-    if "404" in err_str: return "Nie znaleziono portalu (Błąd 404).\nSprawdź czy adres URL jest poprawny."
-    if "401" in err_str or "403" in err_str: return "Odmowa dostępu (Błąd 401/403).\nTwój MAC może być zablokowany lub wygasł."
-    if "500" in err_str or "502" in err_str or "513" in err_str: return f"Błąd serwera dostawcy (Kod {err_str[0:3]}).\nSpróbuj później."
-    # Zmieniono 'ConnectTimeout' na ogólne, by wyłapać zamrożenia
-    if "timeout" in err_str.lower() or "connection" in err_str.lower(): return "Serwer nie odpowiada (Timeout/Brak połączenia).\nSpróbuj ponownie za chwilę."
-    return f"Błąd połączenia:\n{err_str[:100]}..."
+    # Zmieniono stałe ciągi na klucze tłumaczeń
+    if "404" in err_str: return _("err_404", lang)
+    if "401" in err_str or "403" in err_str: return _("err_401", lang)
+    if "500" in err_str or "502" in err_str or "513" in err_str: return f"{_('err_server', lang)} (Kod {err_str[0:3]}).\n{_('try_later', lang)}"
+    if "timeout" in err_str.lower() or "connection" in err_str.lower(): return _("err_timeout", lang)
+    return f"{_('err_generic', lang)}:\n{err_str[:100]}..."
 
 def clean_name(name):
     if not name: return "No Name"
@@ -41,13 +45,13 @@ def clean_name(name):
     return name.strip()
 
 def parse_mac_playlist(host, mac):
+    # ... (Stalker logic - bez zmian) ...
     host = host.strip().rstrip('/')
 
     # 1. Próba Xtream (szybka)
     host_xc = host[:-2] if host.endswith('/c') else host
     url_xc = f"{host_xc}/get.php?username={mac}&password={mac}&type=m3u_plus&output=ts"
     try:
-        # Skrócony timeout dla szybkiej próby
         r = requests.get(url_xc, timeout=8, headers={'User-Agent': COMMON_UA}, verify=False)
         if r.status_code == 200 and "#EXTINF" in r.text:
             return parse_m3u_text(r.text)
@@ -72,7 +76,6 @@ def parse_mac_playlist(host, mac):
         sn = get_random_sn()
         token_url = f"{host_stalker}/server/load.php?type=stb&action=handshake&token=&mac={mac}&stb_type=MAG250&ver=ImageDescription: 0.2.18-r14-250; ImageDate: Fri Jan 15 15:20:44 EET 2016; PORTAL version: 5.1.0; API Version: JS API version: 328; STB API version: 134;&sn={sn}"
         
-        # Agresywny timeout
         r = s.get(token_url, timeout=10)
         r.raise_for_status()
         js = r.json()
@@ -94,7 +97,6 @@ def parse_mac_playlist(host, mac):
 
         # Pobieranie Kanałów
         s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=8)
-        # Finalny timeout na listę
         r = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}", timeout=15)
         data = r.json()
         if "js" not in data or "data" not in data["js"]:
@@ -140,9 +142,11 @@ def parse_m3u_text(content):
             group = grp_m.group(1) if grp_m else "Inne"
             current_info = {"title": clean_name(title), "logo": logo, "group": clean_name(group)}
         elif line.startswith('http') and current_info:
+            # FIX: Dodajemy URL do current_info i używamy go poniżej
+            current_info["url"] = line.strip() # Działająca linia jest URL
             channels.append({
                 "title": current_info["title"],
-                "url": current_info["url"],
+                "url": current_info["url"], # Używamy dodanego URL
                 "group": current_info["group"],
                 "logo": current_info["logo"],
                 "epg": ""
@@ -151,11 +155,5 @@ def parse_m3u_text(content):
     return channels
 
 def download_picon_url(url, title):
-    if not url: return ""
-    safe = re.sub(r'[^\w]', '_', title).strip().lower() + ".png"
-    path = f"/usr/share/enigma2/picon/{safe}"
-    if os.path.exists(path): return path
-    try:
-        requests.get(url, timeout=5, verify=False)
-        return ""
-    except: return ""
+    # Właściwa implementacja znajduje się w epg_picon.py - ta jest pusta
+    return ""

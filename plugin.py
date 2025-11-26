@@ -7,6 +7,6 @@ def main(session, **kwargs):
 
 def Plugins(**kwargs):
     return [
-        PluginDescriptor(name="IPTV Dream", description="Wczytaj M3U i eksportuj do bukietów", where=PluginDescriptor.WHERE_PLUGINMENU, icon="plugin.png", fnc=main),
-        PluginDescriptor(name="IPTV Dream", description="Wczytaj M3U i eksportuj do bukietów", where=PluginDescriptor.WHERE_EXTENSIONSMENU, fnc=main),
+        PluginDescriptor(name="IPTV Dream", description="Wczytaj M3U i eksportuj do bukietów (v3.3)", where=PluginDescriptor.WHERE_PLUGINMENU, icon="plugin.png", fnc=main),
+        PluginDescriptor(name="IPTV Dream", description="Wczytaj M3U i eksportuj do bukietów (v3.3)", where=PluginDescriptor.WHERE_EXTENSIONSMENU, fnc=main),
     ]

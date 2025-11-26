@@ -4,6 +4,8 @@ from Components.FileList import FileList
 from Components.Label import Label
 from Components.ActionMap import ActionMap
 import os
+from .tools.lang import _ # DODANO
+from Components.Language import language # DODANO
 
 class M3UFilePick(Screen):
     skin = """
@@ -16,9 +18,11 @@ class M3UFilePick(Screen):
 
     def __init__(self, session, start_dir="/tmp/"):
         Screen.__init__(self, session)
-        self.setTitle("Wybierz plik M3U")
+        self.lang = language.getLanguage()[:2] or "pl" # DODANO
+        self.setTitle(_("pick_file", self.lang)) # ZMIENIONO
         self["path"]  = Label(start_dir)
-        self["help"]  = Label("▲/▼=nawigacja  OK=wybór/wejdź  EXIT=wstecz")
+        # Tłumaczenie pomocy
+        self["help"]  = Label(_("filelist_help", self.lang)) # ZMIENIONO: Wymaga "filelist_help" w lang.py
         self["filelist"] = FileList(start_dir, matchingPattern="(?i)^.*\\.(m3u|m3u8)$", useServiceRef=False)
         self["actions"] = ActionMap(["OkCancelActions", "DirectionActions"], {
             "ok":     self.ok,
@@ -46,7 +50,6 @@ class M3UFilePick(Screen):
             self["filelist"].descent()
             self["path"].setText(self["filelist"].getCurrentDirectory() or "")
         else:
-            # ZMIANA: Pobieramy nazwę i katalog osobno, a potem je łączymy
             filename = self["filelist"].getFilename()
             directory = self["filelist"].getCurrentDirectory()
             

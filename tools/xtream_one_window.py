@@ -5,9 +5,11 @@ from Components.Sources.StaticText import StaticText
 from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.Input import Input
-# ZMIANA: Pełna ścieżka importu zamiast relatywnej
-from Plugins.Extensions.IPTVDream.vkb_input import VKInputBox
 from enigma import ePoint
+# ZMIANA: Powrót do relatywnej ścieżki (VKInputBox jest w głównym katalogu)
+from ..vkb_input import VKInputBox 
+from ..tools.lang import _ # DODANO
+from Components.Language import language # DODANO
 
 # współrzędne ramki dla każdego pola
 POS = [(225, 15),   # host
@@ -45,9 +47,12 @@ class XtreamOneWindow(Screen):
     def __init__(self, session):
         Screen.__init__(self, session)
         self.session = session
-        self["key_red"]   = StaticText("Anuluj")
-        self["key_green"] = StaticText("Zapisz")
-        self["help"]      = Label("↑/↓ – zmiana pola, OK – klawiatura, Zielony – zapisz")
+        self.lang = language.getLanguage()[:2] or "pl" # DODANO
+        
+        self.setTitle(_("xtream_title", self.lang)) # ZMIENIONO
+        self["key_red"]   = StaticText(_("cancel", self.lang)) # ZMIENIONO
+        self["key_green"] = StaticText(_("save", self.lang)) # ZMIENIONO
+        self["help"]      = Label(_("xtream_help", self.lang)) # ZMIENIONO
 
         # 3 pola wejściowe
         self["host"] = Input("http://example.com:8080")
@@ -89,7 +94,7 @@ class XtreamOneWindow(Screen):
     def openVKB(self):
         field = self.fields[self.current]
         self.session.openWithCallback(self.onVkbDone, VKInputBox,
-                                      title=f"Wpisz {field}:",
+                                      title=f"{_('enter', self.lang)} {field}:", # ZMIENIONO
                                       text=self[field].getText())
 
     def onVkbDone(self, text):
@@ -102,7 +107,7 @@ class XtreamOneWindow(Screen):
         user = self["user"].getText().strip()
         pwd  = self["pass"].getText().strip()
         if not host or not user:
-            self.session.open(MessageBox, "Uzupełnij host i user!",
+            self.session.open(MessageBox, _("xtream_fill_host_user", self.lang), # ZMIENIONO
                               MessageBox.TYPE_ERROR, timeout=3)
             return
         self.close((host, user, pwd))
