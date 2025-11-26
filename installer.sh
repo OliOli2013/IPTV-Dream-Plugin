@@ -34,7 +34,7 @@ xtream_one_window.py
 
 # --- Logika skryptu ---
 echo "=================================================="
-echo "    Instalator wtyczki IPTV Dream v3.2"
+echo "    Instalator wtyczki IPTV Dream v3.3"
 echo "=================================================="
 
 if ! command -v wget >/dev/null 2>&1; then
