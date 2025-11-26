@@ -1,3 +1,23 @@
+v3.3 (2025-11-26)
+-----------------
+[PL]
+- DODANO: Obsługa własnego źródła EPG (URL) - klawisz 7 w menu głównym.
+- DODANO: Pełne tłumaczenie na język angielski (EN).
+- ZMIANA: Automatyczne wykrywanie języka systemu (Enigma2) przy starcie (PL lub EN).
+- ZMIANA: Nowy interfejs statusu - usunięto blokujące okna ("spinner"), dodano czytelne komunikaty w stopce.
+- POPRAWKA: Naprawiono błąd wyświetlania kanałów jako "n/a" (zaktualizowane referencje serwisowe 4097/5002).
+- POPRAWKA: Naprawiono błędy "crash" przy zamykaniu okien informacyjnych.
+- POPRAWKA: Poprawki stabilności dla parsera MAC Portal i Xtream.
+
+[EN]
+- ADDED: Custom EPG source (URL) support - key 7 in main menu.
+- ADDED: Full English translation.
+- CHANGE: Automatic system language detection (Enigma2) on startup.
+- CHANGE: New status UI - removed blocking spinner popups, added clear status messages in footer.
+- FIX: Fixed "n/a" channel display issue (updated service references 4097/5002).
+- FIX: Fixed crash issues when closing info windows.
+- FIX: Stability improvements for MAC Portal and Xtream parser.
+
 Wersja 3.2:
 - Naprawiono czarny ekran na kanałach MAC (User-Agent Fix)
 - Dodano Mega Pack źródeł EPG (PL, UK, US, DE, Afryka)
