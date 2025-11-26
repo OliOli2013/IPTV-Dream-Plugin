@@ -2,24 +2,39 @@
 
 <img src="https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plugin.png" alt="IPTV Dream Logo" width="150"/>
 
-# IPTV Dream v3.2 - Enigma2 Plugin
+# IPTV Dream Plugin v3.3 for Enigma2
 
-Profesjonalna wtyczka do odtwarzania list IPTV (M3U, Xtream, Stalker/MAC) na dekoderach Enigma2 (OpenATV, OpenPLi i inne).
+Zaawansowana wtyczka do obsługi list IPTV (M3U, Xtream, MAC Portal) z funkcją generowania bukietów i obsługą EPG.
+Advanced IPTV plugin (M3U, Xtream, MAC Portal) with bouquet generation and EPG support.
 
-## 🌟 Nowości w wersji 3.2
-* **Stabilizacja Strumieni:** Wymuszenie User-Agenta "MAG250" (naprawa czarnych ekranów na portalach Stalker).
-* **EPG Mega Pack:** Automatyczna instalacja źródeł EPG dla Polski, UK, USA, Niemiec i Afryki.
-* **EPG Shotgun:** Nowy algorytm dopasowywania nazw kanałów (automatycznie naprawia brak EPG na kanałach zagranicznych).
-* **Szybka Klawiatura:** Usunięto zbędne okna dialogowe – edycja danych jest natychmiastowa.
-* **Fix OpenATV:** Poprawka widoczności kanałów na liście (ikony IPTV).
+## 🚀 Funkcje / Features (v3.3)
 
-## 🚀 Instalacja (Telnet/SSH)
+* **Obsługa źródeł / Source support:**
+    * M3U URL & M3U File
+    * Xtream Codes API
+    * MAC Portal (Stalker/Mag)
+    * Własne linki (Custom links)
+* **EPG:**
+    * Automatyczne przypisywanie EPG (Auto-assign).
+    * Obsługa polskich, angielskich i światowych źródeł (PL, UK, US, DE, etc.).
+    * **NEW:** Możliwość dodania własnego linku XMLTV (Custom XMLTV URL).
+* **Bukiety / Bouquets:**
+    * Eksport do bukietów Enigma2 (Userbouquets).
+    * Obsługa typów serwisowych 4097 (Gstreamer) i 5002 (ExtePlayer3).
+* **Język / Language:**
+    * Auto-wykrywanie języka (PL / EN).
+    * Pełne tłumaczenie (Full translation).
 
-Wklej poniższą komendę w terminalu tunera:
+## 📥 Instalacja / Installation
 
-```bash
-wget -q "--no-check-certificate" https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh -O - | /bin/sh
+1. Pobierz plik ZIP lub wersję instalacyjną.
+2. Wgraj folder `IPTVDream` do: `/usr/lib/enigma2/python/Plugins/Extensions/`
+3. Zrestartuj Enigmę (Restart GUI).
 
-Opis błędu lub log systemowy.
+## 🛠 Changelog v3.3
+- Usunięto błędy (Crash fixes).
+- Nowy system powiadomień (New notification system).
+- Poprawione wyświetlanie kanałów (Fixed n/a channels).
 
-Twórca: Paweł Pawełek Licencja: Freeware
+---
+**Author:** Paweł Pawełek (msisystem@t.pl) | **GitHub:** OliOli2013
