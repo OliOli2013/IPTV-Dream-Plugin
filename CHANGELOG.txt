@@ -1,3 +1,11 @@
+v4.0 (2025-12-01)
+- CAŁKOWICIE NOWY WYGLĄD: Nowoczesny, ciemny interfejs wtyczki.
+- NOWY UKŁAD: Przejrzysty podział na dwie kolumny.
+- WEB INTERFEJS: Dodano obsługę przez przeglądarkę (port 9999).
+- WEB INTERFEJS: Możliwość wysyłania linków M3U, danych Xtream i MAC Portal bezpośrednio z PC/Telefonu.
+- QR CODE: Dodano kod QR "Wesprzyj twórcę" w interfejsie.
+- POPRAWKI: Zoptymalizowano działanie i tłumaczenia (PL/EN).
+
 v3.3 (2025-11-26)
 -----------------
 [PL]
