@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 LANG = {
     "pl": {
-        "title": "IPTV Dream v3.3",
+        "title": "IPTV Dream v4.0",
         "load_url": "Wczytaj listę z URL",
         "pick_file": "Wskaż plik M3U",
         "xtream": "Xtream Codes",
@@ -36,7 +36,7 @@ LANG = {
         "press_1_6": "Naciśnij 1-7 aby wybrać źródło",
         "downloading": "Pobieranie listy... Proszę czekać.",
         "error": "Błąd",
-        "foot": "Twórca: Paweł Pawełek, {date} | msisystem@t.pl", # Usunięto wersję (dodaje ją dream.py)
+        "foot": "Twórca: Paweł Pawełek, {date} | msisystem@t.pl", 
         "epg_url_saved_info": "Adres URL EPG został zapisany. Naciśnij ŻÓŁTY, aby zainstalować źródła.",
         "epg_install_success_info": "Teraz wejdź w EPG Import -> Źródła i zaznacz 'IPTV Dream EPG (MEGA)'.",
         "download_error": "Błąd pobierania!",
@@ -71,10 +71,24 @@ LANG = {
         "try_later": "Spróbuj później.",
         "err_timeout": "Serwer nie odpowiada (Timeout/Brak połączenia).\nSpróbuj ponownie za chwilę.",
         "err_generic": "Błąd połączenia",
-        "press_ok_to_edit": "Naciśnij OK, aby edytować."
+        "press_ok_to_edit": "Naciśnij OK, aby edytować.",
+        "picker_sum": "Wybierz grupy do eksportu",
+        "picker_sum_text": "Wybrano: %d grup, %d kanałów",
+        "picker_help": "STRZAŁKI: Nawigacja | OK/ZIELONY: Zaznacz | NIEBIESKI: Eksportuj | LEWO/PRAWO: Zmień listę",
+        "webif_status": "Web Interfejs (port 9999)",
+        "webif_off": "Wyłączony. Wciśnij 8, aby włączyć.",
+        "webif_started": "Web Interfejs WŁĄCZONY.",
+        "webif_stopped": "Web Interfejs WYŁĄCZONY.",
+        "webif_submit": "Wyślij do dekodera",
+        "webif_warning": "Uwaga: Dekoder musi mieć otwartą wtyczkę IPTV Dream.",
+        "webif_received": "Otrzymano dane z WebIF",
+        "downloading_mac": "Autoryzacja MAC i pobieranie...",
+        
+        # ZMIENIONY TEKST WSPARCIA (Ten sam użyjemy w WebIF)
+        "support_text_long": "Podoba Ci się wtyczka? Wesprzyj twórcę i rozwój wtyczki.\nDziękuję!",
     },
     "en": {
-        "title": "IPTV Dream v3.3",
+        "title": "IPTV Dream v4.0",
         "load_url": "Load M3U from URL",
         "pick_file": "Pick M3U file",
         "xtream": "Xtream Codes",
@@ -109,7 +123,7 @@ LANG = {
         "press_1_6": "Press 1-7 to choose source",
         "downloading": "Downloading list... Please wait.",
         "error": "Error",
-        "foot": "Creator: Paweł Pawełek, {date} | msisystem@t.pl", # Usunięto wersję
+        "foot": "Creator: Paweł Pawełek, {date} | msisystem@t.pl",
         "epg_url_saved_info": "EPG URL saved. Press YELLOW to install sources.",
         "epg_install_success_info": "Now go to EPG Import -> Sources and select 'IPTV Dream EPG (MEGA)'.",
         "download_error": "Download error!",
@@ -144,7 +158,21 @@ LANG = {
         "try_later": "Try again later.",
         "err_timeout": "Server not responding (Timeout/No connection).\nTry again in a moment.",
         "err_generic": "Connection error",
-        "press_ok_to_edit": "Press OK to edit."
+        "press_ok_to_edit": "Press OK to edit.",
+        "picker_sum": "Select groups to export",
+        "picker_sum_text": "Selected: %d groups, %d channels",
+        "picker_help": "ARROWS: Navigate | OK/GREEN: Select | BLUE: Export | LEFT/RIGHT: Switch List",
+        "webif_status": "Web Interface (port 9999)",
+        "webif_off": "Off. Press 8 to turn on.",
+        "webif_started": "Web Interface ON.",
+        "webif_stopped": "Web Interface OFF.",
+        "webif_submit": "Send to Receiver",
+        "webif_warning": "Note: The IPTV Dream plugin must be open on the receiver.",
+        "webif_received": "Received data from WebIF",
+        "downloading_mac": "MAC Auth & Downloading...",
+        
+        # ZMIENIONY TEKST WSPARCIA EN
+        "support_text_long": "Do you like the plugin? Support the creator and development.\nThank you!",
     }
 }
 def _(key, lang="pl"):

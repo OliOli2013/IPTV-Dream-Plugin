@@ -15,6 +15,8 @@ from .tools.lang          import _
 from .tools.xtream_one_window import XtreamOneWindow
 from .tools.bouquet_picker    import BouquetPicker
 from .tools.epg_picon         import fetch_epg_for_playlist, download_picon_url, install_epg_sources, EPG_URL_KEY
+from .tools.webif         import start_web_server, stop_web_server
+
 import os, json, re, threading
 import requests
 from twisted.internet import reactor
@@ -25,7 +27,12 @@ from enigma import eDVBDB
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-PLUGIN_VERSION = "3.3" 
+PLUGIN_VERSION = "4.0" 
+WEB_IF_PORT = 9999
+
+# Ścieżka do ikon (folder pic w katalogu wtyczki)
+PLUGIN_PATH = os.path.dirname(os.path.abspath(__file__))
+PIC_PATH = os.path.join(PLUGIN_PATH, "pic")
 
 def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
     def thread_target():
@@ -86,51 +93,65 @@ def save_profiles(data):
     except: pass
 
 class IPTVDreamMain(Screen):
+    # ZMIANA UKŁADU: 2 KOLUMNY, MNIEJSZE CZCIONKI, STOPKA Z QR
     skin = """
-    <screen name="IPTVDreamMain" position="center,center" size="950,750" title="IPTV Dream">
-        <widget name="version_label" position="700,10" size="230,35" font="Regular;28" halign="right" valign="center" foregroundColor="yellow" backgroundColor="#1f771f" cornerRadius="8"/>
+    <screen name="IPTVDreamMain" position="center,center" size="1050,600" title="IPTV Dream">
         
-        <eLabel text="1" position="40,80"  size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
-        <eLabel text="M3U URL"  position="130,80"  size="220,70" font="Regular;28" halign="left" valign="center"/>
+        <widget name="version_label" position="0,10" size="1050,40" font="Regular;32" halign="center" valign="center" foregroundColor="#ffffff" backgroundColor="#1f771f" transparent="0" zPosition="1" />
+
+        <eLabel text="1" position="20,70" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="5"/>
+        <eLabel text="M3U URL" position="80,70" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab1" position="230,70" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
+
+        <eLabel text="2" position="20,130" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="5"/>
+        <eLabel text="M3U Plik" position="80,130" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab2" position="230,130" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
+
+        <eLabel text="3" position="20,190" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="5"/>
+        <eLabel text="Xtream" position="80,190" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab3" position="230,190" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
+
+        <eLabel text="4" position="20,250" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="5"/>
+        <eLabel text="MAC Portal" position="80,250" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab4" position="230,250" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
+
+
+        <eLabel text="5" position="540,70" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#555555" cornerRadius="5"/>
+        <eLabel text="Własne" position="600,70" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab5" position="750,70" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
+
+        <eLabel text="6" position="540,130" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#800080" cornerRadius="5"/>
+        <eLabel text="Język" position="600,130" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab6" position="750,130" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
+
+        <eLabel text="7" position="540,190" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#ff8000" cornerRadius="5"/>
+        <eLabel text="EPG URL" position="600,190" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab7" position="750,190" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
+
+        <eLabel text="8" position="540,250" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#0000ff" cornerRadius="5"/>
+        <widget name="lab8_status" position="600,250" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lab8_info" position="750,250" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#00ccff"/>
+
+
+        <eLabel position="20,330" size="1010,2" backgroundColor="#333333" />
+
+        <ePixmap pixmap="{pic_path}/qrcode.png" position="20,350" size="100,100" alphatest="blend" transparent="1" />
         
-        <eLabel text="2" position="40,160" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
-        <eLabel text="M3U plik" position="130,160" size="220,70" font="Regular;28" halign="left" valign="center"/>
+        <widget name="support_label" position="130,350" size="400,100" font="Regular;20" halign="left" valign="center" foregroundColor="#00ff00" transparent="1"/>
+
+        <widget name="status" position="540,350" size="490,40" font="Regular;22" halign="center" valign="center" foregroundColor="#00ff00"/>
         
-        <eLabel text="3" position="40,240" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
-        <eLabel text="Xtream" position="130,240" size="220,70" font="Regular;28" halign="left" valign="center"/>
-        
-        <eLabel text="4" position="40,320" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="12"/>
-        <eLabel text="MAC Portal" position="130,320" size="220,70" font="Regular;28" halign="left" valign="center"/>
-        
-        <eLabel text="5" position="40,400" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#555555" cornerRadius="12"/>
-        <eLabel text="Własne M3U" position="130,400" size="220,70" font="Regular;28" halign="left" valign="center"/>
-        
-        <eLabel text="6" position="40,480" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#800080" cornerRadius="12"/>
-        <eLabel text="PL / EN" position="130,480" size="220,70" font="Regular;28" halign="left" valign="center"/>
-        
-        <eLabel text="7" position="40,560" size="70,70" font="Regular;55" halign="center" valign="center" foregroundColor="white" backgroundColor="#ff8000" cornerRadius="12"/>
-        <eLabel text="EPG URL" position="130,560" size="220,70" font="Regular;28" halign="left" valign="center"/>
-        
-        <widget name="lab1" position="380,80"  size="520,70" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab2" position="380,160" size="520,70" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab3" position="380,240" size="520,70" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab4" position="380,320" size="520,70" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab5" position="380,400" size="520,70" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab6" position="380,480" size="520,70" font="Regular;24" halign="left" valign="center"/>
-        <widget name="lab7" position="380,560" size="520,70" font="Regular;24" halign="left" valign="center"/> 
-        
-        <widget name="info"   position="30,640" size="890,30" font="Regular;22" halign="center" valign="center" foregroundColor="yellow"/>
-        
-        <widget name="status" position="30,670" size="890,30" font="Regular;26" halign="center" valign="center" foregroundColor="#00ff00"/>
-        
-        <widget name="key_red"    position="0,700" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="red"/>
-        <widget name="key_green"  position="237,700" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="green"/>
-        <widget name="key_yellow" position="474,700" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="yellow"/>
-        <widget name="key_blue"   position="711,700" size="237,25" font="Regular;20" halign="center" valign="center" foregroundColor="blue"/>
-        
-        <widget name="foot" position="0,730" size="950,20" font="Regular;16" halign="center" valign="center" foregroundColor="grey"/>
+        <widget name="info" position="540,390" size="490,30" font="Regular;18" halign="center" valign="center" foregroundColor="yellow"/>
+
+        <widget name="foot" position="540,430" size="490,20" font="Regular;14" halign="center" valign="center" foregroundColor="grey"/>
+
+        <widget name="key_red"    position="20,560" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="red" backgroundColor="#202020" transparent="0"/>
+        <widget name="key_green"  position="275,560" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="green" backgroundColor="#202020" transparent="0"/>
+        <widget name="key_yellow" position="530,560" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="yellow" backgroundColor="#202020" transparent="0"/>
+        <widget name="key_blue"   position="785,560" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="blue" backgroundColor="#202020" transparent="0"/>
+
     </screen>
-    """
+    """.replace("{pic_path}", PIC_PATH)
 
     def __init__(self, session):
         Screen.__init__(self, session)
@@ -138,35 +159,109 @@ class IPTVDreamMain(Screen):
         self.playlist  = []
         self.listname  = "IPTV-Dream"
         self.prof = load_profiles()
+        self.webif_running = False
         
-        # Ustalanie języka (Systemowy priorytetem)
         sys_lang = language.getLanguage()[:2] 
         self.lang = "pl" if sys_lang == "pl" else "en"
         
         self.setTitle(f"IPTV Dream v{PLUGIN_VERSION}")
         self["version_label"] = Label(f"IPTV Dream v{PLUGIN_VERSION}")
-        self["foot"] = Label("") # Inicjalizacja przed updateLangStrings
+        self["foot"] = Label("")
         
+        self["lab8_status"] = Label("")
+        self["lab8_info"] = Label("")
+        
+        self["support_label"] = Label(_("support_text_long", self.lang))
+
         self.updateLangStrings()
         self["actions"] = ActionMap(["ColorActions", "NumberActions", "OkCancelActions"], {
             "1": self.openUrl, "2": self.openFile, "3": self.openXtream,
             "4": self.openMac, "5": self.openMyLinks, "6": self.toggleLang,
-            "7": self.openEpgUrl,
+            "7": self.openEpgUrl, 
+            "8": self.toggleWebIf,
             "red": self.close, "green": self.checkUpdates, 
             "yellow": self.forceInstallEPG,
             "blue": self.exportBouquet, "cancel": self.close
         }, -1)
         self.onLayoutFinish.append(self.startAutoCheck)
+        self.onLayoutFinish.append(self.checkWebIfStatus)
 
     def startAutoCheck(self):
         if self.prof.get("auto_update", False):
             self.checkUpdates(silent=True)
+            
+    # --- WEB INTERFACE LOGIC ---
+    
+    def checkWebIfStatus(self):
+        enabled = self.prof.get("webif_enabled", False)
+        if enabled:
+             if not self.webif_running:
+                 self.startWebIf()
+             else:
+                 self.updateWebIfLabel(True)
+        else:
+             self.updateWebIfLabel(False)
+
+    def startWebIf(self):
+        start_web_server(
+            port=WEB_IF_PORT, 
+            on_data_ready=lambda data: reactor.callFromThread(self._handle_webif_data, data)
+        )
+        self.webif_running = True
+        self.updateWebIfLabel(True)
+
+    def toggleWebIf(self):
+        if self.webif_running:
+            stop_web_server()
+            self.prof["webif_enabled"] = False
+            self.webif_running = False
+            self.updateWebIfLabel(False)
+            self["status"].setText(_("webif_stopped", self.lang))
+        else:
+            self.startWebIf()
+            self.prof["webif_enabled"] = True
+            self["status"].setText(_("webif_started", self.lang))
+            
+        save_profiles(self.prof)
+
+    def updateWebIfLabel(self, is_running):
+        ip = "127.0.0.1"
+        try: ip = SystemInfo.getIpAddress()
+        except: pass
+        
+        if is_running:
+            self["lab8_info"].setText(f"http://{ip}:{WEB_IF_PORT}")
+        else:
+            self["lab8_info"].setText(_("webif_off", self.lang))
+
+    def _handle_webif_data(self, data):
+        dtype = data.get("type")
+        self.session.open(MessageBox, f"{_('webif_received', self.lang)}: {dtype.upper()}", MessageBox.TYPE_INFO, timeout=3)
+        
+        if dtype == "m3u":
+            url = data.get("url")
+            self.onUrlReady(url)
+        elif dtype == "xtream":
+            host = data.get("host")
+            user = data.get("user")
+            pwd  = data.get("pass")
+            if host and user and pwd:
+                self.onXtreamOne((host, user, pwd))
+        elif dtype == "mac":
+            host = data.get("host")
+            mac  = data.get("mac")
+            if host and mac:
+                self.data = {"host": host, "mac": mac}
+                self["status"].setText(_("downloading_mac", self.lang))
+                reactor.callInThread(self._mac_thread_worker, host, mac)
 
     def updateLangStrings(self):
         self["key_red"]    = Label(_("exit", self.lang))
         self["key_green"]  = Label(_("check_upd", self.lang))
         self["key_yellow"] = Label(_("epg_install", self.lang))
         self["key_blue"]   = Label(_("export", self.lang))
+        
+        # Opisy etykiet - teraz krótsze
         self["lab1"] = Label(_("load_url", self.lang))
         self["lab2"] = Label(_("pick_file", self.lang))
         self["lab3"] = Label(_("xtream", self.lang))
@@ -174,14 +269,18 @@ class IPTVDreamMain(Screen):
         self["lab5"] = Label(_("own_links", self.lang))
         self["lab6"] = Label(_("toggle_lang", self.lang))
         self["lab7"] = Label(_("url_epg", self.lang))
+        
+        self["lab8_status"] = Label(_("webif_status", self.lang))
+        self["support_label"].setText(_("support_text_long", self.lang))
+        
+        self.checkWebIfStatus()
+        
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
         
         today_date = date.today().strftime("%Y-%m-%d")
         foot_text = _("foot", self.lang).replace("{date}", today_date)
         self["foot"].setText(f"{foot_text} v{PLUGIN_VERSION}")
-
-    # === FUNKCJE BEZ POP-UPÓW (Teraz używają dużego statusu) ===
 
     def openEpgUrl(self):
         current_url = self.prof.get(EPG_URL_KEY, "http://")
@@ -208,7 +307,6 @@ class IPTVDreamMain(Screen):
     def onUrlReady(self, url):
         if not url or not url.startswith(('http://', 'https://')): return
         self._current_url = url
-        # STATUS: Wyświetlamy informację przed uruchomieniem wątku
         self["status"].setText(_("downloading", self.lang)) 
         
         def do_download(target_url):
@@ -220,7 +318,7 @@ class IPTVDreamMain(Screen):
 
     def onDataDownloaded(self, data, error):
         if error:
-            self["status"].setText(_("download_error", self.lang)) # STATUS: Błąd
+            self["status"].setText(_("download_error", self.lang)) 
             self.session.open(MessageBox, f"URL Error: {error}", MessageBox.TYPE_ERROR)
             return
         playlist = parse_m3u_bytes_improved(data)
@@ -247,7 +345,6 @@ class IPTVDreamMain(Screen):
     def onXtreamOne(self, data):
         if not data: return
         host, user, pwd = data
-        # STATUS: Informacja widoczna
         self["status"].setText(_("downloading_xtream", self.lang))
         
         def do_dl():
@@ -260,7 +357,7 @@ class IPTVDreamMain(Screen):
 
     def onXtreamDone(self, data, error, user):
         if error:
-            self["status"].setText(_("xtream_error", self.lang)) # STATUS: Błąd
+            self["status"].setText(_("xtream_error", self.lang))
             self.session.open(MessageBox, f"Xtream Error: {error}", MessageBox.TYPE_ERROR)
             return
         self.onListLoaded(parse_m3u_bytes_improved(data), f"Xtream-{user}")
@@ -275,7 +372,6 @@ class IPTVDreamMain(Screen):
         try:
             self.data = json.loads(txt)
             if self.data.get("host") and self.data.get("mac"):
-                # STATUS: Wyraźna informacja dla użytkownika
                 self["status"].setText(_("downloading_mac", self.lang))
                 reactor.callInThread(self._mac_thread_worker, self.data["host"], self.data["mac"])
             else:
@@ -292,7 +388,7 @@ class IPTVDreamMain(Screen):
 
     def _mac_thread_done(self, playlist, error):
         if error:
-            self["status"].setText(_("mac_error", self.lang)) # STATUS: Błąd
+            self["status"].setText(_("mac_error", self.lang))
             self.session.open(MessageBox, str(error), MessageBox.TYPE_ERROR)
             return
         try:
