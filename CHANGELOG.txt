@@ -1,3 +1,14 @@
+## [v4.1] - 2025-12-01
+
+### 🐛 Bug Fixes / Poprawki błędów
+* **CRITICAL FIX (OpenPLi):** Fixed "f-string expression part cannot include a backslash" error in Web Interface (`webif.py`).
+  * *PL:* Naprawiono krytyczny błąd (Crash/Blue Screen) występujący na OpenPLi i starszych wersjach Python, powodujący komunikat o backslashu w f-stringu.
+* **WebIF:** Improved compatibility with Python versions < 3.12 used in many Enigma2 images.
+  * *PL:* Poprawiono kompatybilność interfejsu WWW ze starszymi wersjami Pythona używanymi w wielu obrazach Enigma2.
+
+### ℹ️ Info
+* Updated version number to 4.1 in Web Interface header.
+
 v4.0 (2025-12-01)
 - CAŁKOWICIE NOWY WYGLĄD: Nowoczesny, ciemny interfejs wtyczki.
 - NOWY UKŁAD: Przejrzysty podział na dwie kolumny.
