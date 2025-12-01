@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Skrypt instalacyjny dla wtyczki IPTV Dream
-# Wersja skryptu: 4.0 (Update dla v4.0)
+# Wersja skryptu: 4.1 (Update dla v4.1)
 #
 
 # --- Konfiguracja ---
