@@ -1,4 +1,4 @@
-# Wtyczka IPTV Dream v4.0
+# Wtyczka IPTV Dream v4.1
 
 <img src="https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plugin.png" alt="IPTV Dream Logo" width="150"/>
 
