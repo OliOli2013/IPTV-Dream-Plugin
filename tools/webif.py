@@ -35,6 +35,10 @@ def get_html_page(lang):
     if qr_b64:
         qr_html = f'<img src="data:image/png;base64,{qr_b64}" alt="QR Code" style="width: 100px; height: 100px; margin-bottom: 10px;">'
 
+    # --- FIX START: Move logic out of f-string ---
+    support_text = _("support_text_long", lang).replace('\n', '<br>')
+    # --- FIX END ---
+
     html_content = f"""
     <!DOCTYPE html>
     <html lang="{lang}">
@@ -120,7 +124,7 @@ def get_html_page(lang):
             
             <div class="support-section">
                 {qr_html}
-                <p>{_("support_text_long", lang).replace('\\n', '<br>')}</p>
+                <p>{support_text}</p> 
             </div>
         </div>
         <div class="footer">IPTV Dream Web Interface</div>
