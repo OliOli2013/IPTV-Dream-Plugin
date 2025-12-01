@@ -14,7 +14,6 @@ def get_qr_base64():
     """Wczytuje obraz QR z dysku i zwraca jako string base64"""
     try:
         # Zakładamy, że pic jest w ../pic względem tego pliku (tools/webif.py)
-        # tools/.. -> katalog główny wtyczki -> /pic
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         qr_path = os.path.join(base_path, "pic", "qrcode.png")
         
@@ -35,9 +34,8 @@ def get_html_page(lang):
     if qr_b64:
         qr_html = f'<img src="data:image/png;base64,{qr_b64}" alt="QR Code" style="width: 100px; height: 100px; margin-bottom: 10px;">'
 
-    # --- FIX START: Move logic out of f-string ---
-    support_text = _("support_text_long", lang).replace('\n', '<br>')
-    # --- FIX END ---
+    # [FIX v4.1] Wyciągamy logikę z f-stringa dla starszych Pythonów (OpenPLi)
+    support_text_content = _("support_text_long", lang).replace('\n', '<br>')
 
     html_content = f"""
     <!DOCTYPE html>
@@ -79,7 +77,7 @@ def get_html_page(lang):
     </head>
     <body>
         <div class="container">
-            <h1>IPTV Dream v4.0</h1>
+            <h1>IPTV Dream v4.1</h1>
             
             <div class="tab-container">
                 <div id="btn-m3u" class="tab active" onclick="showTab('m3u')">M3U Link</div>
@@ -124,7 +122,7 @@ def get_html_page(lang):
             
             <div class="support-section">
                 {qr_html}
-                <p>{support_text}</p> 
+                <p>{support_text_content}</p>
             </div>
         </div>
         <div class="footer">IPTV Dream Web Interface</div>
