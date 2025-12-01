@@ -1,40 +1,36 @@
-# Wtyczka IPTV Dream v3.3
+# Wtyczka IPTV Dream v4.0
 
 <img src="https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/plugin.png" alt="IPTV Dream Logo" width="150"/>
 
-# IPTV Dream Plugin v3.3 for Enigma2
+# IPTV Dream Plugin v4.0 for Enigma2
 
-Zaawansowana wtyczka do obsługi list IPTV (M3U, Xtream, MAC Portal) z funkcją generowania bukietów i obsługą EPG.
-Advanced IPTV plugin (M3U, Xtream, MAC Portal) with bouquet generation and EPG support.
+Zaawansowana wtyczka do obsługi list IPTV (M3U, Xtream, MAC Portal) z nowoczesnym interfejsem, obsługą przez przeglądarkę (WebIF) i generatorem bukietów.
 
-## 🚀 Funkcje / Features (v3.3)
+Advanced IPTV plugin (M3U, Xtream, MAC Portal) featuring a modern interface, Web Interface (WebIF) support, and bouquet generation.
 
-* **Obsługa źródeł / Source support:**
-    * M3U URL & M3U File
-    * Xtream Codes API
-    * MAC Portal (Stalker/Mag)
-    * Własne linki (Custom links)
-* **EPG:**
-    * Automatyczne przypisywanie EPG (Auto-assign).
-    * Obsługa polskich, angielskich i światowych źródeł (PL, UK, US, DE, etc.).
-    * **NEW:** Możliwość dodania własnego linku XMLTV (Custom XMLTV URL).
-* **Bukiety / Bouquets:**
-    * Eksport do bukietów Enigma2 (Userbouquets).
-    * Obsługa typów serwisowych 4097 (Gstreamer) i 5002 (ExtePlayer3).
-* **Język / Language:**
-    * Auto-wykrywanie języka (PL / EN).
-    * Pełne tłumaczenie (Full translation).
+## 🚀 Nowości w wersji 4.0 / What's new in v4.0
+
+* **Nowy Interfejs (New GUI):**
+    * Całkowicie odświeżony, ciemny motyw (Modern Dark Theme).
+    * Przejrzysty układ dwukolumnowy (Clean 2-column layout).
+* **Web Interface (WebIF):**
+    * Zarządzanie wtyczką przez przeglądarkę na komputerze lub telefonie (Control via PC/Phone browser).
+    * Wysyłanie linków M3U, danych Xtream i MAC bezpośrednio do dekodera (Send M3U/Xtream/MAC data directly).
+* **QR Code:**
+    * Wbudowany kod QR do wsparcia projektu (Built-in QR code for support).
+
+## 🌟 Główne Funkcje / Key Features
+
+* **Źródła / Sources:** M3U URL, M3U File, Xtream Codes, MAC Portal (Stalker/Mag), Custom Links.
+* **EPG:** Automatyczne przypisywanie, obsługa wielu krajów (PL, UK, US, DE...), własne źródła XMLTV.
+* **Bukiety / Bouquets:** Eksport do list kanałów Enigma2 (Userbouquets) z obsługą Gstreamer (4097) i ExtePlayer3 (5002).
+* **Język / Language:** Auto-wykrywanie (PL / EN).
 
 ## 📥 Instalacja / Installation
 
-1. Pobierz plik ZIP lub wersję instalacyjną.
-2. Wgraj folder `IPTVDream` do: `/usr/lib/enigma2/python/Plugins/Extensions/`
-3. Zrestartuj Enigmę (Restart GUI).
+### Metoda 1: Telnet / SSH (Zalecana / Recommended)
+Połącz się z dekoderem przez terminal i wklej poniższą komendę:
+Connect to your receiver via terminal and paste this command:
 
-## 🛠 Changelog v3.3
-- Usunięto błędy (Crash fixes).
-- Nowy system powiadomień (New notification system).
-- Poprawione wyświetlanie kanałów (Fixed n/a channels).
-
----
-**Author:** Paweł Pawełek (msisystem@t.pl) | **GitHub:** OliOli2013
+```bash
+wget -q "--no-check-certificate" [https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh](https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh) -O - | /bin/sh
