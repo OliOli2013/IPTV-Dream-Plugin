@@ -27,7 +27,7 @@ from enigma import eDVBDB
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-PLUGIN_VERSION = "4.0" 
+PLUGIN_VERSION = "4.1" 
 WEB_IF_PORT = 9999
 
 # Ścieżka do ikon (folder pic w katalogu wtyczki)
