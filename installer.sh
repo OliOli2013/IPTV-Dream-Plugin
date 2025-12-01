@@ -40,7 +40,7 @@ qrcode.png
 
 # --- Logika skryptu ---
 echo "=================================================="
-echo "    Instalator wtyczki IPTV Dream v4.0"
+echo "    Instalator wtyczki IPTV Dream v4.1"
 echo "=================================================="
 
 if ! command -v wget >/dev/null 2>&1; then
