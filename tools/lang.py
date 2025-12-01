@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 LANG = {
     "pl": {
-        "title": "IPTV Dream v4.0",
+        "title": "IPTV Dream v4.1",
         "load_url": "Wczytaj listę z URL",
         "pick_file": "Wskaż plik M3U",
         "xtream": "Xtream Codes",
@@ -88,7 +88,7 @@ LANG = {
         "support_text_long": "Podoba Ci się wtyczka? Wesprzyj twórcę i rozwój wtyczki.\nDziękuję!",
     },
     "en": {
-        "title": "IPTV Dream v4.0",
+        "title": "IPTV Dream v4.1",
         "load_url": "Load M3U from URL",
         "pick_file": "Pick M3U file",
         "xtream": "Xtream Codes",
