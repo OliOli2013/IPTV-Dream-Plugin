@@ -25,7 +25,7 @@ def sanit_title(name):
     name = name.replace(':', ' ').replace('"', '').strip()
     return name
 
-def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
+def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097"):
     groups = {}
     for ch in playlist:
         grp = ch.get("group", "Main") if keep_groups else "Main"
@@ -63,18 +63,15 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
             unique_sid = zlib.crc32(url.encode()) & 0xffff
             if unique_sid == 0: unique_sid = 1
             
-            # Najczęściej używane typy serwisowe dla IPTV
-            service_types = ["4097", "5002", "1"] 
-            
-            # Typ 4097 (Gstreamer) jest domyślny w większości systemów
-            ref_str = f"4097:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}" 
+            # UŻYCIE PRZEKAZANEGO TYPU SERWISU (dynamicznie z menu)
+            ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}" 
             content.append(f"#SERVICE {ref_str}\n")
             content.append(f"#DESCRIPTION {title}\n")
             
             sid_hex = f"{unique_sid:X}"
-            # Dodajemy mapowanie EPG dla wszystkich kluczowych typów, 
-            # które mogły być ustawione w poprzednich wersjach lub które są używane teraz
-            for s_type in service_types:
+            
+            # Generujemy EPG dla obu typów na wszelki wypadek
+            for s_type in ["4097", "5002", "1"]:
                 epg_mapping.append((f"{s_type}:0:1:{sid_hex}:0:0:0:0:0:0", title))
             
             total_channels += 1
@@ -87,12 +84,6 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True):
 
     create_epg_xml(epg_mapping)
 
-    # Te linie są już w dream.py/onBouquetsSelected, usuwam je stąd, żeby się nie powtarzały
-    # try:
-    #     eDVBDB.getInstance().reloadBouquets()
-    #     eDVBDB.getInstance().reloadServicelist()
-    # except: pass
-
     return total_bouquets, total_channels
 
 def add_to_bouquets_index(bq_filename):
@@ -103,14 +94,12 @@ def add_to_bouquets_index(bq_filename):
         if os.path.exists(idx):
             with open(idx, "r", errors="ignore") as f: lines = f.readlines()
         
-        # Zmiana: Upewniamy się, że linia nie jest już w pliku, niezależnie od wielkości liter
         if not any(entry.strip() == line.strip() for line in lines):
             lines.append(entry)
             with open(idx, "w") as f: f.writelines(lines)
     except: pass
 
 def create_epg_xml(mapping):
-    # ... (Generator EPG bez zmian - jest dobry) ...
     try:
         os.makedirs("/etc/epgimport", exist_ok=True)
         with open(EPG_CHANNEL_FILE, "w", encoding="utf-8") as f:
