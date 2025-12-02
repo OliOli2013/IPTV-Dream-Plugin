@@ -1,3 +1,12 @@
+v4.2 (2025-12-02)
+- NOWOŚĆ: Dodano wybór odtwarzacza (Player) w menu głównym pod klawiszem 9.
+- PLAYER: Możliwość szybkiego przełączania między GStreamer (4097) a ExtePlayer3 (5002).
+- ZAPIS: Wybrany typ serwisu jest zapamiętywany w ustawieniach i używany przy eksporcie bukietów.
+
+- NEW: Added Player selector in the main menu under key 9.
+- PLAYER: Ability to quickly toggle between GStreamer (4097) and ExtePlayer3 (5002).
+- SAVE: The selected service type is saved in settings and applied during bouquet export.
+
 ## [v4.1] - 2025-12-01
 
 ### 🐛 Bug Fixes / Poprawki błędów
