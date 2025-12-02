@@ -36,3 +36,27 @@ Connect to your receiver via terminal and paste this command:
 
 ```bash
 wget -q "--no-check-certificate" [https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh](https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh) -O - | /bin/sh
+Metoda 2: Ręczna / Manual
+Pobierz plik .ipk z zakładki Releases.
+
+Wgraj plik do katalogu /tmp w dekoderze.
+
+Zainstaluj przez menu wtyczek lub komendę: opkg install /tmp/*.ipk.
+
+🌐 Jak używać Web Interface? / How to use WebIF?
+Otwórz wtyczkę na dekoderze i wybierz opcję 8 (Web Interfejs).
+
+Na komputerze lub telefonie wpisz w przeglądarce adres widoczny na ekranie TV, np.: http://192.168.1.X:9999
+
+Wybierz zakładkę (M3U / Xtream / MAC), wpisz dane i kliknij Wyślij.
+
+🛠 Changelog v4.2
+Player: Dodano przełącznik typu serwisu (4097/5002) pod klawiszem 9.
+
+GUI: Zaktualizowano wygląd menu głównego.
+
+WebIF: Poprawki w interfejsie webowym.
+
+Optymalizacja: Drobne poprawki w kodzie i tłumaczeniach.
+
+Author: Paweł Pawełek (msisystem@t.pl)
