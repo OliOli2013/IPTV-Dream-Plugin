@@ -36,6 +36,7 @@ Connect to your receiver via terminal and paste this command:
 
 ```bash
 wget -q "--no-check-certificate" [https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh](https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh) -O - | /bin/sh
+
 Metoda 2: Ręczna / Manual
 Pobierz plik .ipk z zakładki Releases.
 
