@@ -13,18 +13,14 @@ _on_data_ready_callback = None
 def get_qr_base64():
     """Wczytuje obraz QR z dysku i zwraca jako string base64"""
     try:
-        # Zakładamy, że pic jest w ../pic względem tego pliku (tools/webif.py)
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         qr_path = os.path.join(base_path, "pic", "qrcode.png")
-        
         if os.path.exists(qr_path):
             with open(qr_path, "rb") as image_file:
                 return base64.b64encode(image_file.read()).decode('utf-8')
     except:
         return ""
     return ""
-
-# --- HTML/FORMA ---
 
 def get_html_page(lang):
     """Generuje interfejs HTML do wysyłania różnych danych."""
@@ -34,8 +30,8 @@ def get_html_page(lang):
     if qr_b64:
         qr_html = f'<img src="data:image/png;base64,{qr_b64}" alt="QR Code" style="width: 100px; height: 100px; margin-bottom: 10px;">'
 
-    # [FIX v4.1] Wyciągamy logikę z f-stringa dla starszych Pythonów (OpenPLi)
-    support_text_content = _("support_text_long", lang).replace('\n', '<br>')
+    # POPRAWKA: Pobieramy tekst najpierw, a potem robimy replace poza f-stringiem
+    support_txt = _("support_text_long", lang).replace('\n', '<br>')
 
     html_content = f"""
     <!DOCTYPE html>
@@ -77,7 +73,7 @@ def get_html_page(lang):
     </head>
     <body>
         <div class="container">
-            <h1>IPTV Dream v4.2</h1>
+            <h1>IPTV Dream v4.3</h1>
             
             <div class="tab-container">
                 <div id="btn-m3u" class="tab active" onclick="showTab('m3u')">M3U Link</div>
@@ -122,7 +118,7 @@ def get_html_page(lang):
             
             <div class="support-section">
                 {qr_html}
-                <p>{support_text_content}</p>
+                <p>{support_txt}</p>
             </div>
         </div>
         <div class="footer">IPTV Dream Web Interface</div>
@@ -130,8 +126,6 @@ def get_html_page(lang):
     </html>
     """
     return html_content.encode("utf-8")
-
-# --- Klasa Obsługi Żądań Twisted ---
 
 class IPTVDreamWebIf(Resource):
     isLeaf = True
@@ -150,7 +144,6 @@ class IPTVDreamWebIf(Resource):
         request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
         lang = "pl"
 
-        # Pobieranie typu formularza
         req_type = request.args.get(b"type", [b""])[0].decode().strip()
         data_to_send = None
 
@@ -172,7 +165,6 @@ class IPTVDreamWebIf(Resource):
             if host and mac:
                 data_to_send = {"type": "mac", "host": host, "mac": mac}
 
-        # Wysłanie danych do wtyczki
         if data_to_send and _on_data_ready_callback:
             _on_data_ready_callback(data_to_send)
             msg = _('webif_received', lang)
@@ -182,7 +174,6 @@ class IPTVDreamWebIf(Resource):
 
 
 def start_web_server(port, on_data_ready):
-    """Uruchamia serwer Twisted na podanym porcie."""
     global _server_port
     if _server_port: return 
 
@@ -196,7 +187,6 @@ def start_web_server(port, on_data_ready):
         print(f"[IPTVDream WebIF] BŁĄD: {e}")
 
 def stop_web_server():
-    """Zatrzymuje serwer Twisted."""
     global _server_port
     if _server_port:
         try:
