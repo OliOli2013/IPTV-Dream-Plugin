@@ -47,3 +47,24 @@ Połącz się z dekoderem przez terminal i wklej poniższą komendę:
 
 ```bash
 wget -q "--no-check-certificate" [https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh](https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh) -O - | /bin/sh
+
+Metoda 2: Ręczna / Manual
+Pobierz plik .ipk z zakładki Releases.
+
+Wgraj plik do katalogu /tmp w dekoderze.
+
+Zainstaluj przez menu wtyczek lub komendę: opkg install /tmp/*.ipk.
+
+🌐 Jak używać Web Interface? / How to use WebIF?
+Otwórz wtyczkę na dekoderze i wybierz opcję 8 (Web Interfejs).
+
+Na komputerze lub telefonie wpisz w przeglądarce adres widoczny na ekranie TV, np.: http://192.168.1.X:9999
+
+Wybierz zakładkę (M3U / Xtream / MAC), wpisz dane i kliknij Wyślij.
+
+Wtyczka pobierze dane – teraz wystarczy wybrać odpowiednią opcję pilotem (np. Xtream) i zatwierdzić.
+
+☕ Wsparcie / Support
+Jeśli podoba Ci się wtyczka i chcesz wesprzeć jej rozwój, możesz postawić mi kawę! If you like the plugin and want to support its development, you can buy me a coffee!
+
+<a href="https://www.google.com/search?q=https://buycoffee.to/msisystem" target="_blank"><img src="https://www.google.com/search?q=https://buycoffee.to/btn/buycoffeeto-btn-primary.svg" style="width: 170px; height: 38px;" alt="Postaw mi kawę na buycoffee.to"></a>
