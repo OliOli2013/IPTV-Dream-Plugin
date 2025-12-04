@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 LANG = {
     "pl": {
-        "title": "IPTV Dream v4.2",
+        "title": "IPTV Dream v4.3",
         "load_url": "Wczytaj listę z URL",
         "pick_file": "Wskaż plik M3U",
         "xtream": "Xtream Codes",
@@ -85,13 +85,12 @@ LANG = {
         "downloading_mac": "Autoryzacja MAC i pobieranie...",
         "support_text_long": "Podoba Ci się wtyczka? Wesprzyj twórcę i rozwój wtyczki.\nDziękuję!",
         
-        # NOWE TŁUMACZENIA - PLAYER
         "player_type": "Typ serwisu (Player)",
         "gst_player": "GStreamer (4097)",
         "exte_player": "ExtePlayer3 (5002)",
     },
     "en": {
-        "title": "IPTV Dream v4.2",
+        "title": "IPTV Dream v4.3",
         "load_url": "Load M3U from URL",
         "pick_file": "Pick M3U file",
         "xtream": "Xtream Codes",
@@ -175,7 +174,6 @@ LANG = {
         "downloading_mac": "MAC Auth & Downloading...",
         "support_text_long": "Do you like the plugin? Support the creator and development.\nThank you!",
         
-        # NEW TRANSLATIONS - PLAYER
         "player_type": "Service Type (Player)",
         "gst_player": "GStreamer (4097)",
         "exte_player": "ExtePlayer3 (5002)",
