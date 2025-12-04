@@ -15,15 +15,31 @@ def sanit(name):
     return name.replace(' ', '_') if name else "Unknown"
 
 def sanit_title(name):
-    """Agresywne czyszczenie nazw"""
+    """Agresywne czyszczenie nazw z M3U i Xtream"""
+    if not name: return "No Name"
     name = str(name).replace('\n', '').strip()
-    name = re.sub(r'[\(\[\|\{].*?[\)\]\|\}]\s*', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'^\s*(PL\s+VIP|VIP\s+PL|PL|DE|FR|IT|ES|EN|UK|US|USA)\s+', '', name, flags=re.IGNORECASE)
+    
+    # 1. Usuwanie technicznych śmieci (tvg-id=, itp. jeśli zostały)
+    name = re.sub(r'tvg-[a-z]+="[^"]*"', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'tvg-[a-z]+=[^\s]+', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'group-title="[^"]*"', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'group-title=[^\s]+', '', name, flags=re.IGNORECASE)
+    
+    # 2. Usuwanie nawiasów klamrowych i kwadratowych z zawartością [PL], (VIP)
+    name = re.sub(r'[\(\[].*?[\)\]]', '', name)
+    
+    # 3. Usuwanie prefiksów typu PL|, PL |, PL:
+    name = re.sub(r'^(PL|EN|DE|IT|UK|VIP|RAW|FHD|UHD|HEVC|4K)\s*[|:-]?\s*', '', name, flags=re.IGNORECASE)
+    
+    # 4. Usuwanie sufiksów (końcówek)
     tags = ['HD', 'FHD', 'UHD', '4K', 'RAW', 'VIP', 'PL', 'SD', 'HEVC', 'H265', 'UK', 'US']
     for tag in tags:
         name = re.sub(r'\s+[-|]?\s*' + tag + r'$', '', name, flags=re.IGNORECASE)
-    name = name.replace(':', ' ').replace('"', '').strip()
-    return name
+    
+    # 5. Czyszczenie końcowe
+    name = name.replace('|', '').replace(':', '').replace('"', '').strip()
+    
+    return name if name else "No Name"
 
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097"):
     groups = {}
@@ -36,7 +52,6 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
     epg_mapping = []
 
     ua_encoded = urllib.parse.quote(RAW_UA)
-    # Standardowy separator dla ExtePlayera
     ua_suffix = f"#User-Agent={ua_encoded}"
 
     for grp, chans in groups.items():
@@ -51,26 +66,22 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
             url = ch.get("url", "").strip()
             if not url: continue
             
+            # Tutaj też używamy czyszczenia
             title = sanit_title(ch.get("title", "No Name"))
             
-            # 1. Spacja na %20
             url = url.replace(" ", "%20")
-            
-            # 2. Dodajemy User-Agent
             if "User-Agent" not in url:
                 url += ua_suffix
             
             unique_sid = zlib.crc32(url.encode()) & 0xffff
             if unique_sid == 0: unique_sid = 1
             
-            # UŻYCIE PRZEKAZANEGO TYPU SERWISU (dynamicznie z menu)
             ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}" 
             content.append(f"#SERVICE {ref_str}\n")
             content.append(f"#DESCRIPTION {title}\n")
             
             sid_hex = f"{unique_sid:X}"
             
-            # Generujemy EPG dla obu typów na wszelki wypadek
             for s_type in ["4097", "5002", "1"]:
                 epg_mapping.append((f"{s_type}:0:1:{sid_hex}:0:0:0:0:0:0", title))
             
