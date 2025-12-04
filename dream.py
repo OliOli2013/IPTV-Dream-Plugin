@@ -17,17 +17,16 @@ from .tools.bouquet_picker    import BouquetPicker
 from .tools.epg_picon         import fetch_epg_for_playlist, download_picon_url, install_epg_sources, EPG_URL_KEY
 from .tools.webif         import start_web_server, stop_web_server
 
-import os, json, re, threading
+import os, json, re, threading, socket
 import requests
 from twisted.internet import reactor
 from enigma import quitMainloop
 from datetime import date 
-from Components.SystemInfo import SystemInfo
 from enigma import eDVBDB 
 
 PROFILES      = "/etc/enigma2/iptvdream_profiles.json"
 MY_LINKS_FILE = "/etc/enigma2/iptvdream_mylinks.json"
-PLUGIN_VERSION = "4.2" # WERSJA 4.2 z obsługą Playera
+PLUGIN_VERSION = "4.3" 
 WEB_IF_PORT = 9999
 
 PLUGIN_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -44,26 +43,66 @@ def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
     t.daemon = True
     t.start()
 
+def get_lan_ip():
+    """Pobiera rzeczywisty adres IP w sieci LAN."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "127.0.0.1"
+
+def clean_title_garbage(title):
+    """Usuwa techniczne śmieci z nazwy kanału."""
+    if not title: return "No Name"
+    # Usuwanie atrybutów M3U
+    title = re.sub(r'tvg-[a-z]+="[^"]*"', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'tvg-[a-z]+=[^\s]+', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'group-title="[^"]*"', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'group-title=[^\s]+', '', title, flags=re.IGNORECASE)
+    
+    # Usuwanie śmieci na początku
+    title = re.sub(r'^\s*[\#\=\-]+', '', title)
+    title = title.replace('"', '').strip()
+    
+    if not title: return "Stream"
+    return title
+
 def parse_m3u_bytes_improved(data):
     out = []
     try: text = data.decode("utf-8", "ignore")
     except: text = str(data)
+    
     current_attrs = {}
     rx_group = re.compile(r'group-title="([^"]+)"')
     rx_logo  = re.compile(r'tvg-logo="([^"]+)"')
-    for line in text.splitlines():
+    
+    lines = text.splitlines()
+    for line in lines:
         line = line.strip()
         if not line or line.startswith("#EXTM3U"): continue
+        
         if line.startswith("#EXTINF"):
-            parts = line.split(',', 1)
-            title = parts[1].strip() if len(parts) > 1 else "No Title"
+            if ',' in line:
+                parts = line.rsplit(',', 1)
+                raw_title = parts[1].strip()
+            else:
+                raw_title = line 
+            
+            # CZYSZCZENIE NAZWY
+            title = clean_title_garbage(raw_title)
+            
             g_match = rx_group.search(line)
             l_match = rx_logo.search(line)
+            
             current_attrs = {
                 "title": title,
                 "group": g_match.group(1).strip() if g_match else "Inne",
                 "logo":  l_match.group(1).strip() if l_match else ""
             }
+            
         elif "://" in line and not line.startswith("#"):
             url = line.strip()
             if current_attrs:
@@ -76,7 +115,9 @@ def parse_m3u_bytes_improved(data):
                 })
                 current_attrs = {} 
             else:
-                out.append({"title": url.split('/')[-1], "url": url, "group": "Inne", "logo": "", "epg": ""})
+                name = url.split('/')[-1]
+                name = re.sub(r'\.(ts|m3u8|mp4|mkv)$', '', name, flags=re.IGNORECASE)
+                out.append({"title": name, "url": url, "group": "Inne", "logo": "", "epg": ""})
     return out
 
 def load_profiles():
@@ -92,7 +133,7 @@ def save_profiles(data):
     except: pass
 
 class IPTVDreamMain(Screen):
-    # Zwiększono wysokość do 660px, dodano pozycję 9
+    # SKIN Z KOLOROWYMI PRZYCISKAMI
     skin = """
     <screen name="IPTVDreamMain" position="center,center" size="1050,660" title="IPTV Dream">
         
@@ -118,7 +159,6 @@ class IPTVDreamMain(Screen):
         <widget name="lab9_name" position="80,310" size="150,50" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab9_val" position="230,310" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#00ccff"/>
 
-
         <eLabel text="5" position="540,70" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#555555" cornerRadius="5"/>
         <eLabel text="Własne" position="600,70" size="150,50" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab5" position="750,70" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
@@ -135,7 +175,6 @@ class IPTVDreamMain(Screen):
         <widget name="lab8_status" position="600,250" size="150,50" font="Regular;24" halign="left" valign="center"/>
         <widget name="lab8_info" position="750,250" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#00ccff"/>
 
-
         <eLabel position="20,380" size="1010,2" backgroundColor="#333333" />
 
         <ePixmap pixmap="{pic_path}/qrcode.png" position="20,400" size="100,100" alphatest="blend" transparent="1" />
@@ -145,10 +184,17 @@ class IPTVDreamMain(Screen):
         <widget name="info" position="540,440" size="490,30" font="Regular;18" halign="center" valign="center" foregroundColor="yellow"/>
         <widget name="foot" position="540,480" size="490,20" font="Regular;14" halign="center" valign="center" foregroundColor="grey"/>
 
-        <widget name="key_red"    position="20,620" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="red" backgroundColor="#202020" transparent="0"/>
-        <widget name="key_green"  position="275,620" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="green" backgroundColor="#202020" transparent="0"/>
-        <widget name="key_yellow" position="530,620" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="yellow" backgroundColor="#202020" transparent="0"/>
-        <widget name="key_blue"   position="785,620" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="blue" backgroundColor="#202020" transparent="0"/>
+        <eLabel position="20,620" size="240,30" backgroundColor="#b30000" zPosition="1" cornerRadius="5" />
+        <widget name="key_red" position="20,620" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="white" backgroundColor="#b30000" transparent="1" zPosition="2" />
+
+        <eLabel position="275,620" size="240,30" backgroundColor="#007f00" zPosition="1" cornerRadius="5" />
+        <widget name="key_green" position="275,620" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="white" backgroundColor="#007f00" transparent="1" zPosition="2" />
+
+        <eLabel position="530,620" size="240,30" backgroundColor="#cccc00" zPosition="1" cornerRadius="5" />
+        <widget name="key_yellow" position="530,620" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="black" backgroundColor="#cccc00" transparent="1" zPosition="2" />
+
+        <eLabel position="785,620" size="240,30" backgroundColor="#0000b3" zPosition="1" cornerRadius="5" />
+        <widget name="key_blue" position="785,620" size="240,30" font="Regular;20" halign="center" valign="center" foregroundColor="white" backgroundColor="#0000b3" transparent="1" zPosition="2" />
 
     </screen>
     """.replace("{pic_path}", PIC_PATH)
@@ -161,7 +207,6 @@ class IPTVDreamMain(Screen):
         self.prof = load_profiles()
         self.webif_running = False
         
-        # Ładowanie zapisanego typu serwisu (domyślnie 4097)
         self.service_type = self.prof.get("service_type", "4097")
         
         sys_lang = language.getLanguage()[:2] 
@@ -174,7 +219,6 @@ class IPTVDreamMain(Screen):
         self["lab8_status"] = Label("")
         self["lab8_info"] = Label("")
         
-        # LABELS DLA PLAYERA
         self["lab9_name"] = Label("")
         self["lab9_val"]  = Label("")
         
@@ -186,7 +230,7 @@ class IPTVDreamMain(Screen):
             "4": self.openMac, "5": self.openMyLinks, "6": self.toggleLang,
             "7": self.openEpgUrl, 
             "8": self.toggleWebIf,
-            "9": self.togglePlayer, # NOWA AKCJA
+            "9": self.togglePlayer,
             "red": self.close, "green": self.checkUpdates, 
             "yellow": self.forceInstallEPG,
             "blue": self.exportBouquet, "cancel": self.close
@@ -198,17 +242,13 @@ class IPTVDreamMain(Screen):
         if self.prof.get("auto_update", False):
             self.checkUpdates(silent=True)
             
-    # --- LOGIKA PLAYERA ---
     def togglePlayer(self):
         if self.service_type == "4097":
             self.service_type = "5002"
         else:
             self.service_type = "4097"
-        
-        # Zapisz w profilu
         self.prof["service_type"] = self.service_type
         save_profiles(self.prof)
-        
         self.updatePlayerLabel()
         
     def updatePlayerLabel(self):
@@ -218,8 +258,6 @@ class IPTVDreamMain(Screen):
         else:
             self["lab9_val"].setText(_("exte_player", self.lang))
 
-    # --- WEB INTERFACE LOGIC ---
-    
     def checkWebIfStatus(self):
         enabled = self.prof.get("webif_enabled", False)
         if enabled:
@@ -253,9 +291,7 @@ class IPTVDreamMain(Screen):
         save_profiles(self.prof)
 
     def updateWebIfLabel(self, is_running):
-        ip = "127.0.0.1"
-        try: ip = SystemInfo.getIpAddress()
-        except: pass
+        ip = get_lan_ip()
         
         if is_running:
             self["lab8_info"].setText(f"http://{ip}:{WEB_IF_PORT}")
@@ -296,16 +332,11 @@ class IPTVDreamMain(Screen):
         self["lab5"] = Label(_("own_links", self.lang))
         self["lab6"] = Label(_("toggle_lang", self.lang))
         self["lab7"] = Label(_("url_epg", self.lang))
-        
         self["lab8_status"] = Label(_("webif_status", self.lang))
         
-        # Aktualizacja Labela Playera
         self.updatePlayerLabel()
-        
         self["support_label"].setText(_("support_text_long", self.lang))
-        
         self.checkWebIfStatus()
-        
         self["info"]   = Label(_("press_1_6", self.lang))
         self["status"] = Label("")
         
@@ -502,7 +533,6 @@ class IPTVDreamMain(Screen):
             if k in self._groups:
                 final_list.extend(self._groups[k])
                 
-        # PRZEKAZUJEMY service_type DO FUNKCJI EKSPORTU
         res, chans = export_bouquets(final_list, self.listname, service_type=self.service_type)
         try:
              eDVBDB.getInstance().reloadBouquets()
