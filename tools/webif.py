@@ -65,7 +65,7 @@ def get_html_page(lang):
     </head>
     <body>
         <div class="container">
-            <h1>IPTV Dream v4.4</h1>
+            <h1>IPTV Dream v5.0</h1>
             <div>
                 <span class="tab" onclick="showTab('m3u')">M3U</span>
                 <span class="tab" onclick="showTab('xtream')">Xtream</span>
