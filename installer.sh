@@ -21,7 +21,7 @@ vkb_input.py
 VERSION
 " 
 
-# Pliki w podkatalogu /tools (Doszedł webif.py!)
+# Pliki w podkatalogu /tools
 FILES_TOOLS="
 __init__.py
 bouquet_picker.py
@@ -33,7 +33,7 @@ webif.py
 xtream_one_window.py
 " 
 
-# Pliki w podkatalogu /pic (Nowy katalog!)
+# Pliki w podkatalogu /pic
 FILES_PIC="
 qrcode.png
 "
@@ -49,7 +49,6 @@ if ! command -v wget >/dev/null 2>&1; then
 fi
 
 echo ">>> Przygotowanie środowiska..."
-# Nie usuwamy całego katalogu od razu, żeby zachować pliki konfiguracyjne użytkownika (jeśli są)
 mkdir -p "$PLUGIN_PATH/tools"
 mkdir -p "$PLUGIN_PATH/pic"
 
@@ -80,7 +79,7 @@ for file in $FILES_PIC; do
     download_file "$BASE_URL/pic/$file" "$PLUGIN_PATH/pic/$file"
 done
 
-# Kopia bezpieczeństwa dla vkb_input (kompatybilność wsteczna)
+# Kopia bezpieczeństwa dla vkb_input (kompatybilność)
 if [ -f "$PLUGIN_PATH/vkb_input.py" ]; then
     cp "$PLUGIN_PATH/vkb_input.py" "$PLUGIN_PATH/tools/vkb_input.py"
 fi
