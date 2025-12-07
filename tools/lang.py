@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 LANG = {
     "pl": {
-        "title": "IPTV Dream v4.3",
+        "title": "IPTV Dream v5.0",
         "load_url": "Wczytaj listę z URL",
         "pick_file": "Wskaż plik M3U",
         "xtream": "Xtream Codes",
-        "mac_json": "MAC Portal / wklej JSON",
+        "mac_json": "MAC Portal (Lista)",
         "own_links": "Własne linki M3U",
         "toggle_lang": "PL / EN",
         "check_upd": "Sprawdź aktualizacje",
@@ -26,8 +26,8 @@ LANG = {
         "lang_changed": "Język zmieniono na",
         "loaded": "Wczytano %d kanałów",
         "load_first": "Najpierw wczytaj listę (1-7)",
-        "exported": "Bukiety wyeksportowane – sprawdź TV",
-        "exported_channels_bouquets": "Wyeksportowano %d kanałów w %d bukietach.\nZmiany będą widoczne po restarcie GUI.",
+        "exported": "Bukiety wyeksportowane.",
+        "exported_channels_bouquets": "Wyeksportowano %d kanałów w %d bukietach.",
         "auto_off": "Auto-aktualizacja WYŁ.",
         "auto_on": "Auto-aktualizacja WŁ. (05:00)",
         "remote_ver": "Dostępna wersja",
@@ -56,7 +56,7 @@ LANG = {
         "update_check_fail_msg": "Nie udało się sprawdzić wersji.",
         "changes": "ZMIANY",
         "no_update_msg": "Masz najnowszą wersję",
-        "update_ok_restart_msg": "Aktualizacja zakończona sukcesem!\nWymagany restart GUI. Restartować?",
+        "update_ok_restart_msg": "Wymagany restart GUI. Restartować teraz?",
         "auto_on_full": "Automatyczna aktualizacja została WŁĄCZONA.\nBędzie sprawdzana przy każdym uruchomieniu wtyczki.",
         "auto_off_full": "Automatyczna aktualizacja została WYŁĄCZONA.",
         "xtream_title": "Xtream Codes – nawigacja",
@@ -75,6 +75,7 @@ LANG = {
         "picker_sum": "Wybierz grupy do eksportu",
         "picker_sum_text": "Wybrano: %d grup, %d kanałów",
         "picker_help": "STRZAŁKI: Nawigacja | OK/ZIELONY: Zaznacz | NIEBIESKI: Eksportuj | LEWO/PRAWO: Zmień listę",
+        "picker_search": "Szukaj grupy (wpisz frazę):", # NOWE
         "webif_status": "Web Interfejs (port 9999)",
         "webif_off": "Wyłączony. Wciśnij 8, aby włączyć.",
         "webif_started": "Web Interfejs WŁĄCZONY.",
@@ -82,19 +83,29 @@ LANG = {
         "webif_submit": "Wyślij do dekodera",
         "webif_warning": "Uwaga: Dekoder musi mieć otwartą wtyczkę IPTV Dream.",
         "webif_received": "Otrzymano dane z WebIF",
-        "downloading_mac": "Autoryzacja MAC i pobieranie...",
         "support_text_long": "Podoba Ci się wtyczka? Wesprzyj twórcę i rozwój wtyczki.\nDziękuję!",
         
+        # PLAYER
         "player_type": "Typ serwisu (Player)",
         "gst_player": "GStreamer (4097)",
         "exte_player": "ExtePlayer3 (5002)",
+
+        # V5.0
+        "Dodaj nowy...": "Dodaj nowy...",
+        "mac_select_title": "Wybierz Portal MAC",
+        "mac_added_info": "Nowy Portal MAC dodany!\nWejdź w opcję 4, aby wybrać.",
+        
+        "xt_select_type": "Co chcesz pobrać?",
+        "xt_live": "Telewizja na żywo (LIVE)",
+        "xt_vod": "Filmy i Seriale (VOD)",
+        "xt_all": "Wszystko (LIVE + VOD)",
     },
     "en": {
-        "title": "IPTV Dream v4.3",
+        "title": "IPTV Dream v5.0",
         "load_url": "Load M3U from URL",
         "pick_file": "Pick M3U file",
         "xtream": "Xtream Codes",
-        "mac_json": "MAC Portal / paste JSON",
+        "mac_json": "MAC Portal (List)",
         "own_links": "Own M3U links",
         "toggle_lang": "PL / EN",
         "check_upd": "Check for updates",
@@ -115,8 +126,8 @@ LANG = {
         "lang_changed": "Language switched to",
         "loaded": "Loaded %d channels",
         "load_first": "Load list first (1-7)",
-        "exported": "Bouquets exported – check TV",
-        "exported_channels_bouquets": "Exported %d channels in %d bouquets.\nChanges visible after GUI restart.",
+        "exported": "Bouquets exported.",
+        "exported_channels_bouquets": "Exported %d channels in %d bouquets.",
         "auto_off": "Auto-update OFF",
         "auto_on": "Auto-update ON (05:00)",
         "remote_ver": "Available version",
@@ -145,7 +156,7 @@ LANG = {
         "update_check_fail_msg": "Failed to check version.",
         "changes": "CHANGES",
         "no_update_msg": "You have the latest version",
-        "update_ok_restart_msg": "Update successful!\nGUI restart required. Restart now?",
+        "update_ok_restart_msg": "GUI Restart required. Restart now?",
         "auto_on_full": "Auto-update has been ENABLED.\nIt will check on every plugin start.",
         "auto_off_full": "Auto-update has been DISABLED.",
         "xtream_title": "Xtream Codes – navigation",
@@ -164,6 +175,7 @@ LANG = {
         "picker_sum": "Select groups to export",
         "picker_sum_text": "Selected: %d groups, %d channels",
         "picker_help": "ARROWS: Navigate | OK/GREEN: Select | BLUE: Export | LEFT/RIGHT: Switch List",
+        "picker_search": "Search group (enter text):",
         "webif_status": "Web Interface (port 9999)",
         "webif_off": "Off. Press 8 to turn on.",
         "webif_started": "Web Interface ON.",
@@ -174,9 +186,20 @@ LANG = {
         "downloading_mac": "MAC Auth & Downloading...",
         "support_text_long": "Do you like the plugin? Support the creator and development.\nThank you!",
         
+        # PLAYER
         "player_type": "Service Type (Player)",
         "gst_player": "GStreamer (4097)",
         "exte_player": "ExtePlayer3 (5002)",
+
+        # V5.0
+        "Dodaj nowy...": "Add new...",
+        "mac_select_title": "Select MAC Portal",
+        "mac_added_info": "New MAC Portal added!\nSelect Option 4 to choose.",
+        
+        "xt_select_type": "Select content to download:",
+        "xt_live": "Live TV Only",
+        "xt_vod": "Movies & Series (VOD)",
+        "xt_all": "Everything (Live + VOD)",
     }
 }
 def _(key, lang="pl"):
