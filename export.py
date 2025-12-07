@@ -19,7 +19,7 @@ def sanit_title(name):
     if not name: return "No Name"
     name = str(name).replace('\n', '').strip()
     
-    # 1. Usuwanie technicznych śmieci (tvg-id=, itp. jeśli zostały)
+    # 1. Usuwanie technicznych śmieci (tvg-id=, itp.)
     name = re.sub(r'tvg-[a-z]+="[^"]*"', '', name, flags=re.IGNORECASE)
     name = re.sub(r'tvg-[a-z]+=[^\s]+', '', name, flags=re.IGNORECASE)
     name = re.sub(r'group-title="[^"]*"', '', name, flags=re.IGNORECASE)
@@ -32,14 +32,20 @@ def sanit_title(name):
     name = re.sub(r'^(PL|EN|DE|IT|UK|VIP|RAW|FHD|UHD|HEVC|4K)\s*[|:-]?\s*', '', name, flags=re.IGNORECASE)
     
     # 4. Usuwanie sufiksów (końcówek)
+    # Lista słów do wycięcia z końca nazwy
     tags = ['HD', 'FHD', 'UHD', '4K', 'RAW', 'VIP', 'PL', 'SD', 'HEVC', 'H265', 'UK', 'US']
     for tag in tags:
+        # Usuwa np. " RAW", " - VIP" z końca
         name = re.sub(r'\s+[-|]?\s*' + tag + r'$', '', name, flags=re.IGNORECASE)
     
     # 5. Czyszczenie końcowe
     name = name.replace('|', '').replace(':', '').replace('"', '').strip()
     
-    return name if name else "No Name"
+    # 6. Jeśli po czyszczeniu pusto (np. kanał nazywał się tylko "VIP"), przywróć oryginał (ale bez śmieci)
+    if len(name) < 2: 
+        return "Stream"
+        
+    return name
 
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097"):
     groups = {}
