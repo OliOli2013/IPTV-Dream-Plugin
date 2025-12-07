@@ -1,3 +1,18 @@
+v5.0 (2025-12-07)
+- NOWY WYGLĄD (GUI): Całkowicie przebudowany interfejs. Układ dwukolumnowy, czytelna stopka, kolorowe przyciski.
+- XTREAM: Dodano wybór typu treści po zalogowaniu (Telewizja na żywo / VOD / Wszystko).
+- SZUKAJKA: Dodano wyszukiwarkę w oknie wyboru bukietów (Żółty przycisk).
+- POPRAWKA: Naprawiono krytyczny błąd WebIF (f-string) na starszych systemach (OpenATV 6.4 itp.).
+- OPTYMALIZACJA: Przyspieszono działanie (pomijanie generowania EPG XML dla list Xtream/MAC).
+- CORE: Agresywne czyszczenie nazw kanałów (usuwanie zbędnych dopisków VIP, RAW, PL| itp.).
+
+- NEW GUI: Completely redesigned interface. 2 columns, colored footer buttons, better readability.
+- XTREAM: Added content type selection (Live / VOD / All) after login.
+- SEARCH: Added search function in Bouquet Picker (Yellow button).
+- FIX: WebIF crash fix (f-string error on older Enigma2 images).
+- OPTIMIZATION: Faster loading (skipped EPG generation for Xtream/MAC).
+- CORE: Aggressive channel name cleaning (removes VIP, RAW, PL|, etc.).
+
 v4.3 (2025-12-04)
 - WEBIF: Naprawiono wyświetlanie adresu IP (wtyczka pokazuje teraz faktyczny adres IP tunera w sieci zamiast 127.0.0.1).
 - CORE: Ulepszono algorytm czyszczenia nazw kanałów – skuteczniej usuwa zbędne przedrostki i techniczne znaczniki z plików M3U.
