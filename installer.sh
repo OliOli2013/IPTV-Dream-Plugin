@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Skrypt instalacyjny dla wtyczki IPTV Dream
-# Wersja skryptu: 4.3 (Update dla v4.3)
+# Wersja skryptu: 5.0 (Update dla v5.0)
 #
 
 # --- Konfiguracja ---
@@ -40,7 +40,7 @@ qrcode.png
 
 # --- Logika skryptu ---
 echo "=================================================="
-echo "    Instalator wtyczki IPTV Dream v4.3"
+echo "    Instalator wtyczki IPTV Dream v5.0"
 echo "=================================================="
 
 if ! command -v wget >/dev/null 2>&1; then
