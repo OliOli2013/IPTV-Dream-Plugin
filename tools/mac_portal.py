@@ -1,25 +1,67 @@
 # -*- coding: utf-8 -*-
 import json, os, requests, re, random, string
-from .lang import _ # DODANO
-from Components.Language import language # DODANO
+from .lang import _
+from Components.Language import language
 
 MAC_FILE = "/etc/enigma2/iptvdream_mac.json"
 COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
-# ... (load_mac_json, save_mac_json, get_random_sn - bez zmian) ...
+# Timeout dla zapytań sieciowych (Bezpieczeństwo - Punkt 1)
+REQ_TIMEOUT = 15
+
 def load_mac_json():
+    """Wczytuje listę portali. Obsługuje migrację ze starego formatu."""
     try:
+        if not os.path.exists(MAC_FILE):
+            return []
+            
         with open(MAC_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            
+        # Migracja: Jeśli stary format (słownik), zamień na listę
+        if isinstance(data, dict) and "host" in data:
+            new_data = [{"name": "Domyślny", "host": data["host"], "mac": data["mac"]}]
+            save_mac_json(new_data)
+            return new_data
+            
+        # Jeśli to już lista, zwróć ją
+        if isinstance(data, list):
+            return data
+            
+        return []
     except Exception:
-        return {}
+        return []
 
 def save_mac_json(data):
+    """Zapisuje listę portali."""
     try:
+        # Upewniamy się, że zapisujemy listę
+        if not isinstance(data, list):
+            data = [data] if data else []
+            
         with open(MAC_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
+
+def add_mac_portal(host, mac):
+    """Dodaje nowy portal do listy (WebIF/Ręcznie)."""
+    portals = load_mac_json()
+    
+    # Sprawdź duplikaty
+    for p in portals:
+        if p.get("host") == host and p.get("mac") == mac:
+            return # Już istnieje
+            
+    # Generuj nazwę
+    name = f"Portal {len(portals) + 1}"
+    try:
+        domain = host.split("//")[-1].split("/")[0]
+        name = domain
+    except: pass
+    
+    portals.append({"name": name, "host": host, "mac": mac})
+    save_mac_json(portals)
 
 def get_random_sn():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=13))
@@ -27,10 +69,9 @@ def get_random_sn():
 def translate_error(e, url=""):
     lang = language.getLanguage()[:2] or "pl"
     err_str = str(e)
-    # Zmieniono stałe ciągi na klucze tłumaczeń
     if "404" in err_str: return _("err_404", lang)
     if "401" in err_str or "403" in err_str: return _("err_401", lang)
-    if "500" in err_str or "502" in err_str or "513" in err_str: return f"{_('err_server', lang)} (Kod {err_str[0:3]}).\n{_('try_later', lang)}"
+    if "500" in err_str or "502" in err_str: return f"{_('err_server', lang)}.\n{_('try_later', lang)}"
     if "timeout" in err_str.lower() or "connection" in err_str.lower(): return _("err_timeout", lang)
     return f"{_('err_generic', lang)}:\n{err_str[:100]}..."
 
@@ -39,19 +80,16 @@ def clean_name(name):
     name = str(name).strip()
     name = re.sub(r'^\[.*?\]\s*', '', name)
     name = re.sub(r'^\(.*?\)\s*', '', name)
-    name = re.sub(r'^\|.*?\|\s*', '', name)
-    name = re.sub(r'^.*?\|\s*', '', name)
-    name = re.sub(r'^[A-Z0-9]{2,4}\s?-\s?', '', name)
     return name.strip()
 
 def parse_mac_playlist(host, mac):
-    # ... (Stalker logic - bez zmian) ...
     host = host.strip().rstrip('/')
-
-    # 1. Próba Xtream (szybka)
+    
+    # 1. Próba Xtream (Szybka)
     host_xc = host[:-2] if host.endswith('/c') else host
     url_xc = f"{host_xc}/get.php?username={mac}&password={mac}&type=m3u_plus&output=ts"
     try:
+        # BEZPIECZEŃSTWO: Dodano timeout
         r = requests.get(url_xc, timeout=8, headers={'User-Agent': COMMON_UA}, verify=False)
         if r.status_code == 200 and "#EXTINF" in r.text:
             return parse_m3u_text(r.text)
@@ -59,11 +97,7 @@ def parse_mac_playlist(host, mac):
         pass
 
     # 2. Próba Stalker
-    if not host.endswith('/c'):
-        host_stalker = f"{host}/c"
-    else:
-        host_stalker = host
-
+    host_stalker = f"{host}/c" if not host.endswith('/c') else host
     s = requests.Session()
     s.verify = False
     s.headers.update({
@@ -76,15 +110,16 @@ def parse_mac_playlist(host, mac):
         sn = get_random_sn()
         token_url = f"{host_stalker}/server/load.php?type=stb&action=handshake&token=&mac={mac}&stb_type=MAG250&ver=ImageDescription: 0.2.18-r14-250; ImageDate: Fri Jan 15 15:20:44 EET 2016; PORTAL version: 5.1.0; API Version: JS API version: 328; STB API version: 134;&sn={sn}"
         
-        r = s.get(token_url, timeout=10)
+        # BEZPIECZEŃSTWO: Timeout
+        r = s.get(token_url, timeout=REQ_TIMEOUT)
         r.raise_for_status()
         js = r.json()
         if not js or "js" not in js or "token" not in js["js"]:
-            raise Exception("Brak autoryzacji (Błędny MAC?)")
+            raise Exception("Auth Failed")
         token = js["js"]["token"]
         s.headers.update({'Authorization': f'Bearer {token}'})
 
-        # Pobieranie Kategorii
+        # Kategorie
         genres = {}
         try:
             r_g = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_genres&token={token}", timeout=8)
@@ -92,33 +127,34 @@ def parse_mac_playlist(host, mac):
             if "js" in data_g and isinstance(data_g["js"], list):
                 for g in data_g["js"]:
                     genres[str(g.get("id"))] = clean_name(g.get("title", "Inne"))
-        except:
-            pass
+        except: pass
 
-        # Pobieranie Kanałów
-        s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=8)
-        r = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}", timeout=15)
+        # Kanały
+        s.get(f"{host_stalker}/server/load.php?type=stb&action=get_profile&token={token}", timeout=5)
+        r = s.get(f"{host_stalker}/server/load.php?type=itv&action=get_all_channels&token={token}", timeout=20)
         data = r.json()
+        
         if "js" not in data or "data" not in data["js"]:
-            raise Exception("Pusta lista (No JSON).")
+            raise Exception("Empty List")
+            
         ch_list = data["js"]["data"]
         out = []
         for item in ch_list:
-            name_raw = item.get("name", "No Name")
-            name = clean_name(name_raw)
+            name = clean_name(item.get("name", "No Name"))
             cmd = item.get("cmd", "")
             logo = item.get("logo", "")
             gid = str(item.get("tv_genre_id", ""))
-            grp_name = genres.get(gid, "Inne")
+            
             url_clean = cmd.replace("ffmpeg ", "").replace("auto ", "").replace("ch_id=", "")
             if "://" not in url_clean:
                 url_clean = f"{host_stalker}/mpegts_to_ts/{url_clean}"
             if logo and not logo.startswith('http'):
                 logo = f"{host_stalker}/{logo}"
+                
             out.append({
                 "title": name,
                 "url": url_clean,
-                "group": grp_name,
+                "group": genres.get(gid, "Inne"),
                 "logo": logo,
                 "epg": ""
             })
@@ -136,24 +172,14 @@ def parse_m3u_text(content):
         if not line: continue
         if line.startswith('#EXTINF'):
             title = line.rsplit(',', 1)[1].strip() if ',' in line else "No Name"
-            logo_m = re.search(r'tvg-logo="([^"]+)"', line)
-            logo = logo_m.group(1) if logo_m else ""
-            grp_m = re.search(r'group-title="([^"]+)"', line)
-            group = grp_m.group(1) if grp_m else "Inne"
-            current_info = {"title": clean_name(title), "logo": logo, "group": clean_name(group)}
+            current_info = {"title": clean_name(title), "group": "Main"}
         elif line.startswith('http') and current_info:
-            # FIX: Dodajemy URL do current_info i używamy go poniżej
-            current_info["url"] = line.strip() # Działająca linia jest URL
             channels.append({
                 "title": current_info["title"],
-                "url": current_info["url"], # Używamy dodanego URL
+                "url": line.strip(),
                 "group": current_info["group"],
-                "logo": current_info["logo"],
+                "logo": "",
                 "epg": ""
             })
             current_info = {}
     return channels
-
-def download_picon_url(url, title):
-    # Właściwa implementacja znajduje się w epg_picon.py - ta jest pusta
-    return ""
