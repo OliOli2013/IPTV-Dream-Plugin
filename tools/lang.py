@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 LANG = {
     "pl": {
-        "title": "IPTV Dream v5.0",
+        "title": "IPTV Dream v6.0",
         "load_url": "Wczytaj listę z URL",
         "pick_file": "Wskaż plik M3U",
         "xtream": "Xtream Codes",
@@ -75,7 +75,7 @@ LANG = {
         "picker_sum": "Wybierz grupy do eksportu",
         "picker_sum_text": "Wybrano: %d grup, %d kanałów",
         "picker_help": "STRZAŁKI: Nawigacja | OK/ZIELONY: Zaznacz | NIEBIESKI: Eksportuj | LEWO/PRAWO: Zmień listę",
-        "picker_search": "Szukaj grupy (wpisz frazę):", # NOWE
+        "picker_search": "Szukaj grupy (wpisz frazę):",
         "webif_status": "Web Interfejs (port 9999)",
         "webif_off": "Wyłączony. Wciśnij 8, aby włączyć.",
         "webif_started": "Web Interfejs WŁĄCZONY.",
@@ -83,6 +83,7 @@ LANG = {
         "webif_submit": "Wyślij do dekodera",
         "webif_warning": "Uwaga: Dekoder musi mieć otwartą wtyczkę IPTV Dream.",
         "webif_received": "Otrzymano dane z WebIF",
+        "downloading_mac": "MAC Auth & Downloading...",
         "support_text_long": "Podoba Ci się wtyczka? Wesprzyj twórcę i rozwój wtyczki.\nDziękuję!",
         
         # PLAYER
@@ -99,9 +100,26 @@ LANG = {
         "xt_live": "Telewizja na żywo (LIVE)",
         "xt_vod": "Filmy i Seriale (VOD)",
         "xt_all": "Wszystko (LIVE + VOD)",
+        
+        # NOWE W WERSJI 5.1
+        "Dodaj nowy portal MAC": "Dodaj nowy portal MAC",
+        "Zarządzaj wszystkimi portalami MAC": "Zarządzaj wszystkimi portalami MAC",
+        "Wybierz portale do usunięcia (OK = usuń):": "Wybierz portale do usunięcia (OK = usuń):",
+        "Czy na pewno chcesz usunąć portal: %s?": "Czy na pewno chcesz usunąć portal: %s?",
+        "Portal MAC usunięty: %s": "Portal MAC usunięty: %s",
+        "Portal MAC zaktualizowany": "Portal MAC zaktualizowany",
+        "Zarządzaj wszystkimi linkami": "Zarządzaj wszystkimi linkami",
+        "Wybierz linki do usunięcia (OK = usuń):": "Wybierz linki do usunięcia (OK = usuń):",
+        "Czy na pewno chcesz usunąć link: %s?": "Czy na pewno chcesz usunąć link: %s?",
+        "Link usunięty: %s": "Link usunięty: %s",
+        "Link zaktualizowany": "Link zaktualizowany",
+        "Wpis usunięty.": "Wpis usunięty.",
+        
+        # NOWE DLA XXX
+        "xt_adult": "Kanały dla dorosłych (XXX)",
     },
     "en": {
-        "title": "IPTV Dream v5.0",
+        "title": "IPTV Dream v6.0",
         "load_url": "Load M3U from URL",
         "pick_file": "Pick M3U file",
         "xtream": "Xtream Codes",
@@ -200,6 +218,23 @@ LANG = {
         "xt_live": "Live TV Only",
         "xt_vod": "Movies & Series (VOD)",
         "xt_all": "Everything (Live + VOD)",
+        
+        # NOWE W WERSJI 5.1
+        "Dodaj nowy portal MAC": "Add new MAC portal",
+        "Zarządzaj wszystkimi portalami MAC": "Manage all MAC portals",
+        "Wybierz portale do usunięcia (OK = usuń):": "Select portals to delete (OK = delete):",
+        "Czy na pewno chcesz usunąć portal: %s?": "Are you sure you want to delete portal: %s?",
+        "Portal MAC usunięty: %s": "MAC portal deleted: %s",
+        "Portal MAC zaktualizowany": "MAC portal updated",
+        "Zarządzaj wszystkimi linkami": "Manage all links",
+        "Wybierz linki do usunięcia (OK = usuń):": "Select links to delete (OK = delete):",
+        "Czy na pewno chcesz usunąć link: %s?": "Are you sure you want to delete link: %s?",
+        "Link usunięty: %s": "Link deleted: %s",
+        "Link zaktualizowany": "Link updated",
+        "Wpis usunięty.": "Entry deleted.",
+        
+        # NOWE DLA XXX
+        "xt_adult": "Adult Channels (XXX)",
     }
 }
 def _(key, lang="pl"):

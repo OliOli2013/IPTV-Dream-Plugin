@@ -19,20 +19,16 @@ def sanit_title(name):
     if not name: return "No Name"
     name = str(name).replace('\n', '').strip()
     
-    # 1. Usuwanie technicznych śmieci (tvg-id=, itp.)
+    # 1. Usuwanie technicznych śmieci
     name = re.sub(r'tvg-[a-z]+="[^"]*"', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'tvg-[a-z]+=[^\s]+', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'group-title="[^"]*"', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'group-title=[^\s]+', '', name, flags=re.IGNORECASE)
     
-    # 2. Usuwanie nawiasów klamrowych i kwadratowych z zawartością [PL], (VIP)
+    # 2. Usuwanie nawiasów klamrowych i kwadratowych
     name = re.sub(r'[\(\[].*?[\)\]]', '', name)
     
-    # 3. Usuwanie prefiksów typu PL|, PL |, PL:
+    # 3. Usuwanie prefiksów typu PL|, PL:
     name = re.sub(r'^(PL|EN|DE|IT|UK|VIP|RAW|FHD|UHD|HEVC|4K)\s*[|:-]?\s*', '', name, flags=re.IGNORECASE)
     
-    # 4. Usuwanie sufiksów (końcówek)
-    # Lista słów do wycięcia z końca nazwy
+    # 4. Usuwanie sufiksów (OSTROŻNIEJ Z XXX)
     tags = ['HD', 'FHD', 'UHD', '4K', 'RAW', 'VIP', 'PL', 'SD', 'HEVC', 'H265', 'UK', 'US']
     for tag in tags:
         # Usuwa np. " RAW", " - VIP" z końca
@@ -41,7 +37,6 @@ def sanit_title(name):
     # 5. Czyszczenie końcowe
     name = name.replace('|', '').replace(':', '').replace('"', '').strip()
     
-    # 6. Jeśli po czyszczeniu pusto (np. kanał nazywał się tylko "VIP"), przywróć oryginał (ale bez śmieci)
     if len(name) < 2: 
         return "Stream"
         
@@ -50,6 +45,7 @@ def sanit_title(name):
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097"):
     groups = {}
     for ch in playlist:
+        # Używamy grupy z playlisty. Jeśli parser M3U działa poprawnie, to tu będą "Movies", "XXX", "PL" itd.
         grp = ch.get("group", "Main") if keep_groups else "Main"
         groups.setdefault(grp, []).append(ch)
 
@@ -72,8 +68,9 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
             url = ch.get("url", "").strip()
             if not url: continue
             
-            # Tutaj też używamy czyszczenia
-            title = sanit_title(ch.get("title", "No Name"))
+            title_raw = ch.get("title", "No Name")
+            title = sanit_title(title_raw)
+            tvg_id = ch.get("epg_id", "")
             
             url = url.replace(" ", "%20")
             if "User-Agent" not in url:
@@ -88,8 +85,10 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
             
             sid_hex = f"{unique_sid:X}"
             
+            # Mapowanie EPG dla różnych typów serwisów
             for s_type in ["4097", "5002", "1"]:
-                epg_mapping.append((f"{s_type}:0:1:{sid_hex}:0:0:0:0:0:0", title))
+                # Przekazujemy krotkę (ServiceRef, CleanName, TVG-ID)
+                epg_mapping.append((f"{s_type}:0:1:{sid_hex}:0:0:0:0:0:0", title, tvg_id))
             
             total_channels += 1
 
@@ -116,6 +115,7 @@ def add_to_bouquets_index(bq_filename):
             with open(idx, "w") as f: f.writelines(lines)
     except: pass
 
+# --- ULEPSZONY GENERATOR EPG (WIĘCEJ DOPASOWAŃ) ---
 def create_epg_xml(mapping):
     try:
         os.makedirs("/etc/epgimport", exist_ok=True)
@@ -123,22 +123,102 @@ def create_epg_xml(mapping):
             f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n')
             visited = set()
             suffixes = ["gb", "uk", "pl", "us", "de", "it", "es", "fr", "nl", "tr", "ug", "tz", "za"]
-            for ref, name in mapping:
+            
+            # Mapping to lista krotek: (ServiceRef, CleanName, TvgID)
+            for entry in mapping:
+                if len(entry) == 3:
+                    ref, name, tvg = entry
+                else:
+                    ref, name = entry
+                    tvg = ""
+                    
                 if ref in visited: continue
                 visited.add(ref)
+                
                 clean = name.strip()
                 nospace = clean.replace(" ", "")
                 kebab = clean.lower().replace(" ", "-")
+                
+                # Zbiór wszystkich ID, które przypiszemy do tego kanału
                 ids = set()
+                
+                # 1. PRIORYTET: TVG-ID z pliku M3U
+                if tvg:
+                    ids.add(escape(tvg))
+                
+                # 2. Nazwa czysta
                 ids.add(escape(clean))
                 ids.add(escape(nospace))
-                ids.add(escape(kebab))
+                
+                # 3. Kombinacje z sufiksami krajowymi (np. Polsat.pl)
                 for suf in suffixes:
                     ids.add(f"{escape(nospace)}.{suf}")
                     ids.add(f"{escape(kebab)}.{suf}")
                     ids.add(f"{escape(clean)}.{suf}")
+                
+                # 4. Dodatkowe wariacje (np. usunięcie 'HD' z nazwy dla lepszego dopasowania)
+                # Często w XMLTV jest "TVP 1", a kanał to "TVP 1 FHD"
+                simple_name = re.sub(r'(HD|FHD|UHD|4K|RAW|VIP|PL|TV)', '', clean, flags=re.IGNORECASE).strip()
+                if simple_name and len(simple_name) > 2:
+                     simple_nospace = simple_name.replace(" ", "")
+                     ids.add(escape(simple_name))
+                     for suf in suffixes:
+                         ids.add(f"{escape(simple_nospace)}.{suf}")
+
+                # 5. Wariacje dla kanałów z numerami (np. TVP 1, TVP1, TVP-1)
+                num_match = re.search(r'(\d+)$', clean)
+                if num_match:
+                    num = num_match.group(1)
+                    prefix = clean[:num_match.start()].strip()
+                    # Wersja bez spacji przed numerem
+                    nospace_version = prefix + num
+                    ids.add(escape(nospace_version))
+                    # Wersja z myślnikiem
+                    dash_version = prefix + "-" + num
+                    ids.add(escape(dash_version))
+                    # Wersja z kropką
+                    dot_version = prefix + "." + num
+                    ids.add(escape(dot_version))
+                    
+                    # Kombinacje z sufiksami
+                    for suf in suffixes:
+                        ids.add(f"{escape(nospace_version)}.{suf}")
+                        ids.add(f"{escape(dash_version)}.{suf}")
+
+                # 6. Wariacje dla stacji międzynarodowych
+                intl_patterns = [
+                    f"{escape(clean)}HD",
+                    f"{escape(clean)}FHD", 
+                    f"{escape(clean)}UHD",
+                    f"{escape(clean)}4K",
+                    f"{escape(clean)}TV",
+                    f"{escape(clean)}CHANNEL",
+                    f"{escape(nospace)}HD",
+                    f"{escape(nospace)}TV"
+                ]
+                for pattern in intl_patterns:
+                    ids.add(pattern)
+                    for suf in suffixes:
+                        ids.add(f"{pattern}.{suf}")
+
+                # 7. Dla kanałów XXX - specjalne wariacje
+                if 'xxx' in clean.lower() or 'adult' in clean.lower():
+                    ids.add("xxx")
+                    ids.add("adult")
+                    ids.add("xxx.tv")
+                    ids.add("adult.tv")
+
+                # 8. Dla kanałów VOD - specjalne wariacje
+                if 'vod' in clean.lower() or 'movie' in clean.lower():
+                    ids.add("vod")
+                    ids.add("movies")
+                    ids.add("vod.tv")
+                    ids.add("movies.tv")
+
+                # Zapisujemy wszystkie warianty dla danego ServiceRef
                 for xid in ids:
                     f.write(f'  <channel id="{xid}">{ref}</channel>\n')
+                    
             f.write('</channels>')
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[IPTVDream] Błąd EPG XML: {e}")

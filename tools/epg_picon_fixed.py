@@ -288,16 +288,3 @@ def install_epg_sources(custom_url=None):
 def download_picon_url(url, title):
     """Pobiera picon dla kanału."""
     return epg_manager.download_picon_url(url, title)
-# --- KOMPATYBILNOŚĆ (v5.x) ---
-# W starszych wersjach główna wtyczka importowała funkcje fetch_epg_for_playlist.
-# Aby uniknąć błędu "cannot import name fetch_epg_for_playlist", zapewniamy wrapper.
-try:
-    from .epg_picon_v2 import fetch_epg_for_playlist as _fetch_epg_for_playlist_v2
-except Exception:
-    _fetch_epg_for_playlist_v2 = None
-
-def fetch_epg_for_playlist(pl):
-    """Zwraca mapowanie EPG dla playlisty (kompatybilność)."""
-    if _fetch_epg_for_playlist_v2:
-        return _fetch_epg_for_playlist_v2(pl)
-    return {}

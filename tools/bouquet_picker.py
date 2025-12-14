@@ -12,7 +12,7 @@ POS_CH    = (450, 80)
 
 class BouquetPicker(Screen):
     skin = """
-    <screen name="BouquetPicker" position="center,center" size="1100,650" title="Wybór bukietów v5.0">
+    <screen name="BouquetPicker" position="center,center" size="1100,650" title="Wybór bukietów v5.1">
         <eLabel position="0,0" size="1100,60" backgroundColor="#202020" zPosition="-1" />
         <widget name="title_lbl" position="0,10" size="1100,40" font="Regular;30" halign="center" valign="center" foregroundColor="#ffcc00" backgroundColor="#202020" transparent="1" />
         <eLabel position="0,60" size="1100,2" backgroundColor="#333333" />
@@ -81,14 +81,19 @@ class BouquetPicker(Screen):
         self.updatePreview()
 
     def openSearch(self):
-        self.session.openWithCallback(self.onSearchDone, VirtualKeyBoard, title=_("picker_search", self.lang), text=self.filter_text)
+        """Otwiera wyszukiwanie grup."""
+        self.session.openWithCallback(self.onSearchDone, VirtualKeyBoard, 
+                                     title=_("picker_search", self.lang), 
+                                     text=self.filter_text)
 
     def onSearchDone(self, text):
+        """Obsługuje wynik wyszukiwania."""
         if text is not None:
             self.filter_text = text.lower()
             self.applyFilter()
 
     def applyFilter(self):
+        """Stosuje filtr do listy grup."""
         if not self.filter_text:
             self.current_keys = list(self.all_group_keys)
             self["filter_lbl"].setText("")
@@ -100,7 +105,7 @@ class BouquetPicker(Screen):
         self.updatePreview()
 
     def refreshList(self):
-        # Resetujemy listę w UI na podstawie current_keys
+        """Odświeża listę grup."""
         list_items = []
         for g in self.current_keys:
             prefix = "[ X ]" if g in self.selected else "[   ]"
@@ -110,6 +115,7 @@ class BouquetPicker(Screen):
         self["bqt_list"].moveToIndex(0)
 
     def updatePreview(self):
+        """Aktualizuje podgląd kanałów."""
         idx = self["bqt_list"].getSelectedIndex()
         if 0 <= idx < len(self.current_keys):
             key = self.current_keys[idx]
@@ -130,37 +136,53 @@ class BouquetPicker(Screen):
         self["sum"].setText(sum_txt)
 
     def toggleSelect(self):
-        if not self.focus_left: return
+        """Zaznacza/odznacza grupę."""
+        if not self.focus_left: 
+            return
+            
         idx = self["bqt_list"].getSelectedIndex()
         if 0 <= idx < len(self.current_keys):
             key = self.current_keys[idx]
-            if key in self.selected: self.selected.remove(key)
-            else: self.selected.add(key)
+            if key in self.selected: 
+                self.selected.remove(key)
+            else: 
+                self.selected.add(key)
             
-            # Odświeżamy widok (tylko tekst, bez zmiany pozycji)
-            prefix = "[ X ]" if key in self.selected else "[   ]"
-            count  = len(self.groups[key])
-            text = f"{prefix} {key} ({count})"
-            
-            # Hack na odświeżenie pojedynczego elementu w MenuList (zależy od implementacji w Enigmie, 
-            # najbezpieczniej przeładować całą listę i ustawić index)
+            # Odświeżamy widok
             self.refreshList()
             self["bqt_list"].moveToIndex(idx)
             self.updatePreview()
 
     def moveUp(self):
-        if self.focus_left: self["bqt_list"].up(); self.updatePreview()
-        else: self["ch_list"].up()
+        """Przesuwa w górę."""
+        if self.focus_left: 
+            self["bqt_list"].up()
+            self.updatePreview()
+        else: 
+            self["ch_list"].up()
 
     def moveDown(self):
-        if self.focus_left: self["bqt_list"].down(); self.updatePreview()
-        else: self["ch_list"].down()
+        """Przesuwa w dół."""
+        if self.focus_left: 
+            self["bqt_list"].down()
+            self.updatePreview()
+        else: 
+            self["ch_list"].down()
             
-    def setLeft(self): self.focus_left = True; self.updatePreview()
-    def setRight(self): self.focus_left = False; self.updatePreview()
+    def setLeft(self): 
+        """Ustawia fokus na lewą listę."""
+        self.focus_left = True
+        self.updatePreview()
+        
+    def setRight(self): 
+        """Ustawia fokus na prawą listę."""
+        self.focus_left = False
+        self.updatePreview()
 
     def save(self):
+        """Zapisuje wybrane grupy."""
         self.close(list(self.selected))
 
     def cancel(self):
+        """Anuluje wybór."""
         self.close(None)

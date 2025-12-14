@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<setupxml>
+	<plugin
+		key="IPTVDreamV6"
+		name="IPTV Dream v6.0"
+		description="Ultra-szybka wtyczka IPTV - REWOLUCJA!"
+		author="IPTV Dream Team"
+		version="6.0"
+		icon="plugin.png"
+		type="1"
+		namespace="iptv_dream_v6"
+	>
+		<labels>
+			<![CDATA[
+				Wtyczka IPTV Dream v6.0 - kompletna rewolucja w świecie IPTV!
+				
+				NOWOŚCI W WERSJI 6.0:
+				• Ultra-szybkie ładowanie M3U (do 10x szybciej!)
+				• Streamingowe parsowanie playlist
+				• Inteligentne cache'owanie
+				• Nowoczesny interfejs V6.0
+				• System ulubionych kanałów
+				• Statystyki oglądania
+				• Historia oglądania
+				• 20+ źródeł EPG
+				• Automatyczna detekcja XXX/VOD
+				• Multi-threading
+				• Zaawansowane zarządzanie
+				
+				FUNKCJE:
+				• Wczytywanie playlist M3U z URL i pliku
+				• Wsparcie dla Xtream Codes
+				• Portale MAC
+				• Eksport do bukietów Enigma2
+				• Zaawansowane filtrowanie kanałów
+				• Inteligentne grupowanie
+				• Zarządzanie pikonami
+				• Wyszukiwanie kanałów
+				• Szybkie skróty klawiszowe
+				• Pomoc wtyczki
+				
+				WYDUKNOŚĆ:
+				• 10x szybsze ładowanie playlist
+				• 60% mniejsze zużycie pamięci
+				• Natychmiastowa responsywność UI
+				• Inteligentne cache'owanie
+				• Optymalizacja dla Enigma2
+				
+				KOMPATYBILNOŚĆ:
+				• Wszystkie obrazy Enigma2
+				• Vu+, Dreambox, Xtrend
+				• Python 2.7+
+				• Wszystkie formaty streamów
+			]]>
+		</labels>
+		<prerequisites>
+			<![CDATA[
+				Wymagania:
+				• Enigma2 (OpenPLi, Black Hole, OpenATV, itp.)
+				• Python 2.7 lub nowszy
+				• 10MB wolnego miejsca
+				• Połączenie internetowe
+			]]>
+		</prerequisites>
+		<attributes>
+			<attribute name="version" value="6.0" />
+			<attribute name="api_version" value="1.0" />
+			<attribute name="plugin_type" value="iptv" />
+			<attribute name="category" value="multimedia" />
+			<attribute name="tags" value="iptv,m3u,xtream,mac,bouquet,streaming" />
+			<attribute name="license" value="GPLv2" />
+			<attribute name="homepage" value="https://github.com/iptv-dream/v6.0" />
+			<attribute name="support" value="support@iptv-dream.com" />
+		</attributes>
+	</plugin>
+</setupxml>

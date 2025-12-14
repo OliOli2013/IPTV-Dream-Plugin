@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+IPTV Dream v5.1 - ULEPSZONA WERSJA
+- Zintegrowane z nowym systemem EPG
+- Lepsze mapowanie do kanałów satelitarnych
+- Eksport z informacjami EPG
+"""
+
 from Screens.Screen       import Screen
 from Screens.MessageBox   import MessageBox
 from Screens.ChoiceBox    import ChoiceBox
@@ -34,6 +41,7 @@ PLUGIN_PATH = os.path.dirname(os.path.abspath(__file__))
 PIC_PATH = os.path.join(PLUGIN_PATH, "pic")
 
 def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
+    """Uruchamia funkcję w wątku."""
     def thread_target():
         try:
             result = blocking_func(*args, **kwargs)
@@ -45,27 +53,29 @@ def run_in_thread(blocking_func, on_done_callback, *args, **kwargs):
     t.start()
 
 def get_lan_ip():
+    """Pobiera lokalny adres IP."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except: return "127.0.0.1"
+    except: 
+        return "127.0.0.1"
 
 # --- SUPER AGRESYWNY PARSER M3U (NAPRAWA GRUP) ---
 def parse_m3u_bytes_improved(data, content_filter='all'):
+    """Parser M3U z ulepszoną detekcją XXX i VOD."""
     out = []
-    try: text = data.decode("utf-8", "ignore")
-    except: text = str(data)
+    try: 
+        text = data.decode("utf-8", "ignore")
+    except: 
+        text = str(data)
     
-    # Regex 1: Atrybuty typu key="value" lub key=value
+    # Regexy
     rx_attrs = re.compile(r'([a-zA-Z0-9_-]+)\s*=\s*("[^"]*"|[^,;\s]+)')
-    # Regex 2: Grupa w nawiasie na początku nazwy np. [PL] TVP1
     rx_bracket_group = re.compile(r'^\[([^\]]+)\]')
-    # Regex 3: Wykrywanie kanałów XXX/dla dorosłych
     rx_adult = re.compile(r'(xxx|adult|porn|sex|erotic|18\+|mature)', re.IGNORECASE)
-    # Regex 4: Wykrywanie VOD
     rx_vod = re.compile(r'(vod|movie|film|video|series|serial)', re.IGNORECASE)
     
     lines = text.splitlines()
@@ -73,18 +83,16 @@ def parse_m3u_bytes_improved(data, content_filter='all'):
     
     for line in lines:
         line = line.strip()
-        if not line: continue
+        if not line: 
+            continue
         
         # 1. Analiza linii EXTINF
         if line.startswith("#EXTINF"):
             current_entry = {} 
             
-            # Podział na metadane i tytuł
             if ',' in line:
-                # Dzielimy po PIERWSZYM przecinku
                 parts = line.split(',', 1)
                 meta_part = parts[0]
-                # Jeśli jest więcej przecinków, reszta to tytuł
                 current_entry["title"] = parts[1].strip() if len(parts) > 1 else "No Name"
             else:
                 meta_part = line
@@ -103,7 +111,7 @@ def parse_m3u_bytes_improved(data, content_filter='all'):
                 elif key_lower in ["tvg-id", "epg-id", "id"]:
                     current_entry["epg_id"] = clean_val
             
-            # Jeśli nadal brak grupy, szukamy w tytule [GRUPA]
+            # Jeśli nadal brak grupy, szukamy w tytule
             if "group" not in current_entry:
                 m_grp = rx_bracket_group.match(current_entry["title"])
                 if m_grp:
@@ -142,14 +150,21 @@ def parse_m3u_bytes_improved(data, content_filter='all'):
 
             # Logika VOD
             is_vod = False
-            if '/movie/' in url or '/series/' in url: is_vod = True
-            elif url.lower().endswith(('.mp4', '.mkv', '.avi', '.vod', '.mp3', '.flac')): is_vod = True
-            elif rx_vod.search(current_entry.get("group", "")): is_vod = True
+            if '/movie/' in url or '/series/' in url: 
+                is_vod = True
+            elif url.lower().endswith(('.mp4', '.mkv', '.avi', '.vod', '.mp3', '.flac')): 
+                is_vod = True
+            elif rx_vod.search(current_entry.get("group", "")): 
+                is_vod = True
             
             # Filtrowanie
             skip = False
-            if content_filter == 'live' and is_vod: skip = True
-            if content_filter == 'vod' and not is_vod: skip = True
+            if content_filter == 'live' and is_vod: 
+                skip = True
+            if content_filter == 'vod' and not is_vod: 
+                skip = True
+            if content_filter == 'adult' and not (rx_adult.search(current_entry.get("group", "")) or rx_adult.search(current_entry.get("title", ""))): 
+                skip = True
             
             if not skip:
                 out.append({
@@ -165,18 +180,26 @@ def parse_m3u_bytes_improved(data, content_filter='all'):
     return out
 
 def load_profiles():
+    """Wczytuje profile użytkownika."""
     try:
         if os.path.exists(PROFILES):
-            with open(PROFILES, "r") as f: return json.load(f)
-    except: pass
+            with open(PROFILES, "r") as f: 
+                return json.load(f)
+    except: 
+        pass
     return {}
 
 def save_profiles(data):
+    """Zapisuje profile użytkownika."""
     try:
-        with open(PROFILES, "w") as f: json.dump(data, f, indent=2, ensure_ascii=False)
-    except: pass
+        with open(PROFILES, "w") as f: 
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except: 
+        pass
 
 class IPTVDreamMain(Screen):
+    """Główna klasa wtyczki IPTV Dream."""
+    
     skin = """
     <screen name="IPTVDreamMain" position="center,center" size="1050,720" title="IPTV Dream v5.1">
         
@@ -291,7 +314,6 @@ class IPTVDreamMain(Screen):
         for idx, p in enumerate(portals):
             name = p.get('name', 'Portal')
             label = f"{name} ({p.get('host')})"
-            # Przekazujemy indeks, żeby łatwo usunąć
             options.append((label, idx))
         
         # Dodaj opcję zarządzania wszystkimi portalami
@@ -300,7 +322,8 @@ class IPTVDreamMain(Screen):
         self.session.openWithCallback(self.onPortalSelect, ChoiceBox, title=_("mac_select_title", self.lang), list=options)
 
     def onPortalSelect(self, choice):
-        if not choice: return
+        if not choice: 
+            return
         val = choice[1]
         
         if val == "NEW":
@@ -332,7 +355,8 @@ class IPTVDreamMain(Screen):
         self.session.openWithCallback(self.onDeleteMultipleMac, ChoiceBox, title=_("Wybierz portale do usunięcia (OK = usuń):", self.lang), list=options)
 
     def onDeleteMultipleMac(self, choice):
-        if not choice: return
+        if not choice: 
+            return
         idx = choice[1]
         
         portals = load_mac_json()
@@ -352,7 +376,8 @@ class IPTVDreamMain(Screen):
                 MessageBox.TYPE_YESNO)
 
     def onPortalAction(self, choice):
-        if not choice: return
+        if not choice: 
+            return
         action = choice[1]
         portals = load_mac_json()
         idx = self.selected_portal_idx
@@ -384,7 +409,8 @@ class IPTVDreamMain(Screen):
                     VirtualKeyBoard, title=_("Edytuj dane portalu:", self.lang), text=current_json)
 
     def onMacEditDone(self, new_json, idx):
-        if not new_json: return
+        if not new_json: 
+            return
         try:
             portals = load_mac_json()
             new_data = json.loads(new_json)
@@ -481,6 +507,7 @@ class IPTVDreamMain(Screen):
                 self.session.open(MessageBox, _("mac_added_info", self.lang), MessageBox.TYPE_INFO)
 
     def updateLangStrings(self):
+        """Aktualizuje łańcuchy językowe."""
         self["key_red"]    = Label(_("exit", self.lang))
         self["key_green"]  = Label(_("check_upd", self.lang))
         self["key_yellow"] = Label(_("epg_install", self.lang))
@@ -504,23 +531,25 @@ class IPTVDreamMain(Screen):
         foot_text = _("foot", self.lang).replace("{date}", today_date)
         self["foot"].setText(f"{foot_text} v{PLUGIN_VERSION}")
 
-    # ... XTREAM VOD LOGIC ...
+    # --- XTREAM VOD LOGIC ---
     def openXtream(self):
         self.session.openWithCallback(self.onXtreamOne, XtreamOneWindow)
 
     def onXtreamOne(self, data):
-        if not data: return
+        if not data: 
+            return
         self.xtream_data = data 
         options = [
             (_("xt_live", self.lang), "live"),
             (_("xt_vod", self.lang), "vod"),
             (_("xt_all", self.lang), "all"),
-            (_("xt_adult", self.lang), "adult")  # Dodane: filtrowanie tylko XXX
+            (_("xt_adult", self.lang), "adult")  # NOWOŚĆ
         ]
         self.session.openWithCallback(self.onXtreamTypeSelected, ChoiceBox, title=_("xt_select_type", self.lang), list=options)
 
     def onXtreamTypeSelected(self, choice):
-        if not choice: return
+        if not choice: 
+            return
         content_type = choice[1]
         host, user, pwd = self.xtream_data
         
@@ -549,13 +578,14 @@ class IPTVDreamMain(Screen):
         suffix = "LIVE" if content_type == 'live' else "VOD" if content_type == 'vod' else "ADULT" if content_type == 'adult' else "ALL"
         self.onListLoaded(playlist, f"Xtream-{user}-{suffix}")
 
-    # ... STANDARDOWE FUNKCJE ...
+    # --- STANDARDOWE FUNKCJE ---
     def openEpgUrl(self):
         current_url = self.prof.get(EPG_URL_KEY, "http://")
         self.session.openWithCallback(self.onEpgUrlReady, VirtualKeyBoard, title=_("Wklej URL EPG:", self.lang), text=current_url)
 
     def onEpgUrlReady(self, url):
-        if not url: return
+        if not url: 
+            return
         self.prof[EPG_URL_KEY] = url
         save_profiles(self.prof)
         self.session.open(MessageBox, _("epg_url_saved_info", self.lang), MessageBox.TYPE_INFO)
@@ -573,7 +603,8 @@ class IPTVDreamMain(Screen):
         self.session.openWithCallback(self.onUrlReady, VirtualKeyBoard, title=_("Wklej link M3U:", self.lang), text=last_url)
 
     def onUrlReady(self, url):
-        if not url or not url.startswith(('http://', 'https://')): return
+        if not url or not url.startswith(('http://', 'https://')): 
+            return
         self._current_url = url
         self["status"].setText(_("downloading", self.lang)) 
         
@@ -598,9 +629,11 @@ class IPTVDreamMain(Screen):
         self.session.openWithCallback(self.onFileReady, M3UFilePick, start_dir="/tmp/")
 
     def onFileReady(self, path):
-        if not path: return
+        if not path: 
+            return
         try:
-            with open(path, "rb") as f: data = f.read()
+            with open(path, "rb") as f: 
+                data = f.read()
             playlist = parse_m3u_bytes_improved(data)
             name = os.path.splitext(os.path.basename(path))[0]
             self.onListLoaded(playlist, name)
@@ -608,7 +641,8 @@ class IPTVDreamMain(Screen):
             self.session.open(MessageBox, f"File error: {e}", MessageBox.TYPE_ERROR)
 
     def onMacJson(self, txt):
-        if not txt: return
+        if not txt: 
+            return
         try:
             self.data = json.loads(txt)
             if self.data.get("host") and self.data.get("mac"):
@@ -646,8 +680,10 @@ class IPTVDreamMain(Screen):
              return
 
         try:
-            with open(MY_LINKS_FILE) as f: links = json.load(f)
-        except: links = []
+            with open(MY_LINKS_FILE) as f: 
+                links = json.load(f)
+        except: 
+            links = []
 
         if not links:
             self.session.open(MessageBox, _("no_saved_links", self.lang), MessageBox.TYPE_INFO)
@@ -667,7 +703,8 @@ class IPTVDreamMain(Screen):
         self.session.openWithCallback(self.onMyLinkSelect, ChoiceBox, title=_("Wybierz link:", self.lang), list=options)
 
     def onMyLinkSelect(self, choice):
-        if not choice: return
+        if not choice: 
+            return
         val = choice[1]
         
         if val == "MANAGE_ALL":
@@ -684,8 +721,10 @@ class IPTVDreamMain(Screen):
 
     def manageAllLinks(self):
         try:
-            with open(MY_LINKS_FILE) as f: links = json.load(f)
-        except: links = []
+            with open(MY_LINKS_FILE) as f: 
+                links = json.load(f)
+        except: 
+            links = []
 
         if not links:
             self.session.open(MessageBox, _("no_saved_links", self.lang), MessageBox.TYPE_INFO)
@@ -701,12 +740,15 @@ class IPTVDreamMain(Screen):
         self.session.openWithCallback(self.onDeleteMultipleLinks, ChoiceBox, title=_("Wybierz linki do usunięcia (OK = usuń):", self.lang), list=options)
 
     def onDeleteMultipleLinks(self, choice):
-        if not choice: return
+        if not choice: 
+            return
         idx = choice[1]
         
         try:
-            with open(MY_LINKS_FILE) as f: links = json.load(f)
-        except: links = []
+            with open(MY_LINKS_FILE) as f: 
+                links = json.load(f)
+        except: 
+            links = []
         
         if 0 <= idx < len(links):
             link_name = links[idx].get('name', links[idx].get('url', 'Nieznany'))
@@ -714,7 +756,8 @@ class IPTVDreamMain(Screen):
             def confirmDelete(answer):
                 if answer:
                     del links[idx]
-                    with open(MY_LINKS_FILE, "w") as f: json.dump(links, f, indent=2)
+                    with open(MY_LINKS_FILE, "w") as f: 
+                        json.dump(links, f, indent=2)
                     self.session.open(MessageBox, _("Link usunięty: %s", self.lang) % link_name, MessageBox.TYPE_INFO)
                     # Ponownie otwórz menu zarządzania
                     self.manageAllLinks()
@@ -724,12 +767,15 @@ class IPTVDreamMain(Screen):
                 MessageBox.TYPE_YESNO)
 
     def onMyLinkAction(self, choice):
-        if not choice: return
+        if not choice: 
+            return
         action = choice[1]
         
         try:
-            with open(MY_LINKS_FILE) as f: links = json.load(f)
-        except: links = []
+            with open(MY_LINKS_FILE) as f: 
+                links = json.load(f)
+        except: 
+            links = []
         
         if action == "LOAD":
             if 0 <= self.selected_link_idx < len(links):
@@ -743,7 +789,8 @@ class IPTVDreamMain(Screen):
                 def confirmDelete(answer):
                     if answer:
                         del links[self.selected_link_idx]
-                        with open(MY_LINKS_FILE, "w") as f: json.dump(links, f, indent=2)
+                        with open(MY_LINKS_FILE, "w") as f: 
+                            json.dump(links, f, indent=2)
                         self.session.open(MessageBox, _("Link usunięty: %s", self.lang) % link_name, MessageBox.TYPE_INFO)
                 
                 self.session.openWithCallback(confirmDelete, MessageBox, 
@@ -758,16 +805,19 @@ class IPTVDreamMain(Screen):
                     VirtualKeyBoard, title=_("Edytuj link:", self.lang), text=current_json)
 
     def onMyLinkEditDone(self, new_json, idx):
-        if not new_json: return
+        if not new_json: 
+            return
         try:
             links = []
             if os.path.exists(MY_LINKS_FILE):
-                with open(MY_LINKS_FILE) as f: links = json.load(f)
+                with open(MY_LINKS_FILE) as f: 
+                    links = json.load(f)
             
             new_data = json.loads(new_json)
             if new_data.get("url"):
                 links[idx] = new_data
-                with open(MY_LINKS_FILE, "w") as f: json.dump(links, f, indent=2)
+                with open(MY_LINKS_FILE, "w") as f: 
+                    json.dump(links, f, indent=2)
                 self.session.open(MessageBox, _("Link zaktualizowany", self.lang), MessageBox.TYPE_INFO)
             else:
                 self.session.open(MessageBox, _("Link musi zawierać URL"), MessageBox.TYPE_ERROR)
@@ -799,17 +849,22 @@ class IPTVDreamMain(Screen):
         run_in_thread(self._bg_worker, self.onPostProcessDone, self.playlist)
 
     def _bg_worker(self, pl):
+        """Przetwarza playlistę w tle."""
         from .export import create_epg_xml
         import zlib
         epg_mapping = []
+        
         for ch in pl:
             title = ch.get("title", "No Name")
             url   = ch.get("url", "")
             tvg   = ch.get("epg_id", "") # Pobieramy tvg-id!
             
-            if not url: continue
+            if not url: 
+                continue
+                
             unique_sid = zlib.crc32(url.encode()) & 0xffff
-            if unique_sid == 0: unique_sid = 1
+            if unique_sid == 0: 
+                unique_sid = 1
             sid_hex = f"{unique_sid:X}"
             
             # Tworzymy krotkę z (ref, title, tvg_id)
@@ -830,9 +885,9 @@ class IPTVDreamMain(Screen):
         self.exportBouquet()
 
     def exportBouquet(self):
-        if not self.playlist: return
+        if not self.playlist: 
+            return
         groups = {}
-        # Ulepszone grupowanie - jeśli M3U parser działa poprawnie, tutaj będziemy mieć grupy
         for ch in self.playlist:
             g = ch.get("group", "Inne") or "Inne"
             groups.setdefault(g, []).append(ch)
@@ -840,10 +895,9 @@ class IPTVDreamMain(Screen):
         self.session.openWithCallback(self.onBouquetsSelected, BouquetPicker, groups)
 
     def onBouquetsSelected(self, selected_keys):
-        if not selected_keys: return
+        if not selected_keys: 
+            return
         final_list = []
-        # Uwaga: Tutaj tylko wybieramy kanały do eksportu.
-        # Sama funkcja export_bouquets w export.py odpowiada za podział na pliki .tv
         for k in selected_keys:
             if k in self._groups:
                 final_list.extend(self._groups[k])
@@ -852,13 +906,23 @@ class IPTVDreamMain(Screen):
         try:
              eDVBDB.getInstance().reloadBouquets()
              eDVBDB.getInstance().reloadServicelist()
-        except Exception: pass
+        except Exception: 
+            pass
+        
+        # NOWOŚĆ: Opcja eksportu z EPG do pliku M3U
+        def exportWithEpg(answer):
+            if answer:
+                # Eksportuj z EPG do pliku M3U
+                from .export import export_epg_to_m3u
+                m3u_file = export_epg_to_m3u(final_list)
+                if m3u_file:
+                    self.session.open(MessageBox, f"Playlista z EPG zapisana w: {m3u_file}", MessageBox.TYPE_INFO)
         
         self.session.openWithCallback(
-            self.onExportFinished,
+            exportWithEpg,
             MessageBox,
-            f"{_('exported_channels_bouquets', self.lang) % (chans, res)}", 
-            MessageBox.TYPE_INFO
+            f"{_('exported_channels_bouquets', self.lang) % (chans, res)}\n\nCzy chcesz też wyeksportować playlistę M3U z informacjami EPG?", 
+            MessageBox.TYPE_YESNO
         )
 
     def onExportFinished(self, answer=None):
@@ -894,7 +958,8 @@ class IPTVDreamMain(Screen):
                 self.session.open(MessageBox, f"{_('no_update_msg', self.lang)} (v{local_ver}).", MessageBox.TYPE_INFO)
 
     def doUpdateConfirm(self, ans):
-        if ans: run_in_thread(do_update, self.onUpdateDone)
+        if ans: 
+            run_in_thread(do_update, self.onUpdateDone)
 
     def onUpdateDone(self, res, err):
         if err:
@@ -903,15 +968,6 @@ class IPTVDreamMain(Screen):
             self.session.openWithCallback(lambda x: x and quitMainloop(3), MessageBox, 
                                           _("update_ok_restart_msg", self.lang), 
                                           MessageBox.TYPE_YESNO)
-
-    def toggleAutoUpdate(self):
-        current_state = self.prof.get("auto_update", False)
-        new_state = not current_state
-        self.prof["auto_update"] = new_state
-        save_profiles(self.prof)
-        self.updateLangStrings()
-        msg = _("auto_on_full", self.lang) if new_state else _("auto_off_full", self.lang)
-        self.session.open(MessageBox, msg, MessageBox.TYPE_INFO)
 
     def close(self):
         Screen.close(self)
