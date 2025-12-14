@@ -182,8 +182,8 @@ See `COMPLETE_INSTALLATION_v6.0.md` for step-by-step installation guide.
 ## 📞 Support & Community
 
 ### Professional Support
-- **Email**: support@iptv-dream.com
-- **Website**: www.iptv-dream.com
+- **Email**: msisystem@t.pl
+- **Website**: [www.iptv-dream.com](https://olioli2013.github.io/aio-iptv-projekt/)
 - **Documentation**: Comprehensive guides included
 
 ### Community
