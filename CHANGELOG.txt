@@ -1,3 +1,18 @@
+v6.0.4 (2025-12-14)
+- UI: nowy układ interfejsu v6 (menu po lewej + panel informacji), poprawiona czytelność i ergonomia.
+- UI: dodana/ujednolicona sekcja „Zarządzanie” (menu 6) oraz przeniesione do niej ustawienia (Język / Typ serwisu / EPG URL).
+- FUNKCJA: zarządzanie dodanymi danymi – możliwość porządkowania i usuwania niepotrzebnych wpisów.
+- WebIF: ujednolicone oznaczenia wersji na porcie 9999 (spójne v6.0 w GUI i WebIF).
+- i18n: rozszerzone i poprawione tłumaczenia EN.
+- UI: dopasowana kolorystyka cyfr 1–9 (same kolory cyfr), poprawiony opis przy kodzie QR.
+- UI: dodana stopka (autor, data, e-mail, wersja).
+- FIX: naprawiony błąd parsowania M3U przy wczytywaniu list z URL.
+- FIX: naprawiony podział na bukiety po dodaniu linku M3U (prawidłowe grupowanie i eksport).
+- FIX: poprawione dodawanie brakujących kanałów/kategorii (m.in. VOD, XXX).
+- FIX: MAC Portal – trwałe zapisywanie danych (portale nie znikają po eksporcie/powrocie).
+- OPT: usprawniona obsługa i pobieranie piconów (szybsze działanie).
+
+
 v5.0 (2025-12-07)
 - NOWY WYGLĄD (GUI): Całkowicie przebudowany interfejs. Układ dwukolumnowy, czytelna stopka, kolorowe przyciski.
 - MAC PORTAL: Dodano "Książkę Adresową" – obsługa wielu zapisanych portali jednocześnie (wybór z listy).
