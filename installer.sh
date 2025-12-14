@@ -1,16 +1,13 @@
 #!/bin/sh
 #
 # IPTV Dream - installer (GitHub ZIP) + GUI restart
-# Repo: https://github.com/OliOli2013/IPTV-Dream-Plugin (branch domyślnie: main)
+# Obsługuje repo "płaskie" (plugin.py w root) oraz zagnieżdżone (Plugins/Extensions/IPTVDream).
 #
 
 # ===== Repo (Twoje) =====
 GITHUB_OWNER="${GITHUB_OWNER:-OliOli2013}"
 GITHUB_REPO="${GITHUB_REPO:-IPTV-Dream-Plugin}"
 GITHUB_REF="${GITHUB_REF:-main}"          # branch lub tag (np. main albo v6.0.4)
-
-# W ZIP-ie wtyczka ma być w tej ścieżce (dopasuj, jeśli zmienisz strukturę repo)
-SRC_SUBDIR="Plugins/Extensions/IPTVDream"
 
 # Docelowy katalog wtyczki w Enigma2
 PLUGIN_DST="/usr/lib/enigma2/python/Plugins/Extensions/IPTVDream"
@@ -111,8 +108,26 @@ unzip -q "$ZIP_FILE" -d "$TMP_BASE/unzip" || die "Błąd rozpakowania ZIP."
 ROOT_DIR="$(find "$TMP_BASE/unzip" -maxdepth 1 -type d -name "${GITHUB_REPO}-*" | head -n 1)"
 [ -n "$ROOT_DIR" ] || die "Nie znaleziono katalogu repo po rozpakowaniu."
 
-SRC_DIR="$ROOT_DIR/$SRC_SUBDIR"
-[ -d "$SRC_DIR" ] || die "Nie znaleziono w ZIP ścieżki: $SRC_SUBDIR (sprawdź strukturę repo)."
+# ===== Wykrywanie struktury źródeł =====
+NESTED_SRC="$ROOT_DIR/Plugins/Extensions/IPTVDream"
+FLAT_SRC="$ROOT_DIR"
+
+if [ -d "$NESTED_SRC" ]; then
+  SRC_DIR="$NESTED_SRC"
+  log "Wykryto strukturę zagnieżdżoną: Plugins/Extensions/IPTVDream"
+elif [ -f "$FLAT_SRC/plugin.py" ] && [ -d "$FLAT_SRC/tools" ]; then
+  SRC_DIR="$FLAT_SRC"
+  log "Wykryto strukturę płaską (plugin.py w root repo)."
+else
+  # ostatnia próba: poszukaj katalogu IPTVDream w głębi
+  FOUND="$(find "$ROOT_DIR" -type f -name "plugin.py" -path "*/IPTVDream/*" | head -n 1)"
+  if [ -n "$FOUND" ]; then
+    SRC_DIR="$(dirname "$FOUND")"
+    log "Wykryto IPTVDream w głębi: $SRC_DIR"
+  else
+    die "Nie wykryto źródeł wtyczki (brak plugin.py/tools). Sprawdź strukturę repo."
+  fi
+fi
 
 log "Backup poprzedniej wersji (jeśli istnieje)..."
 if [ -d "$PLUGIN_DST" ]; then
@@ -124,9 +139,15 @@ fi
 log "Czysta instalacja (usuwanie starej wersji)..."
 rm -rf "$PLUGIN_DST" || die "Nie mogę usunąć starego katalogu wtyczki."
 
-log "Kopiowanie nowej wersji..."
-mkdir -p "$(dirname "$PLUGIN_DST")" || die "Nie mogę utworzyć katalogu docelowego."
-cp -a "$SRC_DIR" "$PLUGIN_DST" || die "Błąd kopiowania plików wtyczki."
+log "Kopiowanie nowej wersji do: $PLUGIN_DST"
+mkdir -p "$PLUGIN_DST" || die "Nie mogę utworzyć katalogu docelowego."
+
+# Kopiuj zawartość źródła do katalogu wtyczki.
+# W repo "płaskim" pominie to śmieci typu .github (jeśli byłyby w ZIP), ale GitHub ZIP i tak ich nie daje zwykle.
+cp -a "$SRC_DIR"/* "$PLUGIN_DST"/ || die "Błąd kopiowania plików wtyczki."
+
+# Walidacja: plugin.py musi istnieć
+[ -f "$PLUGIN_DST/plugin.py" ] || die "Po instalacji brakuje $PLUGIN_DST/plugin.py (błędne źródła lub struktura)."
 
 log "Czyszczenie cache Pythona..."
 rm -rf \
