@@ -1,3 +1,15 @@
+v6.1
+[PL]
+- Dodano kompletne tłumaczenie interfejsu na język angielski (pełne wsparcie PL/EN).
+- Przetłumaczono komunikaty, menu, okna dialogowe/pomocnicze oraz kluczowe ekrany.
+- Automatyczne przełączanie języka zgodnie z ustawieniami języka w systemie (zachowany wybór PL/EN w samej wtyczce, jeśli występuje).
+
+[EN]
+- Added complete English translation (full PL/EN bilingual support).
+- Translated messages, menus, dialogs/auxiliary windows, and key screens.
+- Automatic language switching based on the system language setting (plugin’s own PL/EN selector remains available where applicable).
+
+
 v5.0 (2025-12-07)
 - NOWY WYGLĄD (GUI): Całkowicie przebudowany interfejs. Układ dwukolumnowy, czytelna stopka, kolorowe przyciski.
 - MAC PORTAL: Dodano "Książkę Adresową" – obsługa wielu zapisanych portali jednocześnie (wybór z listy).
