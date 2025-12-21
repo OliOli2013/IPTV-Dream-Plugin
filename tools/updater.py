@@ -41,7 +41,7 @@ def check_update():
     remote, changelog = _get_remote_info()
     
     if not remote:
-        return False, local, "Błąd sieci", None
+        return False, local, "NETWORK_ERROR", None
     
     if remote != local:
         return True, local, remote, changelog

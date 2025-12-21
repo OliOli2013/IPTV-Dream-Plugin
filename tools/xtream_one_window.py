@@ -19,11 +19,11 @@ class XtreamOneWindow(Screen):
     """Okno dla Xtream Codes"""
     
     skin = """
-    <screen name="XtreamOneWindow" position="center,center" size="600,380" title="Xtream Codes – nawigacja">
+    <screen name="XtreamOneWindow" position="center,center" size="600,380" title="Xtream Codes">
 
-        <eLabel text="Host (z portem):" position="20,20"  size="200,30" font="Regular;22" halign="left"  valign="center"/>
-        <eLabel text="Username:"        position="20,70"  size="200,30" font="Regular;22" halign="left"  valign="center"/>
-        <eLabel text="Password:"        position="20,120" size="200,30" font="Regular;22" halign="left"  valign="center"/>
+        <widget name="lbl_host" position="20,20" size="200,30" font="Regular;22" halign="left" valign="center" transparent="1"/>
+        <widget name="lbl_user" position="20,70" size="200,30" font="Regular;22" halign="left" valign="center" transparent="1"/>
+        <widget name="lbl_pass" position="20,120" size="200,30" font="Regular;22" halign="left" valign="center" transparent="1"/>
 
         <widget name="host" position="230,20"  size="350,35" font="Regular;22" halign="left" valign="center" transparent="1"/>
         <widget name="user" position="230,70"  size="350,35" font="Regular;22" halign="left" valign="center" transparent="1"/>
@@ -54,6 +54,10 @@ class XtreamOneWindow(Screen):
         self["key_red"]   = StaticText(_("cancel", self.lang))
         self["key_green"] = StaticText(_("save", self.lang))
         self["help"]      = Label(_("xtream_help", self.lang))
+
+        self["lbl_host"] = Label(_("Host (z portem):", self.lang))
+        self["lbl_user"] = Label("Nazwa użytkownika:" if self.lang == "pl" else "Username:")
+        self["lbl_pass"] = Label("Hasło:" if self.lang == "pl" else "Password:")
 
         # 3 pola wejściowe
         self["host"] = Input("http://example.com:8080")
@@ -92,10 +96,19 @@ class XtreamOneWindow(Screen):
         self.highlight()
 
     # ---------- klawiatura ----------
+    def _fieldLabel(self, field):
+        if field == "host":
+            return _("Host (z portem):", self.lang)
+        if field == "user":
+            return "Nazwa użytkownika:" if self.lang == "pl" else "Username:"
+        if field == "pass":
+            return "Hasło:" if self.lang == "pl" else "Password:"
+        return field
+
     def openVKB(self):
         field = self.fields[self.current]
         self.session.openWithCallback(self.onVkbDone, VKInputBox,
-                                      title=f"{_('enter', self.lang)} {field}:",
+                                      title="%s %s:" % (_("enter", self.lang), self._fieldLabel(field)),
                                       text=self[field].getText())
 
     def onVkbDone(self, text):

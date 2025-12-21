@@ -178,7 +178,7 @@ def save_profiles(data):
 
 class IPTVDreamMain(Screen):
     skin = """
-    <screen name="IPTVDreamMain" position="center,center" size="1050,720" title="IPTV Dream v5.1">
+    <screen name="IPTVDreamMain" position="center,center" size="1050,720" title="IPTV Dream">
         
         <eLabel position="0,0" size="1050,60" backgroundColor="#202020" zPosition="-1" />
         <widget name="version_label" position="0,10" size="1050,40" font="Regular;32" halign="center" valign="center" foregroundColor="#ffcc00" backgroundColor="#202020" transparent="1" />
@@ -191,7 +191,7 @@ class IPTVDreamMain(Screen):
         <widget name="lab1" position="230,120" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
 
         <eLabel text="2" position="20,180" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="5"/>
-        <eLabel text="M3U Plik" position="80,180" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lbl_m3u_file" position="80,180" size="150,50" font="Regular;24" halign="left" valign="center" transparent="1"/>
         <widget name="lab2" position="230,180" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
 
         <eLabel text="3" position="20,240" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#1f771f" cornerRadius="5"/>
@@ -207,11 +207,11 @@ class IPTVDreamMain(Screen):
         <widget name="lab9_val" position="230,360" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#00ccff"/>
 
         <eLabel text="5" position="540,120" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#555555" cornerRadius="5"/>
-        <eLabel text="Własne" position="600,120" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lbl_custom" position="600,120" size="150,50" font="Regular;24" halign="left" valign="center" transparent="1"/>
         <widget name="lab5" position="750,120" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
 
         <eLabel text="6" position="540,180" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#800080" cornerRadius="5"/>
-        <eLabel text="Język" position="600,180" size="150,50" font="Regular;24" halign="left" valign="center"/>
+        <widget name="lbl_lang" position="600,180" size="150,50" font="Regular;24" halign="left" valign="center" transparent="1"/>
         <widget name="lab6" position="750,180" size="280,50" font="Regular;20" halign="left" valign="center" foregroundColor="#aaaaaa"/>
 
         <eLabel text="7" position="540,240" size="50,50" font="Regular;35" halign="center" valign="center" foregroundColor="white" backgroundColor="#ff8000" cornerRadius="5"/>
@@ -256,6 +256,10 @@ class IPTVDreamMain(Screen):
         
         sys_lang = language.getLanguage()[:2] 
         self.lang = "pl" if sys_lang == "pl" else "en"
+
+        self["lbl_m3u_file"] = Label("M3U Plik" if self.lang == "pl" else "M3U File")
+        self["lbl_custom"] = Label("Własne" if self.lang == "pl" else "Custom")
+        self["lbl_lang"] = Label("Język" if self.lang == "pl" else "Language")
         
         self.setTitle(f"IPTV Dream v{PLUGIN_VERSION}")
         self["version_label"] = Label(f"IPTV Dream v{PLUGIN_VERSION}")

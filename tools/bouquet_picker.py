@@ -12,15 +12,15 @@ POS_CH    = (450, 80)
 
 class BouquetPicker(Screen):
     skin = """
-    <screen name="BouquetPicker" position="center,center" size="1100,650" title="Wybór bukietów v5.1">
+    <screen name="BouquetPicker" position="center,center" size="1100,650" title="Bouquet Picker">
         <eLabel position="0,0" size="1100,60" backgroundColor="#202020" zPosition="-1" />
         <widget name="title_lbl" position="0,10" size="1100,40" font="Regular;30" halign="center" valign="center" foregroundColor="#ffcc00" backgroundColor="#202020" transparent="1" />
         <eLabel position="0,60" size="1100,2" backgroundColor="#333333" />
 
-        <eLabel text="Grupy (Zaznacz OK):" position="20,70" size="300,30" font="Regular;22" foregroundColor="#00ccff" transparent="1" />
+        <widget name="lbl_groups" position="20,70" size="300,30" font="Regular;22" foregroundColor="#00ccff" transparent="1" />
         <widget name="filter_lbl" position="200,70" size="230,30" font="Regular;20" halign="right" foregroundColor="yellow" transparent="1" />
         
-        <eLabel text="Kanały w grupie:" position="450,70" size="400,30" font="Regular;22" foregroundColor="#00ccff" transparent="1" />
+        <widget name="lbl_channels" position="450,70" size="400,30" font="Regular;22" foregroundColor="#00ccff" transparent="1" />
 
         <widget name="bqt_list" position="20,110" size="410,450" scrollbarMode="showOnDemand" transparent="1" />
         <widget name="ch_list"  position="450,110" size="630,450" scrollbarMode="showOnDemand" transparent="1" />
@@ -29,10 +29,10 @@ class BouquetPicker(Screen):
         
         <widget name="sum" position="20,580" size="1060,30" font="Regular;22" halign="center" valign="center" foregroundColor="yellow"/>
         
-        <eLabel text="OK / ZIELONY = Zaznacz" position="20,620" size="250,30" font="Regular;20" foregroundColor="#00ff00" />
-        <eLabel text="NIEBIESKI = Eksportuj" position="280,620" size="250,30" font="Regular;20" foregroundColor="#00ccff" />
-        <eLabel text="ŻÓŁTY = Szukaj" position="540,620" size="250,30" font="Regular;20" foregroundColor="#ffff00" />
-        <eLabel text="LEWO/PRAWO = Zmień listę" position="800,620" size="250,30" font="Regular;20" foregroundColor="white" />
+        <widget name="lbl_ok" position="20,620" size="250,30" font="Regular;20" foregroundColor="#00ff00" />
+        <widget name="lbl_blue" position="280,620" size="250,30" font="Regular;20" foregroundColor="#00ccff" />
+        <widget name="lbl_yellow" position="540,620" size="250,30" font="Regular;20" foregroundColor="#ffff00" />
+        <widget name="lbl_lr" position="800,620" size="250,30" font="Regular;20" foregroundColor="white" />
 
     </screen>
     """
@@ -49,7 +49,13 @@ class BouquetPicker(Screen):
         self.selected = set()
         self.filter_text = ""
         
-        self["title_lbl"] = Label("IPTV Dream - Wybór Bukietów")
+        self["title_lbl"] = Label(_("IPTV Dream - Wybór Bukietów", self.lang))
+        self["lbl_groups"] = Label(_("Grupy (Zaznacz OK):", self.lang))
+        self["lbl_channels"] = Label(_("Kanały w grupie:", self.lang))
+        self["lbl_ok"] = Label(_("OK / ZIELONY = Zaznacz", self.lang))
+        self["lbl_blue"] = Label(_("NIEBIESKI = Eksportuj", self.lang))
+        self["lbl_yellow"] = Label(_("ŻÓŁTY = Szukaj", self.lang))
+        self["lbl_lr"] = Label(_("LEWO/PRAWO = Zmień listę", self.lang))
         self["filter_lbl"] = Label("")
         self["bqt_list"] = MenuList([], enableWrapAround=True)
         self["ch_list"]  = MenuList([], enableWrapAround=True)
@@ -99,7 +105,7 @@ class BouquetPicker(Screen):
             self["filter_lbl"].setText("")
         else:
             self.current_keys = [k for k in self.all_group_keys if self.filter_text in k.lower()]
-            self["filter_lbl"].setText(f"Filtr: {self.filter_text}")
+            self["filter_lbl"].setText(_("Filtr: %s", self.lang) % self.filter_text)
         
         self.refreshList()
         self.updatePreview()

@@ -9,11 +9,11 @@ from Components.Language import language # DODANO
 
 class VKInputBox(Screen):
     skin = """
-    <screen name="VKInputBox" position="center,center" size="900,400" title="Wprowadź dane">
+    <screen name="VKInputBox" position="center,center" size="900,400" title="Input">
         <widget name="text"   position="20,20"  size="860,60"  font="Regular;28" halign="center" valign="center"/>
         <widget name="input"  position="20,100" size="860,60"  font="Regular;24" halign="left" valign="center" transparent="0" backgroundColor="#202020"/>
         <widget name="help"   position="20,200" size="860,40"  font="Regular;22" halign="center" valign="center" foregroundColor="grey"/>
-        <eLabel text="OK: Edytuj | ZIELONY: Zapisz | EXIT: Anuluj" position="20,320" size="860,40" font="Regular;24" halign="center" valign="center" foregroundColor="yellow"/>
+        <widget name="help2" position="20,320" size="860,40" font="Regular;24" halign="center" valign="center" foregroundColor="yellow"/>
     </screen>
     """
     def __init__(self, session, title="", text=""):

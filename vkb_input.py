@@ -4,23 +4,27 @@ from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Components.Input import Input
 from Components.Label import Label
 from Components.ActionMap import ActionMap
+from Components.Language import language
+from .tools.lang import _
 
 class VKInputBox(Screen):
     skin = """
-    <screen name="VKInputBox" position="center,center" size="900,400" title="Wprowadź dane">
+    <screen name="VKInputBox" position="center,center" size="900,400" title="Input">
         <widget name="text"   position="20,20"  size="860,60"  font="Regular;28" halign="center" valign="center"/>
         <widget name="input"  position="20,100" size="860,60"  font="Regular;24" halign="left" valign="center" transparent="0" backgroundColor="#202020"/>
         <widget name="help"   position="20,200" size="860,40"  font="Regular;22" halign="center" valign="center" foregroundColor="grey"/>
-        <eLabel text="OK: Edytuj | ZIELONY: Zapisz | EXIT: Anuluj" position="20,320" size="860,40" font="Regular;24" halign="center" valign="center" foregroundColor="yellow"/>
+        <widget name="help2" position="20,320" size="860,40" font="Regular;24" halign="center" valign="center" foregroundColor="yellow"/>
     </screen>
     """
     def __init__(self, session, title="", text=""):
         Screen.__init__(self, session)
+        self.lang = (language.getLanguage()[:2] if hasattr(language,'getLanguage') else 'en') or 'pl'
         self.setTitle(title)
         self.input = Input(text)
         self["text"]  = Label(title)
         self["input"] = self.input
-        self["help"]  = Label("Naciśnij OK, aby edytować.")
+        self["help"]  = Label(_("Naciśnij OK, aby edytować.", self.lang))
+        self["help2"] = Label(_("OK: Edytuj | ZIELONY: Zapisz | EXIT: Anuluj", self.lang))
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], {
             "ok": self.openVKB, "cancel": self.cancel, "green": self.ok, "red": self.cancel
         }, -1)

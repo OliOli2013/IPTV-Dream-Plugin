@@ -58,7 +58,7 @@ from .tools.xtream_one_window_fixed import XtreamWindow  # alias w pliku
 
 from .core.playlist_loader import PlaylistLoader
 
-PLUGIN_VERSION = "6.0"
+PLUGIN_VERSION = "6.1"
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
 CACHE_DIR = "/tmp/iptvdream_v6_cache"
 
@@ -105,7 +105,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.0 - REWOLUCJA">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.1">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -163,7 +163,7 @@ class IPTVDreamV6(Screen):
             self.lang = "pl"
 
         # UI
-        self["title_label"] = Label("IPTV Dream v%s" % PLUGIN_VERSION)
+        self["title_label"] = Label(_("title", self.lang))
         self["menu_list"] = MenuList([])
         self["info_title"] = Label("")
         self["info_text"] = Label("")
@@ -191,7 +191,7 @@ class IPTVDreamV6(Screen):
             foot_date = time.strftime("%Y-%m-%d")
         except Exception:
             foot_date = ""
-        self["footer"] = Label("Twórca: Paweł Pawełek, %s | msisystem@t.pl v%s" % (foot_date, PLUGIN_VERSION))
+        self["footer"] = Label(_("foot", self.lang).format(date=foot_date) + " v%s" % PLUGIN_VERSION)
 
 
         # --- Inicjalizacja logiki v6 (konfiguracja, akcje, timery) ---
@@ -338,7 +338,7 @@ class IPTVDreamV6(Screen):
         except Exception:
             pass
 
-        self.updateInfoPanel("Witamy", "IPTV Dream v%s\n\nWybierz opcję z menu po lewej." % PLUGIN_VERSION)
+        self.updateInfoPanel(_("Witamy", self.lang), _("welcome_body", self.lang) % PLUGIN_VERSION)
         self.showMainMenu()
 
     def onCancel(self):
@@ -346,7 +346,7 @@ class IPTVDreamV6(Screen):
         try:
             if getattr(self, "is_loading", False):
                 self.stopLoading()
-                self["status_bar"].setText("Przerwano.")
+                self["status_bar"].setText(_("Przerwano.", self.lang))
                 return
         except Exception:
             pass
@@ -481,17 +481,17 @@ class IPTVDreamV6(Screen):
             return
         self.menu_context = "playlist"
         items = [
-            ("📊 Podgląd playlisty", "preview"),
-            ("📁 Grupy", "groups"),
-            ("⭐ Dodaj całość do ulubionych", "fav_add_all"),
-            ("🎨 Pobierz pikony", "picons"),
-            ("📺 Instaluj EPG + przypisz", "epg_map"),
-            ("🔄 Odśwież (ostatnie źródło)", "refresh"),
-            ("⬅️ Powrót", "back_main"),
+            (_("📊 Podgląd playlisty", self.lang), "preview"),
+            (_("📁 Grupy", self.lang), "groups"),
+            (_("⭐ Dodaj całość do ulubionych", self.lang), "fav_add_all"),
+            (_("🎨 Pobierz pikony", self.lang), "picons"),
+            (_("📺 Instaluj EPG + przypisz", self.lang), "epg_map"),
+            (_("🔄 Odśwież (ostatnie źródło)", self.lang), "refresh"),
+            (_("⬅️ Powrót", self.lang), "back_main"),
         ]
         self["menu_list"].setList(items)
-        self["status_bar"].setText("Playlista: %s" % (self.playlist_name or ""))
-        self["hint"].setText("ZIELONY: aktualizacje • ŻÓŁTY: źródła EPG • NIEBIESKI: eksport\nOK: wybór • 8: WebIF 9999")
+        self["status_bar"].setText(_("Playlista: %s", self.lang) % (self.playlist_name or ""))
+        self["hint"].setText(_("ZIELONY: aktualizacje • ŻÓŁTY: źródła EPG • NIEBIESKI: eksport\nOK: wybór • 8: WebIF 9999", self.lang))
 
     def showFavorites(self):
         try:
@@ -500,7 +500,7 @@ class IPTVDreamV6(Screen):
             groups = []
 
         if not groups:
-            self.session.open(MessageBox, "Brak ulubionych kanałów!", MessageBox.TYPE_INFO)
+            self.session.open(MessageBox, _("Brak ulubionych kanałów!", self.lang), MessageBox.TYPE_INFO)
             return
 
         self.menu_context = "favorites_groups"
@@ -511,14 +511,14 @@ class IPTVDreamV6(Screen):
             except Exception:
                 cnt = 0
             items.append(("⭐ %s (%d)" % (g, cnt), ("fav_group", g)))
-        items.append(("⬅️ Powrót", "back_main"))
+        items.append((_("⬅️ Powrót", self.lang), "back_main"))
         self["menu_list"].setList(items)
-        self["status_bar"].setText("Ulubione")
+        self["status_bar"].setText(_("Ulubione", self.lang))
 
     def showFavoritesGroup(self, group_name):
         chans = self.favorites.get_favorites_in_group(group_name)
         if not chans:
-            self.session.open(MessageBox, "Brak kanałów w tej grupie.", MessageBox.TYPE_INFO)
+            self.session.open(MessageBox, _("Brak kanałów w tej grupie.", self.lang), MessageBox.TYPE_INFO)
             return
 
         self.menu_context = "favorites_list"
@@ -526,9 +526,9 @@ class IPTVDreamV6(Screen):
         for ch in chans[:300]:
             title = ch.get("title", "Bez nazwy")
             items.append(("• %s" % title, ("fav_item", ch)))
-        items.append(("⬅️ Powrót", "back_fav_groups"))
+        items.append((_("⬅️ Powrót", self.lang), "back_fav_groups"))
         self["menu_list"].setList(items)
-        self["status_bar"].setText("Ulubione: %s" % group_name)
+        self["status_bar"].setText(_("Ulubione: %s", self.lang) % group_name)
 
     # ---------- nawigacja / dispatch ----------
 
@@ -681,13 +681,13 @@ class IPTVDreamV6(Screen):
     def onLoadingTimeout(self):
         if self.is_loading:
             self.stopLoading()
-            self["status_bar"].setText("Przekroczono czas ładowania (timeout).")
+            self["status_bar"].setText(_("Przekroczono czas ładowania (timeout).", self.lang))
 
     # ---------- M3U URL ----------
 
     def openUrl(self):
         last_url = self.cfg.get("last_url", "http://")
-        self.session.openWithCallback(self.onUrlReady, VirtualKeyBoard, title="Wprowadź URL playlisty M3U:", text=last_url)
+        self.session.openWithCallback(self.onUrlReady, VirtualKeyBoard, title=_("Wprowadź URL playlisty M3U:", self.lang), text=last_url)
 
     def onUrlReady(self, url):
         if not url or not url.startswith(("http://", "https://")):
@@ -698,7 +698,7 @@ class IPTVDreamV6(Screen):
         self.cfg["last_source"] = self.last_source
         self._save_cfg()
 
-        self.startLoading("Pobieranie playlisty (URL) ...")
+        self.startLoading(_("Pobieranie playlisty (URL) ...", self.lang))
 
         def _load():
             # PlaylistLoader ma cache i parsowanie
@@ -720,7 +720,7 @@ class IPTVDreamV6(Screen):
         self.cfg["last_source"] = self.last_source
         self._save_cfg()
 
-        self.startLoading("Wczytywanie pliku M3U ...")
+        self.startLoading(_("Wczytywanie pliku M3U ...", self.lang))
 
         def _load():
             content = self.loader.load_m3u_file(path)
@@ -745,14 +745,14 @@ class IPTVDreamV6(Screen):
             ("ALL", "all"),
             ("ADULT", "adult"),
         ]
-        self.session.openWithCallback(self.onXtreamTypeSelected, ChoiceBox, title="Wybierz typ treści", list=options)
+        self.session.openWithCallback(self.onXtreamTypeSelected, ChoiceBox, title=_("Wybierz typ treści", self.lang), list=options)
 
     def onXtreamTypeSelected(self, choice):
         if not choice:
             return
         content_type = choice[1]
         host, user, pwd = self.xtream_data
-        self.startLoading("Pobieranie Xtream ...")
+        self.startLoading(_("Pobieranie Xtream ...", self.lang))
 
         def _dl():
             base = host if host.startswith("http") else "http://%s" % host
@@ -784,7 +784,7 @@ class IPTVDreamV6(Screen):
             mac = p.get("mac", "")
             items.append(("🔑 %s | %s" % (host, mac), ("mac_pick", p)))
         items.append(("🗑️ Usuń portal", "mac_delete"))
-        items.append(("⬅️ Powrót", "back_main"))
+        items.append((_("⬅️ Powrót", self.lang), "back_main"))
         self.menu_context = "mac_menu"
         self["menu_list"].setList(items)
         self["status_bar"].setText("MAC Portal")
@@ -794,7 +794,12 @@ class IPTVDreamV6(Screen):
         return
 
     def addMacPortal(self):
-        self.session.openWithCallback(self.onMacJson, VirtualKeyBoard, title="Wklej JSON: {\"host\":\"...\",\"mac\":\"...\"}", text="")
+        self.session.openWithCallback(
+            self.onMacJson,
+            VirtualKeyBoard,
+            title=("Wklej JSON:" if self.lang == "pl" else "Paste JSON:"),
+            text='{"host":"...","mac":"..."}'
+        )
 
     def onMacJson(self, txt):
         if not txt:
@@ -804,16 +809,16 @@ class IPTVDreamV6(Screen):
             host = (data.get("host") or "").strip()
             mac = (data.get("mac") or "").strip()
             if not host or not mac:
-                self.session.open(MessageBox, "Brak host/mac w JSON.", MessageBox.TYPE_ERROR)
+                self.session.open(MessageBox, _("Brak host/mac w JSON.", self.lang), MessageBox.TYPE_ERROR)
                 return
             add_mac_portal(host, mac)
-            self.session.open(MessageBox, "Dodano portal MAC.", MessageBox.TYPE_INFO, timeout=3)
+            self.session.open(MessageBox, _("Dodano portal MAC.", self.lang), MessageBox.TYPE_INFO, timeout=3)
             self.openMacMenu()
         except Exception as e:
             self.session.open(MessageBox, "JSON Error: %s" % e, MessageBox.TYPE_ERROR)
 
     def startMacDownload(self, host, mac):
-        self.startLoading("Pobieranie z MAC Portal ...")
+        self.startLoading(_("Pobieranie z MAC Portal ...", self.lang))
 
         def _load():
             # tools/mac_portal.py w repozytorium przyjmuje (host, mac) bez progress_callback.
@@ -829,12 +834,12 @@ class IPTVDreamV6(Screen):
     def deleteMacPortal(self):
         portals = load_mac_json() or []
         if not portals:
-            self.session.open(MessageBox, "Brak zapisanych portali.", MessageBox.TYPE_INFO)
+            self.session.open(MessageBox, _("Brak zapisanych portali.", self.lang), MessageBox.TYPE_INFO)
             return
         items = []
         for idx, p in enumerate(portals):
             items.append(("Usuń: %s | %s" % (p.get("host", ""), p.get("mac", "")), idx))
-        self.session.openWithCallback(self.onMacDeletePicked, ChoiceBox, title="Wybierz portal do usunięcia", list=items)
+        self.session.openWithCallback(self.onMacDeletePicked, ChoiceBox, title=_("Wybierz portal do usunięcia", self.lang), list=items)
 
     def onMacDeletePicked(self, choice):
         if not choice:
@@ -844,7 +849,7 @@ class IPTVDreamV6(Screen):
         if 0 <= idx < len(portals):
             portals.pop(idx)
             save_mac_json(portals)
-            self.session.open(MessageBox, "Usunięto portal.", MessageBox.TYPE_INFO, timeout=3)
+            self.session.open(MessageBox, _("Usunięto portal.", self.lang), MessageBox.TYPE_INFO, timeout=3)
         self.openMacMenu()
 
     # ---------- WebIF ----------
@@ -893,12 +898,12 @@ class IPTVDreamV6(Screen):
         self.stopLoading()
 
         if error:
-            self["status_bar"].setText("Błąd: %s" % error)
+            self["status_bar"].setText(_("Błąd: %s", self.lang) % error)
             self.session.open(MessageBox, "Błąd ładowania: %s" % error, MessageBox.TYPE_ERROR)
             return
 
         if not playlist:
-            self["status_bar"].setText("Pusta playlista!")
+            self["status_bar"].setText(_("Pusta playlista!", self.lang))
             return
 
         load_time = time.time() - self.load_start_time if self.load_start_time else 0
@@ -907,7 +912,7 @@ class IPTVDreamV6(Screen):
         self.current_playlist = playlist
         self.playlist_name = name or "Playlist"
 
-        self["status_bar"].setText("Załadowano %d kanałów w %.1fs (%.0f kan/s)" % (len(playlist), load_time, speed))
+        self["status_bar"].setText(_("Załadowano %d kanałów w %.1fs (%.0f kan/s)", self.lang) % (len(playlist), load_time, speed))
 
         # statystyki / historia
         try:
@@ -950,10 +955,10 @@ class IPTVDreamV6(Screen):
 
         self.menu_context = "playlist_groups"
         items = [("📁 %s (%d)" % (g, len(chs)), ("pl_group", g)) for g, chs in sorted(groups.items(), key=lambda x: x[0].lower())]
-        items.append(("⬅️ Powrót", "back_playlist"))
+        items.append((_("⬅️ Powrót", self.lang), "back_playlist"))
         self._playlist_groups_cache = groups
         self["menu_list"].setList(items)
-        self["status_bar"].setText("Grupy")
+        self["status_bar"].setText(_("Grupy", self.lang))
 
     def showPlaylistGroupItems(self, group_name):
         chs = self._playlist_groups_cache.get(group_name, [])
@@ -961,7 +966,7 @@ class IPTVDreamV6(Screen):
         items = []
         for ch in chs[:400]:
             items.append(("• %s" % ch.get("title", "Bez nazwy"), ("pl_item", ch)))
-        items.append(("⬅️ Powrót", ("pl_groups_back", None)))
+        items.append((_("⬅️ Powrót", self.lang), ("pl_groups_back", None)))
         self["menu_list"].setList(items)
         self["status_bar"].setText(group_name)
 
@@ -970,7 +975,7 @@ class IPTVDreamV6(Screen):
             return
 
         def _ask_group(_):
-            self.session.openWithCallback(self.onFavGroupName, VirtualKeyBoard, title="Nazwa grupy ulubionych:", text="Ulubione")
+            self.session.openWithCallback(self.onFavGroupName, VirtualKeyBoard, title=_("Nazwa grupy ulubionych:", self.lang), text="Ulubione")
 
         self.session.openWithCallback(_ask_group, MessageBox, "Dodać wszystkie kanały do ulubionych?", MessageBox.TYPE_YESNO)
 
@@ -988,7 +993,7 @@ class IPTVDreamV6(Screen):
         if not self.current_playlist:
             return
 
-        self.startLoading("Pobieranie picon ...")
+        self.startLoading(_("Pobieranie picon ...", self.lang))
 
         def _work():
             """Pobiera pikony szybciej (wielowątkowo) i aktualizuje progress."""
@@ -1064,7 +1069,7 @@ class IPTVDreamV6(Screen):
             if err:
                 self.session.open(MessageBox, "Picon error: %s" % err, MessageBox.TYPE_ERROR)
                 return
-            self.session.open(MessageBox, "Pobrano/gotowe picon: %d" % res, MessageBox.TYPE_INFO)
+            self.session.open(MessageBox, _("Pobrano/gotowe picon: %d", self.lang) % res, MessageBox.TYPE_INFO)
 
         run_in_thread(_work, _done)
 
@@ -1075,7 +1080,7 @@ class IPTVDreamV6(Screen):
     def refreshLastSource(self):
         src = self.cfg.get("last_source")
         if not src:
-            self.session.open(MessageBox, "Brak ostatniego źródła.", MessageBox.TYPE_INFO)
+            self.session.open(MessageBox, _("Brak ostatniego źródła.", self.lang), MessageBox.TYPE_INFO)
             return
         st = src.get("type")
         val = src.get("value")
@@ -1107,7 +1112,7 @@ class IPTVDreamV6(Screen):
             self.session.open(MessageBox, "EPG error: %s" % e, MessageBox.TYPE_ERROR)
 
     def checkUpdates(self):
-        self.startLoading("Sprawdzanie aktualizacji ...")
+        self.startLoading(_("Sprawdzanie aktualizacji ...", self.lang))
 
         def _chk():
             # tools/updater.check_update() zwraca 4 wartości w repo:
@@ -1122,17 +1127,17 @@ class IPTVDreamV6(Screen):
             # Normalizacja wyniku (różne implementacje mogą zwracać inne krotki)
             if isinstance(res, tuple) and len(res) >= 4:
                 has_upd, local, remote_or_msg, changelog = res[0], res[1], res[2], res[3]
-                if remote_or_msg == "Błąd sieci":
-                    self.session.open(MessageBox, "Błąd sieci podczas sprawdzania aktualizacji.\n\nWersja lokalna: %s" % local, MessageBox.TYPE_ERROR)
+                if remote_or_msg in ("Błąd sieci", "NETWORK_ERROR"):
+                    self.session.open(MessageBox, _("Błąd sieci podczas sprawdzania aktualizacji.\n\nWersja lokalna: %s", self.lang) % local, MessageBox.TYPE_ERROR)
                     return
                 if not has_upd:
-                    self.session.open(MessageBox, "Brak aktualizacji.\n\nLokalna: %s\nZdalna: %s" % (local, remote_or_msg), MessageBox.TYPE_INFO)
+                    self.session.open(MessageBox, _("Brak aktualizacji.\n\nLokalna: %s\nZdalna: %s", self.lang) % (local, remote_or_msg), MessageBox.TYPE_INFO)
                     return
                 info = "Lokalna: %s\nZdalna: %s" % (local, remote_or_msg)
                 if changelog:
                     info += "\n\nChangelog:\n%s" % changelog[:800]
                 self.session.openWithCallback(lambda yn: self._do_update_yesno(yn, info), MessageBox,
-                                              "Dostępna aktualizacja:\n%s\n\nZainstalować?" % info, MessageBox.TYPE_YESNO)
+                                              _("Dostępna aktualizacja:\n%s\n\nZainstalować?", self.lang) % info, MessageBox.TYPE_YESNO)
                 return
 
             # fallback dla starych wersji
@@ -1145,14 +1150,14 @@ class IPTVDreamV6(Screen):
                 self.session.open(MessageBox, "Brak aktualizacji.\n\n%s" % info, MessageBox.TYPE_INFO)
                 return
             self.session.openWithCallback(lambda yn: self._do_update_yesno(yn, info), MessageBox,
-                                          "Dostępna aktualizacja:\n%s\n\nZainstalować?" % info, MessageBox.TYPE_YESNO)
+                                          _("Dostępna aktualizacja:\n%s\n\nZainstalować?", self.lang) % info, MessageBox.TYPE_YESNO)
 
         run_in_thread(_chk, _done)
 
     def _do_update_yesno(self, yes, info):
         if not yes:
             return
-        self.startLoading("Instalowanie aktualizacji ...")
+        self.startLoading(_("Instalowanie aktualizacji ...", self.lang))
 
         def _upd():
             return do_update()
@@ -1168,20 +1173,20 @@ class IPTVDreamV6(Screen):
                 self.session.open(MessageBox, msg, MessageBox.TYPE_INFO)
                 return
             if res is True:
-                self.session.open(MessageBox, "Zainstalowano aktualizację. Zrestartuj GUI.", MessageBox.TYPE_INFO)
+                self.session.open(MessageBox, _("Zainstalowano aktualizację. Zrestartuj GUI.", self.lang), MessageBox.TYPE_INFO)
             else:
-                self.session.open(MessageBox, "Aktualizacja zakończona (brak szczegółów).", MessageBox.TYPE_INFO)
+                self.session.open(MessageBox, _("Aktualizacja zakończona (brak szczegółów).", self.lang), MessageBox.TYPE_INFO)
 
         run_in_thread(_upd, _done)
 
     def showSettings(self):
         items = []
-        items.append(("Język: %s" % ("PL" if self.lang == "pl" else "EN"), "lang"))
-        items.append(("Typ serwisu: %d" % self.service_type, "stype"))
+        items.append((_("Język: %s", self.lang) % ("PL" if self.lang == "pl" else "EN"), "lang"))
+        items.append((_("Typ serwisu: %d", self.lang) % self.service_type, "stype"))
         items.append(("EPG URL (custom)", "epgurl"))
-        items.append(("⬅️ Powrót", "back"))
+        items.append((_("⬅️ Powrót", self.lang), "back"))
 
-        self.session.openWithCallback(self.onSettingsChoice, ChoiceBox, title="Ustawienia", list=items)
+        self.session.openWithCallback(self.onSettingsChoice, ChoiceBox, title=_("Ustawienia", self.lang), list=items)
 
     def onSettingsChoice(self, choice):
         if not choice:
@@ -1199,7 +1204,7 @@ class IPTVDreamV6(Screen):
             return
         if act == "epgurl":
             cur = self.cfg.get(EPG_URL_KEY, "http://")
-            self.session.openWithCallback(self.onEpgUrlReady, VirtualKeyBoard, title="Wklej URL EPG:", text=cur)
+            self.session.openWithCallback(self.onEpgUrlReady, VirtualKeyBoard, title=_("Wklej URL EPG:", self.lang), text=cur)
             return
 
     def onEpgUrlReady(self, url):
@@ -1245,7 +1250,7 @@ class IPTVDreamV6(Screen):
             for k, v in st.items():
                 txt += "%s: %s\n" % (k, v)
         else:
-            txt += "Brak danych."
+            txt += _("Brak danych.", self.lang)
         self.updateInfoPanel("Statystyki", txt)
 
     # ---------- eksport ----------
