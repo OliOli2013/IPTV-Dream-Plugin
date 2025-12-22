@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-import os, requests, json, tempfile, shutil
+import os, json, tempfile, shutil
+from .net import http_get
+from .logger import get_logger, mask_sensitive
 
 # Zaktualizowane URL dla wersji 5.1
 REPO_ZIP      = "https://github.com/OliOli2013/IPTV-Dream-Plugin/archive/refs/heads/main.zip"
@@ -19,14 +21,14 @@ def _get_remote_info():
     """Pobiera informacje o zdalnej wersji i changelog."""
     try:
         # Pobieramy wersję z pliku VERSION
-        r_ver = requests.get(VERSION_URL, timeout=5)
+        r_ver = http_get(VERSION_URL, timeout=(5,5), retries=2, backoff=0.8)
         r_ver.raise_for_status()
         remote_ver = r_ver.text.strip()
         
         # Pobieramy changelog
         changelog = ""
         try:
-            r_log = requests.get(CHANGELOG_URL, timeout=5)
+            r_log = http_get(CHANGELOG_URL, timeout=(5,10), retries=2, backoff=0.8)
             if r_log.status_code == 200:
                 changelog = r_log.text
         except: pass
@@ -56,7 +58,7 @@ def do_update():
     
     try:
         # Pobranie archiwum z GitHub
-        r = requests.get(REPO_ZIP, timeout=30)
+        r = http_get(REPO_ZIP, timeout=(10,60), retries=2, backoff=1.0)
         r.raise_for_status()
         with open(zip_path, "wb") as f:
             f.write(r.content)

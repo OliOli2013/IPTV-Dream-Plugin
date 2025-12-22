@@ -1,14 +1,15 @@
-v6.1
-[PL]
-- Dodano kompletne tłumaczenie interfejsu na język angielski (pełne wsparcie PL/EN).
-- Przetłumaczono komunikaty, menu, okna dialogowe/pomocnicze oraz kluczowe ekrany.
-- Automatyczne przełączanie języka zgodnie z ustawieniami języka w systemie (zachowany wybór PL/EN w samej wtyczce, jeśli występuje).
+v6.2 (2025-12-21)
+- CORE: Usprawniono warstwę sieci: konfigurowalne timeouty (connect/read), retry + backoff.
+- CACHE: Dodano metadane cache (ETag/Last-Modified) i próbę odświeżania warunkowego (HTTP 304).
+- ZARZĄDZANIE: Dodano przełącznik Debug oraz podgląd/wyczyszczenie logu (/tmp/iptvdream.log).
+- XTREAM: Pobieranie playlisty używa nowej warstwy sieci (timeouty/retry).
+- LOG: Centralny log z maskowaniem haseł (query/JSON).
 
-[EN]
-- Added complete English translation (full PL/EN bilingual support).
-- Translated messages, menus, dialogs/auxiliary windows, and key screens.
-- Automatic language switching based on the system language setting (plugin’s own PL/EN selector remains available where applicable).
-
+- CORE: Network layer improved: configurable timeouts (connect/read), retries + backoff.
+- CACHE: Added cache metadata (ETag/Last-Modified) and conditional refresh (HTTP 304).
+- MANAGEMENT: Added Debug toggle and log viewer/clearer (/tmp/iptvdream.log).
+- XTREAM: Playlist download now uses the new network wrapper (timeouts/retries).
+- LOG: Central log with credential masking (query/JSON).
 
 v5.0 (2025-12-07)
 - NOWY WYGLĄD (GUI): Całkowicie przebudowany interfejs. Układ dwukolumnowy, czytelna stopka, kolorowe przyciski.
@@ -88,3 +89,16 @@ Wersja 3.2:
 - Ulepszono dopasowywanie EPG (Shotgun mode)
 - Usunięto zbędne okna dialogowe (Szybka klawiatura)
 - Poprawki stabilności dla OpenATV
+
+v6.2
+[PL]
+- Usprawnienia sieci: timeouty (connect/read), ponowienia (retry) i ujednolicone błędy.
+- Ulepszony cache playlist: Conditional GET (ETag/Last-Modified) + bezpieczny fallback do cache przy problemach sieciowych.
+- Dodano logowanie do /tmp/iptvdream.log (opcjonalny tryb debug w menu Zarządzanie).
+- Pobieranie Xtream oraz aktualizacje korzystają z warstwy sieciowej z retry/timeout.
+
+[EN]
+- Network improvements: connect/read timeouts, retries and consistent errors.
+- Improved playlist cache: Conditional GET (ETag/Last-Modified) + safe fallback to cache on network issues.
+- Added logging to /tmp/iptvdream.log (optional debug mode in Management menu).
+- Xtream download and updater now use the network layer with retries/timeouts.

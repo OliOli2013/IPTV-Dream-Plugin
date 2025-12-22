@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.0 - MODUŁ ŁADOWANIA PLAYLIST
+IPTV Dream v6.2 - MODUŁ ŁADOWANIA PLAYLIST
 - Ultra-szybkie ładowanie M3U
 - Streamingowe parsowanie
 - Inteligentne cache'owanie
@@ -11,6 +11,8 @@ IPTV Dream v6.0 - MODUŁ ŁADOWANIA PLAYLIST
 import os, re, requests, time, hashlib, json, threading, gzip, io
 from twisted.internet import reactor
 from .config_manager import ConfigManager
+from ..tools.net import http_get, NetError
+from ..tools.logger import get_logger, mask_sensitive
 
 class PlaylistLoader:
     """Zaawansowany ładowacz playlist z funkcjami optymalizacji."""
@@ -19,6 +21,12 @@ class PlaylistLoader:
         self.config = ConfigManager("/etc/enigma2/iptvdream_v6_config.json")
         self.cache_dir = "/tmp/iptvdream_cache"
         self.session = requests.Session()
+        # logger + network settings
+        self.log = get_logger("IPTVDream.Playlist", log_file=self.config.get("log_file", "/tmp/iptvdream.log"), debug=bool(self.config.get("debug", False)))
+        self.net_timeout = (int(self.config.get("net_timeout_connect", 7)), int(self.config.get("net_timeout_read", 30)))
+        self.net_retries = int(self.config.get("net_retries", 2))
+        self.net_backoff = float(self.config.get("net_backoff", 0.8))
+        self.ssl_verify = bool(self.config.get("ssl_verify", False))
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
             'Accept': '*/*',
@@ -27,9 +35,35 @@ class PlaylistLoader:
             'Cache-Control': 'no-cache'
         })
         
+        # logger / network tuning
+        self.debug = bool(self.config.get("debug", False))
+        self.log_file = self.config.get("log_file", "/tmp/iptvdream.log")
+        self.logger = get_logger("IPTVDream.Playlist", log_file=self.log_file, debug=self.debug)
+
         # Upewnij się, że katalog cache istnieje
         os.makedirs(self.cache_dir, exist_ok=True)
 
+
+    def _meta_path(self, cache_key):
+        return os.path.join(self.cache_dir, f"{cache_key}.meta.json")
+
+    def _read_meta(self, cache_key):
+        try:
+            mp = self._meta_path(cache_key)
+            if os.path.exists(mp):
+                with open(mp, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+
+    def _write_meta(self, cache_key, meta):
+        try:
+            mp = self._meta_path(cache_key)
+            with open(mp, 'w', encoding='utf-8') as f:
+                json.dump(meta, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
     def get_cache_key(self, url):
         """Generuje klucz cache dla URL."""
         return hashlib.md5(url.encode('utf-8')).hexdigest()
@@ -53,61 +87,140 @@ class PlaylistLoader:
                 pass
         return None
 
-    def cache_content(self, url, content):
-        """Zapisuje zawartość do cache."""
+    def cache_content(self, url, content, meta=None):
+        """Zapisuje zawartość do cache (opcjonalnie z metadanymi HTTP)."""
         cache_key = self.get_cache_key(url)
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.m3u")
-        
+        meta_file  = os.path.join(self.cache_dir, f"{cache_key}.meta.json")
+
         try:
             with open(cache_file, 'wb') as f:
                 f.write(content)
-        except:
+        except Exception:
             pass
 
-    def load_m3u_url(self, url, progress_callback=None):
-        """
-        NOWE: Streamingowe ładowanie M3U z progress barem!
-        Do 10x szybciej niż poprzednia wersja.
-        """
-        try:
-            # 1. Sprawdź cache
-            cached = self.get_cached_content(url)
-            if cached:
-                if progress_callback:
-                    reactor.callFromThread(progress_callback, 100, "Ładowanie z cache...")
-                return cached
+        if meta:
+            try:
+                with open(meta_file, 'w') as f:
+                    json.dump(meta, f, indent=2)
+            except Exception:
+                pass
 
-            # 2. Konfiguracja streamingu
-            response = self.session.get(url, timeout=30, stream=True)
-            response.raise_for_status()
-            
-            # 3. Odczytaj rozmiar jeśli dostępny
-            total_size = int(response.headers.get('content-length', 0))
-            
-            # 4. Streamingowe pobieranie
+    def get_cached_metadata(self, url):
+        """Returns cached HTTP metadata (ETag/Last-Modified) if present."""
+        try:
+            cache_key = self.get_cache_key(url)
+            meta_file = os.path.join(self.cache_dir, f"{cache_key}.meta.json")
+            if os.path.exists(meta_file):
+                with open(meta_file, 'r') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+
+
+    def load_m3u_url(self, url, progress_callback=None):
+        """Streaming M3U download with cache, conditional GET, timeouts and retries."""
+        cache_key = self.get_cache_key(url)
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.m3u")
+
+        def _cb(pct, msg):
+            try:
+                if progress_callback:
+                    reactor.callFromThread(progress_callback, pct, msg)
+            except Exception:
+                pass
+
+        # 1) If cache is valid, attempt conditional GET (ETag / Last-Modified)
+        meta = self._read_meta(cache_key)
+        cached_ok = self.is_cache_valid(cache_file, max_age=int(self.config.get("cache_max_age", 3600)))
+        if cached_ok:
+            headers = {}
+            etag = meta.get("etag")
+            last_mod = meta.get("last_modified")
+            if etag:
+                headers["If-None-Match"] = etag
+            if last_mod:
+                headers["If-Modified-Since"] = last_mod
+
+            if headers:
+                try:
+                    _cb(5, "Checking updates..." if self.config.get("language") == "en" else "Sprawdzanie zmian...")
+                    r = http_get(
+                        url,
+                        session=self.session,
+                        headers=headers,
+                        stream=False,
+                        verify=self.ssl_verify,
+                        timeout=self.net_timeout,
+                        retries=self.net_retries,
+                        backoff=self.net_backoff,
+                        debug=bool(self.config.get("debug", False)),
+                        log_file=self.config.get("log_file", "/tmp/iptvdream.log"),
+                    )
+                    if getattr(r, "status_code", 200) == 304:
+                        _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
+                        with open(cache_file, 'rb') as f:
+                            return f.read()
+                except Exception as e:
+                    # On network issues, fall back to cache
+                    self.log.debug("Conditional GET failed, using cache: %s", mask_sensitive(e))
+                    _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
+                    try:
+                        with open(cache_file, 'rb') as f:
+                            return f.read()
+                    except Exception:
+                        pass
+
+        # 2) No valid cache or cache disabled -> full download (stream)
+        try:
+            _cb(1, "Downloading..." if self.config.get("language") == "en" else "Pobieranie...")
+            r = http_get(
+                url,
+                session=self.session,
+                headers=None,
+                stream=True,
+                verify=self.ssl_verify,
+                timeout=self.net_timeout,
+                retries=self.net_retries,
+                backoff=self.net_backoff,
+                debug=bool(self.config.get("debug", False)),
+                log_file=self.config.get("log_file", "/tmp/iptvdream.log"),
+            )
+
+            total_size = int(r.headers.get('content-length', 0) or 0)
             content = io.BytesIO()
             chunk_size = 8192
             downloaded = 0
-            
-            for chunk in response.iter_content(chunk_size=chunk_size):
+
+            for chunk in r.iter_content(chunk_size=chunk_size):
                 if chunk:
                     content.write(chunk)
                     downloaded += len(chunk)
-                    
-                    # Aktualizuj progress
                     if progress_callback and total_size > 0:
-                        progress = min(100, (downloaded / total_size) * 100)
-                        reactor.callFromThread(progress_callback, progress, 
-                                             f"Pobrano: {downloaded/1024:.1f} KB")
-            
-            # 5. Zapisz do cache
+                        progress = min(99, (downloaded / float(total_size)) * 100.0)
+                        _cb(progress, "Downloaded: %.1f KB" % (downloaded/1024.0) if self.config.get("language") == "en" else "Pobrano: %.1f KB" % (downloaded/1024.0))
+
             content_data = content.getvalue()
-            self.cache_content(url, content_data)
-            
+            # Save cache + metadata
+            try:
+                self.cache_content(url, content_data)
+                meta = {
+                    "url": url,
+                    "saved_at": time.time(),
+                    "size": len(content_data),
+                    "etag": r.headers.get("ETag", ""),
+                    "last_modified": r.headers.get("Last-Modified", ""),
+                }
+                self._write_meta(cache_key, meta)
+            except Exception:
+                pass
+
+            _cb(100, "Done" if self.config.get("language") == "en" else "Gotowe")
             return content_data
-            
+
         except Exception as e:
-            raise Exception(f"Błąd ładowania M3U: {e}")
+            raise Exception("M3U load error: %s" % e)
 
     def load_m3u_file(self, file_path):
         """Ładuje M3U z pliku."""

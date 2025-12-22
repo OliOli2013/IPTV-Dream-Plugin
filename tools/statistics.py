@@ -131,7 +131,7 @@ class StatisticsManager:
             self.stats["category_stats"][category]["channels"][channel_title] = 0
         self.stats["category_stats"][category]["channels"][channel_title] += watch_time
         
-    def get_stats(self):
+    def get_stats(self, lang="pl"):
         """
         Zwraca kompletne statystyki
         
@@ -163,30 +163,39 @@ class StatisticsManager:
             reverse=True
         )[:3]
         
-        return {
-            "📊 Podsumowanie": "",
-            "Całkowity czas": f"{self.stats['total_viewing_time'] / 3600:.1f} godzin",
-            "Średnio dziennie": f"{avg_daily / 3600:.1f} godzin",
-            "Ilość dni": total_days,
-            "Obejrzane kanały": len(self.stats["most_watched_channels"]),
-            "Kategorie": len(self.stats["category_stats"]),
-            "Ostatnie użycie": self.stats["last_use"][:10],
-            "": "",
-            "📺 TOP 5 Kanałów": "",
-            **{f"{i+1}. {name}": f"{data['total_time']/3600:.1f}h ({data['watch_count']}x)" 
-               for i, (name, data) in enumerate(top_channels[:5])},
-            "": "",
-            "🏷️ TOP 5 Kategorii": "",
-            **{f"{i+1}. {name}": f"{data['total_time']/3600:.1f}h" 
-               for i, (name, data) in enumerate(top_categories[:5])},
-            "": "",
-            "⏰ Godziny szczytu": "",
-            **{f"{hour:02d}:00": f"{time/3600:.1f}h" for hour, time in peak_hours},
-            "": "",
-            "📈 Miesięczne": "",
-            **{month: f"{time/3600:.1f}h" for month, time in 
-               sorted(self.stats["monthly_stats"].items(), reverse=True)[:3]}
-        }
+        hours_word = 'godzin' if lang == 'pl' else 'hours'
+        def t(pl, en):
+            return pl if lang == 'pl' else en
+        # Normalize common Polish default group name for EN display
+        def norm_group(name):
+            if lang != 'pl' and name == 'Inne':
+                return 'Other'
+            return name
+        top_channels_fmt = [(name, data) for name, data in top_channels[:5]]
+        top_categories_fmt = [(norm_group(name), data) for name, data in top_categories[:5]]
+        peak_hours_fmt = peak_hours[:3]
+        monthly_fmt = sorted(self.stats['monthly_stats'].items(), reverse=True)[:3]
+        return [
+            (t('📊 Podsumowanie', '📊 Summary'), ''),
+            (t('Całkowity czas', 'Total time'), f"{self.stats['total_viewing_time'] / 3600:.1f} {hours_word}"),
+            (t('Średnio dziennie', 'Average per day'), f"{avg_daily / 3600:.1f} {hours_word}"),
+            (t('Ilość dni', 'Days'), total_days),
+            (t('Obejrzane kanały', 'Watched channels'), len(self.stats['most_watched_channels'])),
+            (t('Kategorie', 'Categories'), len(self.stats['category_stats'])),
+            (t('Ostatnie użycie', 'Last use'), self.stats['last_use'][:10]),
+            ('', ''),
+            (t('📺 TOP 5 Kanałów', '📺 TOP 5 Channels'), ''),
+            *[(f"{i+1}. {name}", f"{data['total_time']/3600:.1f}h ({data['watch_count']}x)") for i, (name, data) in enumerate(top_channels_fmt)],
+            ('', ''),
+            (t('🏷️ TOP 5 Kategorii', '🏷️ TOP 5 Categories'), ''),
+            *[(f"{i+1}. {name}", f"{data['total_time']/3600:.1f}h") for i, (name, data) in enumerate(top_categories_fmt)],
+            ('', ''),
+            (t('⏰ Godziny szczytu', '⏰ Peak hours'), ''),
+            *[(f"{hour:02d}:00", f"{tm/3600:.1f}h") for hour, tm in peak_hours_fmt],
+            ('', ''),
+            (t('📈 Miesięczne', '📈 Monthly'), ''),
+            *[(month, f"{tm/3600:.1f}h") for month, tm in monthly_fmt],
+        ]
         
     def get_daily_stats(self, days=7):
         """

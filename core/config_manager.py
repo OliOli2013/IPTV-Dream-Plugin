@@ -21,8 +21,15 @@ class ConfigManager:
     def ensure_defaults(self):
         """Upewnia się, że istnieją wszystkie domyślne ustawienia."""
         defaults = {
-            "version": "6.0",
+            "version": "6.2",
             "language": "pl",
+            "debug": False,
+            "log_file": "/tmp/iptvdream.log",
+            "ssl_verify": False,
+            "net_timeout_connect": 7,
+            "net_timeout_read": 30,
+            "net_retries": 2,
+            "net_backoff": 0.8,
             "service_type": "4097",
             "auto_update": True,
             "webif_enabled": False,
