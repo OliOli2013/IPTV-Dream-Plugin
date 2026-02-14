@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 LANG = {
     "pl": {
-        "title": "IPTV Dream v6.2",
+        "title": "IPTV Dream v6.3",
         "load_url": "Wczytaj listę z URL",
         "pick_file": "Wskaż plik M3U",
         "xtream": "Xtream Codes",
@@ -228,7 +228,7 @@ LANG = {
 
     },
     "en": {
-        "title": "IPTV Dream v6.2",
+        "title": "IPTV Dream v6.3",
         "load_url": "Load M3U from URL",
         "pick_file": "Pick M3U file",
         "xtream": "Xtream Codes",

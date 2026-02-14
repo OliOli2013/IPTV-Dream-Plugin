@@ -45,10 +45,10 @@ def _read_plugin_version():
         if os.path.exists(ver_path):
             with open(ver_path, "r", encoding="utf-8") as f:
                 v = (f.read() or "").strip()
-                return v or "6.2"
+                return v or "6.3"
     except Exception:
         pass
-    return "6.2"
+    return "6.3"
 
 def _detect_lang_from_system():
     """Returns 'pl' or 'en' based on Enigma2 system language."""

@@ -1,3 +1,16 @@
+v6.3 (2026-02-14)
+- MAC/STALKER: Naprawiono błędy 404 dla portali (poprawny endpoint /server/load.php + fallbacki dla niestandardowych ścieżek/portów).
+- MAC/STALKER: Dodano wybór typu treści: LIVE / VOD / SERIALE.
+- MAC/STALKER: VOD oraz SERIALE eksportowane do bukietów (paginacja bez limitu – zgodnie z danymi dostawcy).
+- MAC/STALKER: Unikalne nazewnictwo playlist/bukietów per portal + MAC + typ treści (brak nadpisywania).
+- WEBIF: Zgłoszenia MAC zapisują portal do "książki" (iptvdream_mac.json) przed pobraniem.
+
+- MAC/STALKER: Fixed 404 portal errors (correct /server/load.php endpoint + fallbacks for custom paths/ports).
+- MAC/STALKER: Added content type selection: LIVE / VOD / SERIES.
+- MAC/STALKER: VOD and SERIES can be exported to bouquets (no hard limit; depends on provider data/pages).
+- MAC/STALKER: Unique playlist/bouquet names per portal + MAC + content type (no overwrites).
+- WEBIF: MAC submissions are saved to the portal list (iptvdream_mac.json) before download.
+
 v6.2 (2025-12-21)
 - CORE: Usprawniono warstwę sieci: konfigurowalne timeouty (connect/read), retry + backoff.
 - CACHE: Dodano metadane cache (ETag/Last-Modified) i próbę odświeżania warunkowego (HTTP 304).

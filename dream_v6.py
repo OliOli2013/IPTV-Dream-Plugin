@@ -60,7 +60,7 @@ from .tools.xtream_one_window_fixed import XtreamWindow  # alias w pliku
 
 from .core.playlist_loader import PlaylistLoader
 
-PLUGIN_VERSION = "6.2"
+PLUGIN_VERSION = "6.3"
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
 CACHE_DIR = "/tmp/iptvdream_v6_cache"
 
@@ -107,7 +107,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.2">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.3">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -634,7 +634,7 @@ class IPTVDreamV6(Screen):
                 host = (p.get("host") or "").strip()
                 mac = (p.get("mac") or "").strip()
                 if host and mac:
-                    return self.startMacDownload(host, mac)
+                    return self.onMacPicked(p)
                 return
 
         # tuple actions
@@ -927,19 +927,56 @@ class IPTVDreamV6(Screen):
         except Exception as e:
             self.session.open(MessageBox, "JSON Error: %s" % e, MessageBox.TYPE_ERROR)
 
-    def startMacDownload(self, host, mac):
+    def onMacPicked(self, portal):
+        """After picking a saved MAC portal, ask for content type."""
+        if not portal:
+            return
+        host = (portal.get('host') or '').strip()
+        mac = (portal.get('mac') or '').strip()
+        pname = (portal.get('name') or '').strip()
+        if not host or not mac:
+            return
+        self._mac_pick_ctx = (host, mac, pname)
+        opts = [("LIVE", 'live'), ("VOD", 'vod'), ("SERIALE", 'series')]
+        self.session.openWithCallback(self.onMacTypeSelected, ChoiceBox, title=_("Wybierz typ treści", self.lang), list=opts)
+
+    def onMacTypeSelected(self, choice):
+        if not choice:
+            return
+        ctype = choice[1]
+        try:
+            host, mac, pname = getattr(self, '_mac_pick_ctx', ('', '', ''))
+        except Exception:
+            host, mac, pname = ('', '', '')
+        if host and mac:
+            return self.startMacDownload(host, mac, content_type=ctype, portal_name=pname)
+
+    def startMacDownload(self, host, mac, content_type='live', portal_name=None):
         self.startLoading(_("Pobieranie z MAC Portal ...", self.lang))
 
         def _load():
             # tools/mac_portal.py w repozytorium przyjmuje (host, mac) bez progress_callback.
             # Progress pokazujemy na poziomie GUI (start/stop + status), a parsowanie nie blokuje GUI.
-            playlist = parse_mac_playlist(host, mac)
+            playlist = parse_mac_playlist(host, mac, content_type=content_type)
             return playlist
 
-        self.last_source = {"type": "mac", "value": {"host": host, "mac": mac}}
+        self.last_source = {"type": "mac", "value": {"host": host, "mac": mac, "filter": content_type}}
         self.cfg["last_source"] = self.last_source
         self._save_cfg()
-        run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, "MAC-Portal", err))
+                # unique playlist name per portal + content type
+        def _mk_id():
+            try:
+                dom = host.split('://', 1)[-1].split('/', 1)[0]
+            except Exception:
+                dom = host
+            mac_id = mac.replace(':', '').replace('-', '')
+            mac_id = mac_id[-6:] if len(mac_id) >= 6 else mac_id
+            ident = (portal_name or dom).strip() or dom
+            ident = ident.replace('/', '_').replace(' ', '_')
+            return '%s_%s' % (ident, mac_id) if mac_id else ident
+        suffix = 'LIVE' if content_type == 'live' else ('VOD' if content_type == 'vod' else 'SERIES')
+        pl_name = 'MAC-%s-%s' % (_mk_id(), suffix)
+        run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, pl_name, err))
 
     def deleteMacPortal(self):
         portals = load_mac_json() or []
@@ -997,8 +1034,15 @@ class IPTVDreamV6(Screen):
             elif typ == "mac":
                 host = data.get("host")
                 mac = data.get("mac")
+                mode = (data.get('mode') or data.get('filter') or 'live')
+                if mode not in ('live','vod','series'):
+                    mode = 'live'
                 if host and mac:
-                    reactor.callFromThread(self.startMacDownload, host, mac)
+                    try:
+                        add_mac_portal(host, mac)
+                    except Exception:
+                        pass
+                    reactor.callFromThread(self.startMacDownload, host, mac, mode, None)
         except Exception as e:
             print("[IPTVDreamV6] WebIF data error:", e)
 
