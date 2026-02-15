@@ -1,3 +1,16 @@
+v6.4 (2026-02-15)
+- MAC/STALKER: Poprawiona obsługa odpowiedzi nie-JSON (czytelny komunikat zamiast "Expecting value...") + wymuszenie JsHttpRequest=1-xml.
+- MAC/STALKER: Inicjalizacja profilu STB (get_profile) dla LIVE/VOD/SERIES – poprawia kompatybilność i paginację.
+- MAC/STALKER: Naprawiona paginacja VOD/SERIES (problem "max 14" pozycji) – obsługa wielu wariantów parametrów (p/page/offset/from-to) + zabezpieczenie anty-pętla.
+- GUI: Wydłużony watchdog ładowania dla MAC VOD/SERIES (duże biblioteki, np. dziesiątki tysięcy pozycji).
+- CORE: Uporządkowane wcięcia/formatowanie w mac_portal.py (eliminacja potencjalnego TabError).
+
+- MAC/STALKER: Better handling of non-JSON responses (friendly message instead of "Expecting value...") + JsHttpRequest=1-xml.
+- MAC/STALKER: STB profile initialization (get_profile) for LIVE/VOD/SERIES – improves compatibility and pagination.
+- MAC/STALKER: Fixed VOD/SERIES pagination ("max 14 items" issue) – supports multiple paging variants (p/page/offset/from-to) + loop protection.
+- GUI: Extended loading watchdog for MAC VOD/SERIES (very large libraries).
+- CORE: Cleaned indentation/formatting in mac_portal.py (prevents TabError).
+
 v6.3 (2026-02-14)
 - MAC/STALKER: Naprawiono błędy 404 dla portali (poprawny endpoint /server/load.php + fallbacki dla niestandardowych ścieżek/portów).
 - MAC/STALKER: Dodano wybór typu treści: LIVE / VOD / SERIALE.

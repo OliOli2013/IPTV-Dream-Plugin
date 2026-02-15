@@ -10,6 +10,39 @@ COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML
 # Timeout dla zapytań sieciowych (wydłużony - duże portale potrafią odpowiadać wolniej)
 REQ_TIMEOUT = 30
 
+# Stalker/MAG często oczekuje parametru JsHttpRequest=1-xml (inaczej potrafi zwrócić HTML)
+JS_HTTPREQUEST = '1-xml'
+
+
+def _is_likely_json_bytes(b):
+    try:
+        if b is None:
+            return False
+        if isinstance(b, str):
+            s = b.lstrip()
+        else:
+            s = b.decode('utf-8', 'ignore').lstrip()
+        return s.startswith('{') or s.startswith('[')
+    except Exception:
+        return False
+
+
+def _safe_json(resp):
+    """Parse JSON defensively.
+
+    Zamiast "Expecting value..." zwróć czytelniejszy błąd, jeśli serwer zwrócił HTML/pustą odpowiedź.
+    """
+    try:
+        return resp.json()
+    except Exception:
+        try:
+            raw = resp.content or b''
+        except Exception:
+            raw = b''
+        if (not raw) or (not _is_likely_json_bytes(raw)):
+            raise Exception('BAD_JSON_RESPONSE')
+        raise
+
 def load_mac_json():
     """Wczytuje listę portali. Obsługuje migrację ze starego formatu."""
     try:
@@ -125,6 +158,11 @@ def translate_error(e, url=""):
         return _("err_401", lang)
     if "500" in err_str or "502" in err_str: 
         return f"{_('err_server', lang)}.\n{_('try_later', lang)}"
+    if "BAD_JSON_RESPONSE" in err_str or "Expecting value" in err_str:
+        # Serwer zwrócił HTML/pustą odpowiedź (często redirect lub zły endpoint)
+        if lang == 'pl':
+            return "Portal zwrócił nieprawidłową odpowiedź (brak JSON).\nSprawdź URL (najlepiej końcówka /c/), port oraz czy portal nie przekierowuje na HTTPS."
+        return "Portal returned invalid response (not JSON).\nCheck URL (prefer /c/), port and whether the portal redirects to HTTPS."
     if "timeout" in err_str.lower() or "connection" in err_str.lower(): 
         return _("err_timeout", lang)
     return f"{_('err_generic', lang)}:\n{err_str[:100]}..."
@@ -190,6 +228,171 @@ def _js_data(js):
     return v
 
 
+def _list_meta_from_response(js):
+    """Extract (items, total_items, max_page_items) from Stalker 'get_ordered_list' JSON."""
+    items = []
+    total = None
+    max_page = None
+    try:
+        j = js.get('js') if isinstance(js, dict) else None
+        if isinstance(j, dict):
+            items = j.get('data') if isinstance(j.get('data'), list) else []
+            total = j.get('total_items') or j.get('total')
+            max_page = j.get('max_page_items') or j.get('max_items') or j.get('page_items')
+        elif isinstance(j, list):
+            items = j
+    except Exception:
+        items = []
+    try:
+        total = int(total) if total is not None and str(total).isdigit() else None
+    except Exception:
+        total = None
+    try:
+        max_page = int(max_page) if max_page is not None and str(max_page).isdigit() else None
+    except Exception:
+        max_page = None
+    if max_page is None:
+        try:
+            max_page = len(items) if items else 14
+        except Exception:
+            max_page = 14
+    return items, total, max_page
+
+
+def _iter_ordered_list(session, endpoint, token, kind, category_id, sortby='added'):
+    """Iterate ordered_list pages robustly.
+
+    Problem zgłaszany przez użytkowników: część portali zwraca tylko 14 pozycji (max_page_items=14),
+    a kolejne strony są ignorowane, jeśli nie wykonano inicjalizacji profilu albo portal używa
+    innych nazw parametrów paginacji.
+
+    Ten iterator:
+    - próbuje kilka wariantów paginacji (p 0-based, p 1-based, page, offset/limit, from/to),
+    - zawsze wybiera najlepszą odpowiedź (nawet jeśli na danej stronie brak nowych wpisów),
+    - kończy dopiero, gdy serwer przestanie zwracać dane lub wykryje pętlę.
+    """
+    seen = set()
+    page = 0
+    empty_streak = 0
+    total_hint = None
+    max_page = 14
+
+    # normalize
+    cat_val = str(category_id)
+
+    while True:
+        frm = page * max_page
+        to = frm + max_page
+
+        variants = [
+            # standard stalker
+            {'p': page},
+            {'p': page + 1},
+            # portals with different pagination keys
+            {'page': page},
+            {'page': page + 1},
+            {'offset': frm, 'limit': max_page},
+            {'offset': frm, 'count': max_page},
+            {'start': frm, 'limit': max_page},
+            # range style
+            {'from': frm, 'to': to},
+            {'p': page, 'from': frm, 'to': to},
+            {'p': page + 1, 'from': frm, 'to': to},
+        ]
+
+        best_items = None
+        best_new = -1  # allow selecting a response even if 0 new
+        best_total = None
+        best_max_page = None
+
+        for v in variants:
+            params = {
+                'type': kind,
+                'action': 'get_ordered_list',
+                'category': cat_val,
+                'sortby': sortby,
+                'token': token,
+                'JsHttpRequest': JS_HTTPREQUEST,
+            }
+            params.update(v)
+            try:
+                r = session.get(endpoint, params=params, timeout=REQ_TIMEOUT)
+                r.raise_for_status()
+                js = _safe_json(r)
+            except Exception:
+                continue
+
+            items, total, mp = _list_meta_from_response(js)
+            if total_hint is None and total is not None:
+                total_hint = total
+            if mp and mp > 0:
+                best_max_page = mp
+
+            if not isinstance(items, list):
+                items = []
+
+            # compute "new" count (heuristic)
+            new_count = 0
+            for it in items:
+                iid = it.get('id') or it.get('movie_id') or it.get('vod_id') or it.get('series_id')
+                # strengthen uniqueness if needed
+                if iid is None:
+                    # fallback signature: cmd+name
+                    sig = (it.get('cmd') or it.get('name') or it.get('title') or '')[:128]
+                    iid = "sig:" + sig
+                if iid not in seen:
+                    new_count += 1
+
+            # select best response:
+            # 1) prefer more new items
+            # 2) if tie, prefer longer list
+            if (new_count > best_new) or (new_count == best_new and best_items is not None and len(items) > len(best_items)) or (best_items is None and items):
+                best_new = new_count
+                best_items = items
+                best_total = total
+                if mp:
+                    best_max_page = mp
+
+        if best_max_page:
+            max_page = int(best_max_page)
+
+        if best_total is not None and total_hint is None:
+            total_hint = best_total
+
+        if not best_items:
+            break
+
+        new_any = False
+        for it in best_items:
+            iid = it.get('id') or it.get('movie_id') or it.get('vod_id') or it.get('series_id')
+            if iid is None:
+                sig = (it.get('cmd') or it.get('name') or it.get('title') or '')[:128]
+                iid = "sig:" + sig
+            if iid in seen:
+                continue
+            seen.add(iid)
+            new_any = True
+            yield it
+
+        if not new_any:
+            empty_streak += 1
+        else:
+            empty_streak = 0
+
+        # safety: jeśli portal ignoruje paginację i zwraca w kółko tę samą stronę
+        if empty_streak >= 3:
+            break
+
+        page += 1
+
+        # jeśli znamy total_items i wiemy że już pobraliśmy >= total, zakończ
+        if total_hint is not None:
+            try:
+                if len(seen) >= int(total_hint):
+                    break
+            except Exception:
+                pass
+
 def _extract_cmd_url(cmd, portal_ui):
     if not cmd:
         return ''
@@ -214,9 +417,11 @@ def _create_link(session, endpoint, token, kind, cmd):
         'cmd': cmd,
         'token': token,
     }
+    # JsHttpRequest poprawia kompatybilność z częścią portali
+    params['JsHttpRequest'] = JS_HTTPREQUEST
     r = session.get(endpoint, params=params, timeout=REQ_TIMEOUT)
     r.raise_for_status()
-    js = r.json()
+    js = _safe_json(r)
     j = js.get('js')
     # Typical shapes: {'js': {'cmd': 'ffmpeg http://...'}} or {'js': 'http://...'}
     if isinstance(j, dict):
@@ -252,9 +457,10 @@ def _handshake(portal_ui, endpoints, mac):
                 'ver': ver,
                 'sn': sn,
             }
+            params['JsHttpRequest'] = JS_HTTPREQUEST
             r = s.get(ep, params=params, timeout=REQ_TIMEOUT)
             r.raise_for_status()
-            js = r.json()
+            js = _safe_json(r)
             token = None
             if isinstance(js, dict):
                 j = js.get('js')
@@ -299,12 +505,18 @@ def parse_mac_playlist(host, mac, content_type='live'):
     try:
         s, endpoint, token = _handshake(portal_ui, endpoints, mac)
 
+        # Inicjalizacja profilu STB - część portali bez tego nie paginuje poprawnie (max 14).
+        try:
+            s.get(endpoint, params={'type': 'stb', 'action': 'get_profile', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
+        except Exception:
+            pass
+
         # Genres for LIVE
         genres = {}
         if content_type == 'live':
             try:
-                r_g = s.get(endpoint, params={'type': 'itv', 'action': 'get_genres', 'token': token}, timeout=REQ_TIMEOUT)
-                data_g = r_g.json()
+                r_g = s.get(endpoint, params={'type': 'itv', 'action': 'get_genres', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
+                data_g = _safe_json(r_g)
                 lst = _js_data(data_g)
                 if isinstance(lst, list):
                     for g in lst:
@@ -317,13 +529,13 @@ def parse_mac_playlist(host, mac, content_type='live'):
         if content_type == 'live':
             # Profile + channels
             try:
-                s.get(endpoint, params={'type': 'stb', 'action': 'get_profile', 'token': token}, timeout=REQ_TIMEOUT)
+                s.get(endpoint, params={'type': 'stb', 'action': 'get_profile', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
             except Exception:
                 pass
 
-            r = s.get(endpoint, params={'type': 'itv', 'action': 'get_all_channels', 'token': token}, timeout=REQ_TIMEOUT)
+            r = s.get(endpoint, params={'type': 'itv', 'action': 'get_all_channels', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
             r.raise_for_status()
-            data = r.json()
+            data = _safe_json(r)
             ch_list = None
             jsd = data.get('js')
             if isinstance(jsd, dict):
@@ -354,9 +566,9 @@ def parse_mac_playlist(host, mac, content_type='live'):
         # --- VOD ---
         if content_type == 'vod':
             # categories
-            r_c = s.get(endpoint, params={'type': 'vod', 'action': 'get_categories', 'token': token}, timeout=REQ_TIMEOUT)
+            r_c = s.get(endpoint, params={'type': 'vod', 'action': 'get_categories', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
             r_c.raise_for_status()
-            cats = _js_data(r_c.json())
+            cats = _js_data(_safe_json(r_c))
             if not isinstance(cats, list):
                 cats = []
 
@@ -366,62 +578,33 @@ def parse_mac_playlist(host, mac, content_type='live'):
                 if cat_id is None:
                     continue
 
-                seen_ids = set()
-                p = 0
-                while True:
-                    r_l = s.get(endpoint, params={
-                        'type': 'vod',
-                        'action': 'get_ordered_list',
-                        'category': cat_id,
-                        'p': p,
-                        'sortby': 'added',
-                        'token': token,
-                    }, timeout=REQ_TIMEOUT)
-                    r_l.raise_for_status()
-                    js = r_l.json()
-                    lst = _js_data(js)
-                    if isinstance(lst, dict) and 'data' in lst:
-                        lst = lst.get('data')
-                    if not (isinstance(lst, list) and lst):
-                        break
-
-                    new_on_page = 0
-                    for it in lst:
-                        item_id = it.get('id') or it.get('movie_id') or it.get('vod_id')
-                        if item_id is not None:
-                            if item_id in seen_ids:
-                                continue
-                            seen_ids.add(item_id)
-                        new_on_page += 1
-
-                        title = clean_name(it.get('name') or it.get('title') or 'VOD')
-                        cmd = it.get('cmd') or it.get('cmds') or ''
-                        logo = it.get('screenshot_uri') or it.get('poster') or it.get('cover') or ''
+                for it in _iter_ordered_list(s, endpoint, token, 'vod', cat_id, sortby='added'):
+                    title = clean_name(it.get('name') or it.get('title') or 'VOD')
+                    cmd = it.get('cmd') or it.get('cmds') or ''
+                    logo = it.get('screenshot_uri') or it.get('poster') or it.get('cover') or ''
+                    url = ''
+                    try:
+                        if cmd:
+                            url = _create_link(s, endpoint, token, 'vod', cmd)
+                    except Exception:
                         url = ''
-                        try:
-                            if cmd:
-                                url = _create_link(s, endpoint, token, 'vod', cmd)
-                        except Exception:
-                            url = ''
-                        if not url and cmd:
-                            url = cmd.replace('ffmpeg ', '').replace('auto ', '').strip()
-                        if logo and not str(logo).startswith('http'):
-                            logo = f"{portal_ui}/{str(logo).lstrip('/')}"
+                    if not url and cmd:
+                        url = cmd.replace('ffmpeg ', '').replace('auto ', '').strip()
+                    if logo and not str(logo).startswith('http'):
+                        logo = f"{portal_ui}/{str(logo).lstrip('/')}"
 
-                        if url:
-                            out.append({'title': title, 'url': url, 'group': cat_title, 'logo': logo, 'epg': ''})
+                    if url:
+                        out.append({'title': title, 'url': url, 'group': cat_title, 'logo': logo, 'epg': ''})
 
-                    if new_on_page == 0:
-                        break
-                    p += 1
-
-            return out
-
-        # --- SERIES ---
+            return out        # --- SERIES ---
         if content_type == 'series':
-            r_c = s.get(endpoint, params={'type': 'series', 'action': 'get_categories', 'token': token}, timeout=REQ_TIMEOUT)
+            r_c = s.get(
+                endpoint,
+                params={'type': 'series', 'action': 'get_categories', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST},
+                timeout=REQ_TIMEOUT,
+            )
             r_c.raise_for_status()
-            cats = _js_data(r_c.json())
+            cats = _js_data(_safe_json(r_c))
             if not isinstance(cats, list):
                 cats = []
 
@@ -431,127 +614,103 @@ def parse_mac_playlist(host, mac, content_type='live'):
                 if cat_id is None:
                     continue
 
-                seen_series = set()
-                p = 0
-                while True:
-                    r_l = s.get(endpoint, params={
-                        'type': 'series',
-                        'action': 'get_ordered_list',
-                        'category': cat_id,
-                        'p': p,
-                        'sortby': 'added',
-                        'token': token,
-                    }, timeout=REQ_TIMEOUT)
-                    r_l.raise_for_status()
-                    js = r_l.json()
-                    lst = _js_data(js)
-                    if isinstance(lst, dict) and 'data' in lst:
-                        lst = lst.get('data')
-                    if not (isinstance(lst, list) and lst):
-                        break
+                for ser in _iter_ordered_list(s, endpoint, token, 'series', cat_id, sortby='added'):
+                    sid = ser.get('id') or ser.get('movie_id') or ser.get('series_id')
+                    series_title = clean_name(ser.get('name') or ser.get('title') or 'Series')
+                    logo = ser.get('screenshot_uri') or ser.get('poster') or ser.get('cover') or ''
+                    if logo and not str(logo).startswith('http'):
+                        logo = f"{portal_ui}/{str(logo).lstrip('/')}"
 
-                    new_on_page = 0
-                    for ser in lst:
-                        sid = ser.get('id') or ser.get('movie_id') or ser.get('series_id')
-                        if sid is not None:
-                            if sid in seen_series:
+                    # Expand to seasons/episodes (best-effort; zależne od portalu)
+                    seasons = []
+                    if sid is not None:
+                        for key in ('movie_id', 'series_id', 'id'):
+                            try:
+                                r_s = s.get(
+                                    endpoint,
+                                    params={'type': 'series', 'action': 'get_seasons', key: sid, 'token': token, 'JsHttpRequest': JS_HTTPREQUEST},
+                                    timeout=REQ_TIMEOUT,
+                                )
+                                r_s.raise_for_status()
+                                seasons = _js_data(_safe_json(r_s))
+                                if isinstance(seasons, list):
+                                    break
+                            except Exception:
+                                seasons = []
+
+                    if isinstance(seasons, list) and seasons:
+                        for season in seasons:
+                            season_id = season.get('id') or season.get('season_id')
+                            snum = season.get('number') or season.get('season_number')
+                            try:
+                                snum_i = int(snum) if snum is not None else None
+                            except Exception:
+                                snum_i = None
+
+                            episodes = []
+                            if season_id is not None and sid is not None:
+                                for movie_key in ('movie_id', 'series_id', 'id'):
+                                    try:
+                                        r_e = s.get(
+                                            endpoint,
+                                            params={'type': 'series', 'action': 'get_episodes', movie_key: sid, 'season_id': season_id, 'token': token, 'JsHttpRequest': JS_HTTPREQUEST},
+                                            timeout=REQ_TIMEOUT,
+                                        )
+                                        r_e.raise_for_status()
+                                        episodes = _js_data(_safe_json(r_e))
+                                        if isinstance(episodes, list):
+                                            break
+                                    except Exception:
+                                        episodes = []
+
+                            if not isinstance(episodes, list) or not episodes:
                                 continue
-                            seen_series.add(sid)
-                        new_on_page += 1
 
-                        series_title = clean_name(ser.get('name') or ser.get('title') or 'Series')
-                        logo = ser.get('screenshot_uri') or ser.get('poster') or ser.get('cover') or ''
-                        if logo and not str(logo).startswith('http'):
-                            logo = f"{portal_ui}/{str(logo).lstrip('/')}"
-
-                        # Try to expand to seasons/episodes
-                        seasons = []
-                        if sid is not None:
-                            for key in ('movie_id', 'series_id', 'id'):
+                            for ep in episodes:
+                                ep_title = clean_name(ep.get('name') or ep.get('title') or 'Episode')
+                                enum = ep.get('number') or ep.get('episode_number') or ep.get('episode')
                                 try:
-                                    r_s = s.get(endpoint, params={'type': 'series', 'action': 'get_seasons', key: sid, 'token': token}, timeout=REQ_TIMEOUT)
-                                    r_s.raise_for_status()
-                                    seasons = _js_data(r_s.json())
-                                    if isinstance(seasons, list):
-                                        break
+                                    enum_i = int(enum) if enum is not None else None
                                 except Exception:
-                                    seasons = []
+                                    enum_i = None
 
-                        if isinstance(seasons, list) and seasons:
-                            for season in seasons:
-                                season_id = season.get('id') or season.get('season_id')
-                                # season number best-effort
-                                snum = season.get('number') or season.get('season_number')
+                                cmd = ep.get('cmd') or ep.get('cmds') or ''
+                                url = ''
                                 try:
-                                    snum_i = int(snum)
+                                    if cmd:
+                                        url = _create_link(s, endpoint, token, 'series', cmd)
                                 except Exception:
-                                    snum_i = None
+                                    url = ''
+                                if not url and cmd:
+                                    url = cmd.replace('ffmpeg ', '').replace('auto ', '').strip()
 
-                                episodes = []
-                                if season_id is not None and sid is not None:
-                                    for movie_key in ('movie_id', 'series_id', 'id'):
-                                        try:
-                                            r_e = s.get(endpoint, params={'type': 'series', 'action': 'get_episodes', movie_key: sid, 'season_id': season_id, 'token': token}, timeout=REQ_TIMEOUT)
-                                            r_e.raise_for_status()
-                                            episodes = _js_data(r_e.json())
-                                            if isinstance(episodes, list):
-                                                break
-                                        except Exception:
-                                            episodes = []
-
-                                if not isinstance(episodes, list) or not episodes:
+                                if not url:
                                     continue
 
-                                for ep in episodes:
-                                    ep_title = clean_name(ep.get('name') or ep.get('title') or 'Episode')
-                                    enum = ep.get('number') or ep.get('episode_number') or ep.get('episode')
-                                    try:
-                                        enum_i = int(enum)
-                                    except Exception:
-                                        enum_i = None
+                                parts = [series_title]
+                                if snum_i is not None or enum_i is not None:
+                                    s_part = ("S%02d" % (snum_i or 0)) if snum_i is not None else "S??"
+                                    e_part = ("E%02d" % (enum_i or 0)) if enum_i is not None else "E??"
+                                    parts.append("%s%s" % (s_part, e_part))
+                                if ep_title and ep_title.lower() not in (series_title.lower(), 'episode'):
+                                    parts.append(ep_title)
+                                title = ' - '.join(parts)
 
-                                    cmd = ep.get('cmd') or ep.get('cmds') or ''
-                                    url = ''
-                                    try:
-                                        if cmd:
-                                            url = _create_link(s, endpoint, token, 'series', cmd)
-                                    except Exception:
-                                        url = ''
-                                    if not url and cmd:
-                                        url = cmd.replace('ffmpeg ', '').replace('auto ', '').strip()
+                                out.append({'title': title, 'url': url, 'group': cat_title, 'logo': logo, 'epg': ''})
 
-                                    if not url:
-                                        continue
-
-                                    # Build readable title
-                                    parts = [series_title]
-                                    if snum_i is not None or enum_i is not None:
-                                        s_part = f"S{(snum_i or 0):02d}" if snum_i is not None else "S??"
-                                        e_part = f"E{(enum_i or 0):02d}" if enum_i is not None else "E??"
-                                        parts.append(f"{s_part}{e_part}")
-                                    if ep_title and ep_title.lower() not in (series_title.lower(), 'episode'):
-                                        parts.append(ep_title)
-                                    title = ' - '.join(parts)
-
-                                    out.append({'title': title, 'url': url, 'group': cat_title, 'logo': logo, 'epg': ''})
-
-                        else:
-                            # Fallback: export series items as single entries if portal returns cmd
-                            cmd = ser.get('cmd') or ser.get('cmds') or ''
+                    else:
+                        # Fallback: jeśli portal zwraca cmd bez odcinków
+                        cmd = ser.get('cmd') or ser.get('cmds') or ''
+                        url = ''
+                        try:
+                            if cmd:
+                                url = _create_link(s, endpoint, token, 'series', cmd)
+                        except Exception:
                             url = ''
-                            try:
-                                if cmd:
-                                    url = _create_link(s, endpoint, token, 'series', cmd)
-                            except Exception:
-                                url = ''
-                            if not url and cmd:
-                                url = cmd.replace('ffmpeg ', '').replace('auto ', '').strip()
-                            if url:
-                                out.append({'title': series_title, 'url': url, 'group': cat_title, 'logo': logo, 'epg': ''})
-
-                    if new_on_page == 0:
-                        break
-                    p += 1
+                        if not url and cmd:
+                            url = cmd.replace('ffmpeg ', '').replace('auto ', '').strip()
+                        if url:
+                            out.append({'title': series_title, 'url': url, 'group': cat_title, 'logo': logo, 'epg': ''})
 
             return out
 

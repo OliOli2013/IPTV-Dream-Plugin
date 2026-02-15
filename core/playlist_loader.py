@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.3 - MODUŁ ŁADOWANIA PLAYLIST
+IPTV Dream v6.4 - MODUŁ ŁADOWANIA PLAYLIST
 - Ultra-szybkie ładowanie M3U
 - Streamingowe parsowanie
 - Inteligentne cache'owanie

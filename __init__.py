@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.3 - Package Initialization
+IPTV Dream v6.4 - Package Initialization
 """
 
-__version__ = "6.3"
+__version__ = "6.4"
 __author__ = "IPTV Dream Team"
 __license__ = "GPLv2"
 __description__ = "Ultra-fast IPTV plugin for Enigma2 - REVOLUTION!"
 
 # Package metadata
-PLUGIN_NAME = "IPTV Dream v6.3"
-PLUGIN_VERSION = "6.3"
+PLUGIN_NAME = "IPTV Dream v6.4"
+PLUGIN_VERSION = "6.4"
 PLUGIN_DESCRIPTION = "Wtyczka IPTV (PL/EN) - REWOLUCJA / REVOLUTION!"
 
 # Import main classes

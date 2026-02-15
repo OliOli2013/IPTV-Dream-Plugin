@@ -60,12 +60,14 @@ from .tools.xtream_one_window_fixed import XtreamWindow  # alias w pliku
 
 from .core.playlist_loader import PlaylistLoader
 
-PLUGIN_VERSION = "6.3"
+PLUGIN_VERSION = "6.4"
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
 CACHE_DIR = "/tmp/iptvdream_v6_cache"
 
 DL_TIMEOUT = 90
-LOAD_TIMEOUT_MS = 300000  # 5 minut (zgodnie z prośbą o wydłużenie)
+LOAD_TIMEOUT_DEFAULT_MS = 300000  # 5 minut (domyślnie)
+MAC_VODSERIES_TIMEOUT_MS = 14400000  # 4 godziny (VOD/Seriale z MAC; duże biblioteki)
+LOAD_TIMEOUT_MS = LOAD_TIMEOUT_DEFAULT_MS
 WEBIF_PORT = 9999
 
 EPG_URL_KEY = "epg_url"
@@ -107,7 +109,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.3">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.4">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -755,7 +757,7 @@ class IPTVDreamV6(Screen):
 
     # ---------- operacje ładowania ----------
 
-    def startLoading(self, message):
+    def startLoading(self, message, timeout_ms=None):
         self.is_loading = True
         self.load_start_time = time.time()
         self["status_bar"].setText(message)
@@ -765,7 +767,8 @@ class IPTVDreamV6(Screen):
         self["progress_text"].show()
         if self.loading_timer:
             try:
-                self.loading_timer.start(LOAD_TIMEOUT_MS)
+                tmo = int(timeout_ms) if timeout_ms is not None else int(LOAD_TIMEOUT_MS)
+                self.loading_timer.start(tmo)
             except Exception:
                 pass
 
@@ -952,7 +955,11 @@ class IPTVDreamV6(Screen):
             return self.startMacDownload(host, mac, content_type=ctype, portal_name=pname)
 
     def startMacDownload(self, host, mac, content_type='live', portal_name=None):
-        self.startLoading(_("Pobieranie z MAC Portal ...", self.lang))
+        tmo = MAC_VODSERIES_TIMEOUT_MS if content_type in ("vod","series") else LOAD_TIMEOUT_MS
+        msg = _("Pobieranie z MAC Portal ...", self.lang)
+        if content_type in ("vod","series"):
+            msg = (_("Pobieranie z MAC Portal ...", self.lang) + ("\n(duża biblioteka może wczytywać się długo)" if self.lang=="pl" else "\n(large libraries may take a long time)"))
+        self.startLoading(msg, timeout_ms=tmo)
 
         def _load():
             # tools/mac_portal.py w repozytorium przyjmuje (host, mac) bez progress_callback.
@@ -963,7 +970,7 @@ class IPTVDreamV6(Screen):
         self.last_source = {"type": "mac", "value": {"host": host, "mac": mac, "filter": content_type}}
         self.cfg["last_source"] = self.last_source
         self._save_cfg()
-                # unique playlist name per portal + content type
+        # unique playlist name per portal + content type
         def _mk_id():
             try:
                 dom = host.split('://', 1)[-1].split('/', 1)[0]
@@ -1244,7 +1251,7 @@ class IPTVDreamV6(Screen):
         if st == "m3u_file":
             return self.onFileReady(val)
         if st == "mac":
-            return self.startMacDownload(val.get("host"), val.get("mac"))
+            return self.startMacDownload(val.get("host"), val.get("mac"), content_type=val.get("filter","live"))
         if st == "xtream":
             host = val.get("host")
             user = val.get("user")
