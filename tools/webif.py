@@ -15,6 +15,11 @@ _server_port = None
 _on_data_ready_callback = None
 
 def is_valid_url(url):
+    # Allow optional |options after URL, e.g. URL|User-Agent=...
+    try:
+        url = (url or '').split('|', 1)[0].strip()
+    except Exception:
+        pass
     """Sprawdza czy URL jest poprawny."""
     regex = re.compile(
         r'^(?:http|https)://' 

@@ -102,58 +102,64 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
     ua_encoded = urllib.parse.quote(RAW_UA)
     ua_suffix = f"#User-Agent={ua_encoded}"
 
-    for grp, chans in groups.items():
-        safe_grp_name = sanit(grp)
-        safe_bq_name  = sanit(bouquet_name or "IPTV")
-        filename = f"userbouquet.iptv_dream_{safe_bq_name}_{safe_grp_name}.tv".lower()[:60]
-        bq_fullpath = os.path.join(BOUQUET_DIR, filename)
-        
-        content = [f"#NAME {bouquet_name} - {grp}\n"]
-        
-        for ch in chans:
-            url = ch.get("url", "").strip()
-            if not url: 
-                continue
-            
-            title_raw = ch.get("title", "No Name")
-            title = sanit_title(title_raw)
-            tvg_id = ch.get("epg_id", "")
-            
-            url = url.replace(" ", "%20")
-            if "User-Agent" not in url:
-                url += ua_suffix
-            
-            unique_sid = zlib.crc32(url.encode()) & 0xffff
-            if unique_sid == 0: 
-                unique_sid = 1
-            
-            # Sprawdzamy czy mamy referencję satelitarną
-            sat_ref = get_satellite_channel_ref(title)
-            if sat_ref:
-                # Używamy referencji satelitarnej dla lepszego EPG
-                ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
-                content.append(f"#SERVICE {ref_str}\n")
-                content.append(f"#DESCRIPTION {title}\n")
-                
-                # Mapujemy EPG do referencji satelitarnej
-                epg_mapping.append((sat_ref, title, title))
-            else:
-                # Standardowa referencja IPTV
-                ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
-                content.append(f"#SERVICE {ref_str}\n")
-                content.append(f"#DESCRIPTION {title}\n")
-                
-                sid_hex = f"{unique_sid:X}"
-                
-                # Mapowanie EPG dla różnych typów serwisów
-                for s_type in ["4097", "5002", "1"]:
-                    epg_mapping.append((f"{s_type}:0:1:{sid_hex}:0:0:0:0:0:0", title, tvg_id))
-            
-            total_channels += 1
+    def _mk_bouquet_filename(bq_name, group_name):
+        """Create a collision-resistant bouquet filename.
 
+        Wcześniej plik był obcinany do 60 znaków, co przy długich nazwach (np. MAC-...)
+        ucinało część z nazwą grupy i powodowało nadpisywanie wielu bukietów jednym plikiem.
+        """
+        safe_bq = sanit(bq_name or "IPTV")
+        safe_grp = sanit(group_name or "Main")
+        # Krótkie segmenty + hash gwarantują unikalność.
+        sig = zlib.crc32((safe_bq + "|" + safe_grp).encode("utf-8", "ignore")) & 0xffffffff
+        safe_bq_s = safe_bq[:28]
+        safe_grp_s = safe_grp[:28]
+        fn = "userbouquet.iptv_dream_%s_%s_%08x.tv" % (safe_bq_s, safe_grp_s, sig)
+        return fn.lower()
+
+    for grp, chans in groups.items():
+        filename = _mk_bouquet_filename(bouquet_name, grp)
+        bq_fullpath = os.path.join(BOUQUET_DIR, filename)
+
+        # Zapis strumieniowy: nie trzymaj tysięcy linii w pamięci.
         with open(bq_fullpath, "w", encoding="utf-8") as f:
-            f.write("".join(content))
-        
+            f.write("#NAME %s - %s\n" % (bouquet_name or "IPTV", grp))
+
+            for ch in chans:
+                url = (ch.get("url", "") or "").strip()
+                if not url:
+                    continue
+
+                title_raw = ch.get("title", "No Name")
+                title = sanit_title(title_raw)
+                tvg_id = ch.get("epg_id", "")
+
+                url = url.replace(" ", "%20")
+                if "User-Agent" not in url:
+                    url += ua_suffix
+
+                unique_sid = zlib.crc32(url.encode()) & 0xffff
+                if unique_sid == 0:
+                    unique_sid = 1
+
+                # Sprawdzamy czy mamy referencję satelitarną
+                sat_ref = get_satellite_channel_ref(title)
+                if sat_ref:
+                    ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
+                    f.write(f"#SERVICE {ref_str}\n")
+                    f.write(f"#DESCRIPTION {title}\n")
+                    epg_mapping.append((sat_ref, title, title))
+                else:
+                    ref_str = f"{service_type}:0:1:{unique_sid}:0:0:0:0:0:0:{url}:{title}"
+                    f.write(f"#SERVICE {ref_str}\n")
+                    f.write(f"#DESCRIPTION {title}\n")
+
+                    sid_hex = f"{unique_sid:X}"
+                    for s_type in ["4097", "5002", "1"]:
+                        epg_mapping.append((f"{s_type}:0:1:{sid_hex}:0:0:0:0:0:0", title, tvg_id))
+
+                total_channels += 1
+
         add_to_bouquets_index(filename)
         total_bouquets += 1
 

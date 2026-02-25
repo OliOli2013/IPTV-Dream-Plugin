@@ -1,3 +1,20 @@
+v6.5 (2026-02-25)
+- MAC/STALKER: Uodporniony handshake (warm-up /c/, pełniejsze nagłówki MAG, fallbacki endpointów) + czytelniejsze logowanie do /tmp/iptvdream.log.
+- MAC/STALKER: Poprawiony eksport wielu bukietów (brak nadpisywania plików – odporne nazwy + hash).
+- GUI: Eksport "całej listy" stabilniejszy (defensywna obsługa wyjątków, praca w wątku).
+- PICONY: Wybór miejsca zapisu (tuner lub wykryte nośniki /media/*) + zapamiętanie ścieżki.
+- GUI: Poprawiony pasek postępu (zakres 0-100, aktualizacje podczas pobierania).
+- UI: Tekst przycisku "Instaluj źródła EPG" zmieniony na "Instaluj źródła EPG Import" + aktualizacja sekcji wsparcia (QR, dopisek FB).
+- CORE: Poprawki kompatybilności pobierania M3U (stabilniejsze timeouty, obsługa URL z parametrami po "|").
+
+- MAC/STALKER: Hardened handshake ("/c/" warm-up, richer MAG headers, endpoint fallbacks) + clearer logging to /tmp/iptvdream.log.
+- MAC/STALKER: Fixed multi-bouquet export (no file overwrites – collision-safe names + hash).
+- GUI: "Export all" made safer (defensive exception handling, threaded execution).
+- PICON: Choose save location (tuner or detected /media/* mounts) + path persistence.
+- GUI: Progress bar fixed (0-100 range, real updates during downloads).
+- UI: "Install EPG sources" button renamed to "Instaluj źródła EPG Import" + support section refreshed (QR, FB line).
+- CORE: M3U download compatibility fixes (safer timeouts, support for "|" header parameters).
+
 v6.4 (2026-02-15)
 - MAC/STALKER: Poprawiona obsługa odpowiedzi nie-JSON (czytelny komunikat zamiast "Expecting value...") + wymuszenie JsHttpRequest=1-xml.
 - MAC/STALKER: Inicjalizacja profilu STB (get_profile) dla LIVE/VOD/SERIES – poprawia kompatybilność i paginację.

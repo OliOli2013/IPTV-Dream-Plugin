@@ -60,7 +60,20 @@ from .tools.xtream_one_window_fixed import XtreamWindow  # alias w pliku
 
 from .core.playlist_loader import PlaylistLoader
 
-PLUGIN_VERSION = "6.4"
+def _read_version():
+    try:
+        here = os.path.dirname(__file__)
+        vp = os.path.join(here, "VERSION")
+        if os.path.exists(vp):
+            with open(vp, "r", encoding="utf-8") as f:
+                v = (f.read() or "").strip()
+                if v:
+                    return v
+    except Exception:
+        pass
+    return "6.5"
+
+PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
 CACHE_DIR = "/tmp/iptvdream_v6_cache"
 
@@ -109,7 +122,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.4">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.5">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -135,7 +148,8 @@ class IPTVDreamV6(Screen):
         <!-- QR + opis (jak v5, ale dopasowane do v6) -->
         <eLabel position="20,595" size="600,140" backgroundColor="#141414" cornerRadius="14" zPosition="-4" />
         <widget name="qr" position="35,610" size="110,110" alphatest="on" />
-        <widget name="support" position="155,608" size="450,120" font="Regular;20" foregroundColor="#00ff00" valign="top" transparent="1" />
+        <widget name="support" position="155,608" size="450,90" font="Regular;20" foregroundColor="#00ff00" valign="top" transparent="1" />
+        <widget name="support_fb" position="35,707" size="570,28" font="BlueCrystal;20" halign="center" valign="center" foregroundColor="#00aaff" transparent="1" />
 
         <!-- PRAWY DOLNY PANEL PODPOWIEDZI -->
         <eLabel position="640,595" size="540,140" backgroundColor="#141414" cornerRadius="14" zPosition="-4" />
@@ -174,6 +188,10 @@ class IPTVDreamV6(Screen):
         self["info_text"] = Label("")
         self["status_bar"] = Label("")
         self["progress_bar"] = ProgressBar()
+        try:
+            self["progress_bar"].setRange(0, 100)
+        except Exception:
+            pass
         self["progress_text"] = Label("")
         self["key_red"] = Label(_("exit", self.lang))
         self["key_green"] = Label(_("check_upd", self.lang))
@@ -186,6 +204,8 @@ class IPTVDreamV6(Screen):
         else:
             support_txt = "\c00ffffffDo you like the plugin?\n\c0000ff00Support the creator & development.\n\c00ffcc00Thank you!\c00ffffff"
         self["support"] = Label(support_txt)
+
+        self["support_fb"] = Label('Facebook: Enigma 2 Oprogramowanie i dodatki')
 
 
         if self.lang == "pl":
@@ -521,6 +541,7 @@ class IPTVDreamV6(Screen):
             dbg_lbl = "🪲 Debug: %s" % ("ON" if dbg_on else "OFF")
             log_lbl = "📄 Pokaż log (/tmp/iptvdream.log)"
             logc_lbl = "🧹 Wyczyść log"
+            delbq_lbl = "🗑️ Usuń bukiety IPTV Dream"
         else:
             st_title = "Management"
             back_lbl = "⬅️ Back"
@@ -533,6 +554,7 @@ class IPTVDreamV6(Screen):
             dbg_lbl = "🪲 Debug: %s" % ("ON" if dbg_on else "OFF")
             log_lbl = "📄 Show log (/tmp/iptvdream.log)"
             logc_lbl = "🧹 Clear log"
+            delbq_lbl = "🗑️ Delete IPTV Dream bouquets"
 
         items = [
             (lang_lbl, "lang"),
@@ -543,6 +565,7 @@ class IPTVDreamV6(Screen):
             (logc_lbl, "clear_log"),
             (cache_lbl, "clear_cache"),
             (hist_lbl, "clear_history"),
+            (delbq_lbl, "delete_bouquets"),
             (back_lbl, "back_main"),
         ]
         self["menu_list"].setList(items)
@@ -736,6 +759,8 @@ class IPTVDreamV6(Screen):
             return self.clearCache()
         if action == "clear_history":
             return self.clearHistory()
+        if action == "delete_bouquets":
+            return self.deleteDreamBouquets()
         if action == "back_main":
             return self.showMainMenu()
         if action == "back_fav_groups":
@@ -761,6 +786,10 @@ class IPTVDreamV6(Screen):
         self.is_loading = True
         self.load_start_time = time.time()
         self["status_bar"].setText(message)
+        try:
+            self["progress_bar"].setRange(0, 100)
+        except Exception:
+            pass
         self["progress_bar"].setValue(0)
         self["progress_text"].setText("0%")
         self["progress_bar"].show()
@@ -804,11 +833,44 @@ class IPTVDreamV6(Screen):
         self.session.openWithCallback(self.onUrlReady, VirtualKeyBoard, title=_("Wprowadź URL playlisty M3U:", self.lang), text=last_url)
 
     def onUrlReady(self, url):
-        if not url or not url.startswith(("http://", "https://")):
+        url = (url or "").strip()
+        if not url:
             return
 
-        self.cfg["last_url"] = url
-        self.last_source = {"type": "m3u_url", "value": url}
+        # Accept formats like: URL|User-Agent=...&Referer=...
+        raw_input = url
+        headers = {}
+        try:
+            if '|' in url:
+                url, opt = url.split('|', 1)
+                url = url.strip()
+                opt = opt.strip()
+                for kv in re.split(r"[&;]", opt):
+                    if '=' not in kv:
+                        continue
+                    k, v = kv.split('=', 1)
+                    k = (k or '').strip().lower()
+                    v = (v or '').strip()
+                    if not v:
+                        continue
+                    if k in ('user-agent', 'useragent', 'ua'):
+                        headers['User-Agent'] = v
+                    elif k in ('referer', 'ref'):
+                        headers['Referer'] = v
+                    elif k == 'origin':
+                        headers['Origin'] = v
+        except Exception:
+            headers = {}
+
+        if not url.startswith(('http://', 'https://')):
+            url = 'http://' + url
+
+        self._m3u_url_headers = headers
+        # Store the raw input so refresh keeps any |options
+        # (load uses normalized url + extracted headers)
+
+        self.cfg["last_url"] = raw_input
+        self.last_source = {"type": "m3u_url", "value": raw_input}
         self.cfg["last_source"] = self.last_source
         self._save_cfg()
 
@@ -816,7 +878,7 @@ class IPTVDreamV6(Screen):
 
         def _load():
             # PlaylistLoader ma cache i parsowanie
-            content = self.loader.load_m3u_url(url, progress_callback=self.updateProgress)
+            content = self.loader.load_m3u_url(url, progress_callback=self.updateProgress, headers=getattr(self, "_m3u_url_headers", None))
             playlist = self.loader.parse_m3u_content(content, progress_callback=self.updateProgress)
             return playlist
 
@@ -964,7 +1026,7 @@ class IPTVDreamV6(Screen):
         def _load():
             # tools/mac_portal.py w repozytorium przyjmuje (host, mac) bez progress_callback.
             # Progress pokazujemy na poziomie GUI (start/stop + status), a parsowanie nie blokuje GUI.
-            playlist = parse_mac_playlist(host, mac, content_type=content_type)
+            playlist = parse_mac_playlist(host, mac, content_type=content_type, progress_callback=self.updateProgress)
             return playlist
 
         self.last_source = {"type": "mac", "value": {"host": host, "mac": mac, "filter": content_type}}
@@ -1155,85 +1217,177 @@ class IPTVDreamV6(Screen):
         if not self.current_playlist:
             return
 
-        self.startLoading(_("Pobieranie picon ...", self.lang))
+        # --- wybór miejsca zapisu picon ---
+        def _list_destinations():
+            dests = []
+            # 1) tuner (domyślnie)
+            dests.append(("Tuner: /usr/share/enigma2/picon", "/usr/share/enigma2/picon"))
 
-        def _work():
-            """Pobiera pikony szybciej (wielowątkowo) i aktualizuje progress."""
-            items = []
-            for ch in (self.current_playlist or []):
-                title = (ch.get("title") or "").strip()
-                purl = (ch.get("tvg-logo") or ch.get("logo") or "").strip()
-                if title and purl:
-                    items.append((purl, title))
-
-            total = len(items)
-            if total <= 0:
-                return 0
-
-            # Liczba równoległych pobrań z konfiguracji PiconManager (fallback=5)
-            max_workers = 5
+            # 2) wykryj nośniki (/media/*) i zaproponuj /picon
             try:
-                max_workers = int(getattr(self.picons, "config", {}).get("max_concurrent_downloads", 5))
+                if os.path.isdir('/media'):
+                    for n in sorted(os.listdir('/media')):
+                        base = os.path.join('/media', n)
+                        # pomiń śmieci
+                        if n in ('.', '..'):
+                            continue
+                        if not os.path.isdir(base):
+                            continue
+                        # zwykle nośniki są zapisywalne
+                        if not os.access(base, os.W_OK):
+                            continue
+                        pdir = os.path.join(base, 'picon')
+                        # ładny opis
+                        label = "Nośnik: %s → %s" % (n, pdir)
+                        dests.append((label, pdir))
             except Exception:
-                max_workers = 5
-            if max_workers < 1:
-                max_workers = 1
-            if max_workers > 12:
-                max_workers = 12
+                pass
 
-            ok = 0
-            done = 0
-
-            def _one(purl_title):
-                purl, title = purl_title
+            # 3) dodatkowe typowe ścieżki
+            for base in ('/mnt',):
                 try:
-                    out = self.picons.download_picon(purl, title)
-                    return True if out else False
+                    if os.path.isdir(base) and os.access(base, os.W_OK):
+                        pdir = os.path.join(base, 'picon')
+                        dests.append(("Nośnik: %s" % pdir, pdir))
                 except Exception:
-                    return False
+                    pass
 
-            # Spróbuj concurrent.futures; jeśli niedostępne, leć sekwencyjnie.
+            # unikalne
+            uniq = []
+            seen = set()
+            for lbl, p in dests:
+                if p not in seen:
+                    seen.add(p)
+                    uniq.append((lbl, p))
+            return uniq
+
+        def _on_dest(choice):
+            if not choice:
+                return
+            pdir = choice[1]
+            if not pdir:
+                return
             try:
-                from concurrent.futures import ThreadPoolExecutor, as_completed
-                with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                    futs = [ex.submit(_one, it) for it in items]
-                    for fut in as_completed(futs):
-                        done += 1
-                        try:
-                            if fut.result():
-                                ok += 1
-                        except Exception:
-                            pass
-                        if total > 0 and (done % 10 == 0 or done == total):
+                os.makedirs(pdir, exist_ok=True)
+            except Exception:
+                pass
+
+            # ustaw na menadżerze i zapamiętaj
+            try:
+                self.picons.picon_dir = pdir
+                try:
+                    os.makedirs(self.picons.picon_dir, exist_ok=True)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            try:
+                self.cfg['picon_save_dir'] = pdir
+                self._save_cfg()
+            except Exception:
+                pass
+
+            self.startLoading(_("Pobieranie picon ...", self.lang) + "\n" + pdir)
+
+            _start_download()
+
+        def _start_download():
+            # istniejąca logika pobierania (w wątku)
+            def _work():
+                """Pobiera pikony szybciej (wielowątkowo) i aktualizuje progress."""
+                items = []
+                for ch in (self.current_playlist or []):
+                    title = (ch.get("title") or "").strip()
+                    purl = (ch.get("tvg-logo") or ch.get("logo") or "").strip()
+                    if title and purl:
+                        items.append((purl, title))
+
+                total = len(items)
+                if total <= 0:
+                    return 0
+
+                max_workers = 5
+                try:
+                    max_workers = int(getattr(self.picons, "config", {}).get("max_concurrent_downloads", 5))
+                except Exception:
+                    max_workers = 5
+                if max_workers < 1:
+                    max_workers = 1
+                if max_workers > 12:
+                    max_workers = 12
+
+                ok = 0
+                done = 0
+
+                def _one(purl_title):
+                    purl, title = purl_title
+                    try:
+                        out = self.picons.download_picon(purl, title)
+                        return True if out else False
+                    except Exception:
+                        return False
+
+                try:
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                        futs = [ex.submit(_one, it) for it in items]
+                        for fut in as_completed(futs):
+                            done += 1
                             try:
-                                reactor.callFromThread(
-                                    self.updateProgress,
-                                    min(100, (done / float(total)) * 100),
-                                    "Picon %d/%d" % (done, total)
-                                )
+                                if fut.result():
+                                    ok += 1
                             except Exception:
                                 pass
-            except Exception:
-                for it in items:
-                    done += 1
-                    if _one(it):
-                        ok += 1
-                    if total > 0 and (done % 25 == 0 or done == total):
-                        try:
-                            reactor.callFromThread(self.updateProgress, min(100, (done / float(total)) * 100), "Picon %d/%d" % (done, total))
-                        except Exception:
-                            pass
+                            if total > 0 and (done % 10 == 0 or done == total):
+                                try:
+                                    reactor.callFromThread(
+                                        self.updateProgress,
+                                        min(100, (done / float(total)) * 100),
+                                        "Picon %d/%d" % (done, total)
+                                    )
+                                except Exception:
+                                    pass
+                except Exception:
+                    for it in items:
+                        done += 1
+                        if _one(it):
+                            ok += 1
+                        if total > 0 and (done % 25 == 0 or done == total):
+                            try:
+                                reactor.callFromThread(self.updateProgress, min(100, (done / float(total)) * 100), "Picon %d/%d" % (done, total))
+                            except Exception:
+                                pass
 
-            return ok
+                return ok
 
-        def _done(res, err):
-            self.stopLoading()
-            if err:
-                self.session.open(MessageBox, "Picon error: %s" % err, MessageBox.TYPE_ERROR)
-                return
-            self.session.open(MessageBox, _("Pobrano/gotowe picon: %d", self.lang) % res, MessageBox.TYPE_INFO)
+            def _done(res, err):
+                self.stopLoading()
+                if err:
+                    self.session.open(MessageBox, "Picon error: %s" % err, MessageBox.TYPE_ERROR)
+                    return
+                self.session.open(MessageBox, _("Pobrano/gotowe picon: %d", self.lang) % res, MessageBox.TYPE_INFO)
 
-        run_in_thread(_work, _done)
+            run_in_thread(_work, _done)
+
+        # jeśli jest zapamiętana ścieżka, ustaw ją jako domyślny wybór
+        try:
+            last = (self.cfg.get('picon_save_dir') or '').strip()
+        except Exception:
+            last = ''
+        dests = _list_destinations()
+        if last and os.path.isabs(last):
+            # dołóż "ostatnio używane" na górę
+            dests = [("Ostatnio: %s" % last, last)] + [d for d in dests if d[1] != last]
+
+        self.session.openWithCallback(
+            _on_dest,
+            ChoiceBox,
+            title=("Wybierz miejsce zapisu picon" if self.lang == 'pl' else "Select picon save location"),
+            list=dests
+        )
+
+        return
 
     def installEpgAndMap(self):
         # w tej paczce: instalacja źródeł EPG; mapowanie (jeśli potrzeba) pozostaje w module EPGManager
@@ -1378,6 +1532,97 @@ class IPTVDreamV6(Screen):
         self._save_cfg()
         self.session.open(MessageBox, _("Zapisano URL EPG.", self.lang), MessageBox.TYPE_INFO, timeout=2)
 
+    
+    def deleteDreamBouquets(self):
+        """Bulk-delete bouquets created by IPTV Dream (by #NAME base)."""
+        try:
+            import glob
+            bq_files = sorted(glob.glob("/etc/enigma2/userbouquet.iptv_dream_*.tv"))
+        except Exception:
+            bq_files = []
+
+        if not bq_files:
+            self.session.open(MessageBox, _("Brak bukietów IPTV Dream do usunięcia.", self.lang) if self.lang=="pl" else _("No IPTV Dream bouquets to delete.", self.lang), MessageBox.TYPE_INFO)
+            return
+
+        groups = {}
+        for fp in bq_files:
+            base = None
+            try:
+                with open(fp, "r", errors="ignore") as f:
+                    first = (f.readline() or "").strip()
+                if first.startswith("#NAME"):
+                    nm = first.replace("#NAME", "", 1).strip()
+                    base = nm.split(" - ", 1)[0].strip() if nm else None
+            except Exception:
+                base = None
+            if not base:
+                base = "IPTVDream"
+            groups.setdefault(base, []).append(fp)
+
+        choices = []
+        for base, fps in sorted(groups.items(), key=lambda x: x[0].lower()):
+            choices.append(("%s (%d)" % (base, len(fps)), base))
+
+        def _picked(choice):
+            if not choice:
+                return
+            base = choice[1]
+            fps = groups.get(base, [])
+            if not fps:
+                return
+
+            def _confirm(yes):
+                if not yes:
+                    return
+                removed = 0
+                # Remove entries from bouquets.tv and delete files
+                try:
+                    idx_path = "/etc/enigma2/bouquets.tv"
+                    idx_lines = []
+                    if os.path.exists(idx_path):
+                        with open(idx_path, "r", errors="ignore") as f:
+                            idx_lines = f.readlines()
+                    # Build set of filenames
+                    fnames = set([os.path.basename(x) for x in fps])
+                    new_lines = []
+                    for ln in idx_lines:
+                        keep = True
+                        for fn in fnames:
+                            if ('FROM BOUQUET "%s"' % fn) in ln:
+                                keep = False
+                                break
+                        if keep:
+                            new_lines.append(ln)
+                    if new_lines != idx_lines:
+                        with open(idx_path, "w") as f:
+                            f.writelines(new_lines)
+                except Exception:
+                    pass
+
+                for fp in fps:
+                    try:
+                        os.remove(fp)
+                        removed += 1
+                    except Exception:
+                        pass
+
+                # Reload bouquets
+                try:
+                    if eDVBDB:
+                        eDVBDB.getInstance().reloadBouquets()
+                        eDVBDB.getInstance().reloadServicelist()
+                except Exception:
+                    pass
+
+                msg = ("Usunięto %d bukietów." % removed) if self.lang=="pl" else ("Deleted %d bouquets." % removed)
+                self.session.open(MessageBox, msg, MessageBox.TYPE_INFO, timeout=4)
+
+            prompt = ("Usunąć bukiety dla: %s ?" % base) if self.lang=="pl" else ("Delete bouquets for: %s ?" % base)
+            self.session.openWithCallback(_confirm, MessageBox, prompt, MessageBox.TYPE_YESNO)
+
+        self.session.openWithCallback(_picked, ChoiceBox, title=_("Wybierz zestaw bukietów", self.lang) if self.lang=="pl" else _("Select bouquet set", self.lang), list=choices)
+
     def clearCache(self):
         try:
             if os.path.exists(CACHE_DIR):
@@ -1442,20 +1687,41 @@ class IPTVDreamV6(Screen):
     def onBouquetsSelected(self, selected_keys):
         if not selected_keys:
             return
+
+        # Budujemy listę kanałów tylko z zaznaczonych grup.
         final_list = []
         for k in selected_keys:
-            final_list.extend(self.export_groups.get(k, []))
+            try:
+                final_list.extend(self.export_groups.get(k, []))
+            except Exception:
+                pass
 
-        res, chans = export_bouquets(final_list, self.playlist_name)
+        self.startLoading(("Eksport do bukietów ..." if self.lang == 'pl' else "Exporting bouquets ..."))
 
-        try:
-            if eDVBDB:
-                eDVBDB.getInstance().reloadBouquets()
-                eDVBDB.getInstance().reloadServicelist()
-        except Exception:
-            pass
+        def _do_export():
+            # export_bouquets może zgłosić wyjątek (np. problem pliku) – nie może to robić GS.
+            return export_bouquets(final_list, self.playlist_name)
 
-        self.session.open(MessageBox, _("exported_channels_bouquets", self.lang) % (chans, res), MessageBox.TYPE_INFO)
+        def _done(res, err):
+            self.stopLoading()
+            if err:
+                self.session.open(MessageBox, "Export error: %s" % err, MessageBox.TYPE_ERROR)
+                return
+            try:
+                total_bq, total_ch = res
+            except Exception:
+                total_bq, total_ch = (0, 0)
+
+            try:
+                if eDVBDB:
+                    eDVBDB.getInstance().reloadBouquets()
+                    eDVBDB.getInstance().reloadServicelist()
+            except Exception:
+                pass
+
+            self.session.open(MessageBox, _("exported_channels_bouquets", self.lang) % (total_ch, total_bq), MessageBox.TYPE_INFO)
+
+        run_in_thread(_do_export, _done)
 
     # ---------- close ----------
 

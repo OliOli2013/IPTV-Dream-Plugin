@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-IPTV Dream v6.4 - MODUŁ ŁADOWANIA PLAYLIST
+"""IPTV Dream v6.5 - MODUŁ ŁADOWANIA PLAYLIST
 - Ultra-szybkie ładowanie M3U
 - Streamingowe parsowanie
 - Inteligentne cache'owanie
@@ -23,7 +22,21 @@ class PlaylistLoader:
         self.session = requests.Session()
         # logger + network settings
         self.log = get_logger("IPTVDream.Playlist", log_file=self.config.get("log_file", "/tmp/iptvdream.log"), debug=bool(self.config.get("debug", False)))
-        self.net_timeout = (int(self.config.get("net_timeout_connect", 7)), int(self.config.get("net_timeout_read", 30)))
+        # Streaming M3U bywa wolne; read timeout 30s powoduje fałszywe "Read timed out".
+        # Jeśli użytkownik ma stary config z niskim net_timeout_read, podbijamy go do bezpiecznej wartości.
+        try:
+            ct = int(self.config.get("net_timeout_connect", 10))
+        except Exception:
+            ct = 10
+        try:
+            rt = int(self.config.get("net_timeout_read", 180))
+        except Exception:
+            rt = 180
+        if rt < 90:
+            rt = 180
+        if ct < 3:
+            ct = 3
+        self.net_timeout = (ct, rt)
         self.net_retries = int(self.config.get("net_retries", 2))
         self.net_backoff = float(self.config.get("net_backoff", 0.8))
         self.ssl_verify = bool(self.config.get("ssl_verify", False))
@@ -68,15 +81,32 @@ class PlaylistLoader:
         """Generuje klucz cache dla URL."""
         return hashlib.md5(url.encode('utf-8')).hexdigest()
 
+    def _cache_key_input(self, url, headers=None):
+        """Stable cache-key material for a URL + optional headers.
+
+        Some providers require headers (UA/Referer). We include them in the cache-key only
+        when explicitly provided, without breaking older call sites.
+        """
+        try:
+            if headers and isinstance(headers, dict):
+                # only include a small subset to avoid cache explosion
+                keys = [k for k in headers.keys() if k and str(k).lower() in ("user-agent", "referer", "origin")]
+                if keys:
+                    sig = "&".join(["%s=%s" % (k, headers.get(k, "")) for k in sorted(keys)])
+                    return "%s|%s" % (url, sig)
+        except Exception:
+            pass
+        return url
+
     def is_cache_valid(self, cache_file, max_age=3600):
         """Sprawdza czy cache jest ważny."""
         if not os.path.exists(cache_file):
             return False
         return (time.time() - os.path.getmtime(cache_file)) < max_age
 
-    def get_cached_content(self, url):
+    def get_cached_content(self, url, headers=None):
         """Pobiera zawartość z cache jeśli dostępna."""
-        cache_key = self.get_cache_key(url)
+        cache_key = self.get_cache_key(self._cache_key_input(url, headers=headers))
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.m3u")
         
         if self.is_cache_valid(cache_file):
@@ -87,9 +117,9 @@ class PlaylistLoader:
                 pass
         return None
 
-    def cache_content(self, url, content, meta=None):
+    def cache_content(self, url, content, meta=None, headers=None):
         """Zapisuje zawartość do cache (opcjonalnie z metadanymi HTTP)."""
-        cache_key = self.get_cache_key(url)
+        cache_key = self.get_cache_key(self._cache_key_input(url, headers=headers))
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.m3u")
         meta_file  = os.path.join(self.cache_dir, f"{cache_key}.meta.json")
 
@@ -106,10 +136,10 @@ class PlaylistLoader:
             except Exception:
                 pass
 
-    def get_cached_metadata(self, url):
+    def get_cached_metadata(self, url, headers=None):
         """Returns cached HTTP metadata (ETag/Last-Modified) if present."""
         try:
-            cache_key = self.get_cache_key(url)
+            cache_key = self.get_cache_key(self._cache_key_input(url, headers=headers))
             meta_file = os.path.join(self.cache_dir, f"{cache_key}.meta.json")
             if os.path.exists(meta_file):
                 with open(meta_file, 'r') as f:
@@ -119,9 +149,9 @@ class PlaylistLoader:
         return {}
 
 
-    def load_m3u_url(self, url, progress_callback=None):
+    def load_m3u_url(self, url, progress_callback=None, headers=None):
         """Streaming M3U download with cache, conditional GET, timeouts and retries."""
-        cache_key = self.get_cache_key(url)
+        cache_key = self.get_cache_key(self._cache_key_input(url, headers=headers))
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.m3u")
 
         def _cb(pct, msg):
@@ -135,21 +165,21 @@ class PlaylistLoader:
         meta = self._read_meta(cache_key)
         cached_ok = self.is_cache_valid(cache_file, max_age=int(self.config.get("cache_max_age", 3600)))
         if cached_ok:
-            headers = {}
+            cond_headers = {}
             etag = meta.get("etag")
             last_mod = meta.get("last_modified")
             if etag:
-                headers["If-None-Match"] = etag
+                cond_headers["If-None-Match"] = etag
             if last_mod:
-                headers["If-Modified-Since"] = last_mod
+                cond_headers["If-Modified-Since"] = last_mod
 
-            if headers:
+            if cond_headers:
                 try:
                     _cb(5, "Checking updates..." if self.config.get("language") == "en" else "Sprawdzanie zmian...")
                     r = http_get(
                         url,
                         session=self.session,
-                        headers=headers,
+                        headers=dict((headers or {}), **cond_headers) if headers else cond_headers,
                         stream=False,
                         verify=self.ssl_verify,
                         timeout=self.net_timeout,
@@ -178,7 +208,7 @@ class PlaylistLoader:
             r = http_get(
                 url,
                 session=self.session,
-                headers=None,
+                headers=headers,
                 stream=True,
                 verify=self.ssl_verify,
                 timeout=self.net_timeout,
@@ -193,18 +223,35 @@ class PlaylistLoader:
             chunk_size = 8192
             downloaded = 0
 
-            for chunk in r.iter_content(chunk_size=chunk_size):
-                if chunk:
+            try:
+                for chunk in r.iter_content(chunk_size=chunk_size):
+                    if not chunk:
+                        continue
                     content.write(chunk)
                     downloaded += len(chunk)
-                    if progress_callback and total_size > 0:
-                        progress = min(99, (downloaded / float(total_size)) * 100.0)
-                        _cb(progress, "Downloaded: %.1f KB" % (downloaded/1024.0) if self.config.get("language") == "en" else "Pobrano: %.1f KB" % (downloaded/1024.0))
+                    if progress_callback:
+                        if total_size > 0:
+                            progress = min(99, (downloaded / float(total_size)) * 100.0)
+                            _cb(progress, "Downloaded: %.1f KB" % (downloaded/1024.0) if self.config.get("language") == "en" else "Pobrano: %.1f KB" % (downloaded/1024.0))
+                        else:
+                            # chunked/unknown size: show activity every ~512KB
+                            if downloaded % (512 * 1024) < chunk_size:
+                                _cb(20, "Downloaded: %.1f MB" % (downloaded/1024.0/1024.0) if self.config.get("language") == "en" else "Pobrano: %.1f MB" % (downloaded/1024.0/1024.0))
+            except requests.exceptions.RequestException:
+                # If we have any cache, fall back.
+                if os.path.exists(cache_file):
+                    try:
+                        _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
+                        with open(cache_file, 'rb') as f:
+                            return f.read()
+                    except Exception:
+                        pass
+                raise
 
             content_data = content.getvalue()
             # Save cache + metadata
             try:
-                self.cache_content(url, content_data)
+                self.cache_content(url, content_data, headers=headers)
                 meta = {
                     "url": url,
                     "saved_at": time.time(),

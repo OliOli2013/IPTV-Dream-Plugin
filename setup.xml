@@ -2,10 +2,10 @@
 <setupxml>
 	<plugin
 		key="IPTVDreamV6"
-		name="IPTV Dream v6.0"
+		name="IPTV Dream v6.5"
 		description="Ultra-szybka wtyczka IPTV - REWOLUCJA!"
 		author="IPTV Dream Team"
-		version="6.0"
+		version="6.5"
 		icon="plugin.png"
 		type="1"
 		namespace="iptv_dream_v6"
@@ -63,7 +63,7 @@
 			]]>
 		</prerequisites>
 		<attributes>
-			<attribute name="version" value="6.0" />
+			<attribute name="version" value="6.5" />
 			<attribute name="api_version" value="1.0" />
 			<attribute name="plugin_type" value="iptv" />
 			<attribute name="category" value="multimedia" />
