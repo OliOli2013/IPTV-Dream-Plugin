@@ -28,6 +28,80 @@ def _mask_mac(mac):
     return "****"
 
 
+_MAC_HEX_RE = re.compile(r'[^0-9A-Fa-f]')
+
+
+def normalize_mac(mac):
+    """Return canonical MAC as lower-case xx:xx:xx:xx:xx:xx or ''."""
+    try:
+        raw = (mac or '').strip()
+        if not raw:
+            return ''
+        cleaned = _MAC_HEX_RE.sub('', raw)
+        if len(cleaned) != 12:
+            return ''
+        return ':'.join(cleaned[i:i + 2] for i in range(0, 12, 2)).lower()
+    except Exception:
+        return ''
+
+
+def normalize_host(host):
+    """Normalize portal host while preserving any typed path."""
+    try:
+        u = _ensure_scheme(host).strip()
+        if not u:
+            return ''
+        u = u.replace('\\', '/')
+        tmp = u.replace('://', '§§')
+        tmp = re.sub(r'/+', '/', tmp)
+        u = tmp.replace('§§', '://')
+        return u.rstrip('/')
+    except Exception:
+        return (host or '').strip()
+
+
+def _portal_name_from_host(host, fallback=''):
+    try:
+        candidate = (fallback or '').strip()
+        if candidate:
+            return candidate[:128]
+        dom = host.split('://', 1)[-1].split('/', 1)[0].strip()
+        return (dom or 'Portal')[:128]
+    except Exception:
+        return (fallback or 'Portal')[:128]
+
+
+def _normalize_portal_entry(entry):
+    if not isinstance(entry, dict):
+        return None
+    host = normalize_host(entry.get('host') or '')
+    mac = normalize_mac(entry.get('mac') or '')
+    if not host or not mac:
+        return None
+    name = _portal_name_from_host(host, entry.get('name') or '')
+    return {'name': name, 'host': host, 'mac': mac}
+
+
+def _normalize_portal_list(data):
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        return []
+
+    out = []
+    seen = set()
+    for item in data:
+        norm = _normalize_portal_entry(item)
+        if not norm:
+            continue
+        key = '%s|%s' % (norm['host'].lower(), norm['mac'])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(norm)
+    return out
+
+
 # Stalker/MAG często oczekuje parametru JsHttpRequest=1-xml (inaczej potrafi zwrócić HTML)
 JS_HTTPREQUEST = '1-xml'
 
@@ -62,13 +136,12 @@ def _safe_json(resp):
         raise
 
 def load_mac_json():
-    """Wczytuje listę portali. Obsługuje migrację ze starego formatu."""
+    """Wczytuje listę portali, naprawia stary format i usuwa uszkodzone/zdublowane wpisy."""
     try:
         if not os.path.exists(MAC_FILE):
             return []
-            
-        # Odczyt głównego pliku; jeżeli jest uszkodzony (np. przerwany zapis),
-        # spróbuj z kopii .bak.
+
+        data = None
         try:
             with open(MAC_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -79,30 +152,27 @@ def load_mac_json():
                     data = json.load(f)
             else:
                 raise
-            
-        # Migracja: Jeśli stary format (słownik), zamień na listę
+
+        # Migracja: stary format pojedynczego słownika -> lista
         if isinstance(data, dict) and "host" in data:
-            new_data = [{"name": "Domyślny", "host": data["host"], "mac": data["mac"]}]
-            save_mac_json(new_data)
-            return new_data
-            
-        # Jeśli to już lista, zwróć ją
-        if isinstance(data, list):
-            return data
-            
-        return []
+            data = [{"name": data.get("name") or "Portal", "host": data.get("host"), "mac": data.get("mac")}]
+
+        normalized = _normalize_portal_list(data)
+        if normalized != data:
+            try:
+                save_mac_json(normalized)
+            except Exception:
+                pass
+        return normalized
     except Exception:
         return []
 
-def save_mac_json(data):
-    """Zapisuje listę portali."""
-    try:
-        # Upewniamy się, że zapisujemy listę
-        if not isinstance(data, list):
-            data = [data] if data else []
 
-        # Bezpieczny zapis atomowy: najpierw do pliku tymczasowego, potem rename.
-        # Dodatkowo utrzymujemy kopię .bak, aby UI nie "gubił" portali po eksporcie/restarcie.
+def save_mac_json(data):
+    """Zapisuje listę portali w formacie kanonicznym."""
+    try:
+        data = _normalize_portal_list(data)
+
         base_dir = os.path.dirname(MAC_FILE)
         if base_dir and not os.path.exists(base_dir):
             try:
@@ -113,7 +183,6 @@ def save_mac_json(data):
         tmp_file = MAC_FILE + ".tmp"
         bak_file = MAC_FILE + ".bak"
 
-        # Zapis do tmp
         with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             try:
@@ -122,7 +191,6 @@ def save_mac_json(data):
             except Exception:
                 pass
 
-        # Kopia starego pliku (jeżeli istniał)
         if os.path.exists(MAC_FILE):
             try:
                 import shutil
@@ -130,11 +198,9 @@ def save_mac_json(data):
             except Exception:
                 pass
 
-        # Atomowa podmiana
         try:
             os.replace(tmp_file, MAC_FILE)
         except Exception:
-            # Python 2 fallback
             try:
                 os.rename(tmp_file, MAC_FILE)
             except Exception:
@@ -142,25 +208,29 @@ def save_mac_json(data):
     except Exception:
         pass
 
-def add_mac_portal(host, mac):
-    """Dodaje nowy portal do listy (WebIF/Ręcznie)."""
+
+def add_mac_portal(host, mac, name=None):
+    """Dodaje lub odświeża portal MAC w postaci kanonicznej."""
+    entry = _normalize_portal_entry({'host': host, 'mac': mac, 'name': name})
+    if not entry:
+        raise ValueError('INVALID_MAC_OR_HOST')
+
     portals = load_mac_json()
-    
-    # Sprawdź duplikaty
-    for p in portals:
-        if p.get("host") == host and p.get("mac") == mac:
-            return # Już istnieje
-            
-    # Generuj nazwę
-    name = f"Portal {len(portals) + 1}"
-    try:
-        domain = host.split("//")[-1].split("/")[0]
-        name = domain
-    except: 
-        pass
-    
-    portals.append({"name": name, "host": host, "mac": mac})
+    entry_key = '%s|%s' % (entry['host'].lower(), entry['mac'])
+
+    for idx, p in enumerate(portals):
+        p_key = '%s|%s' % ((p.get('host') or '').lower(), p.get('mac') or '')
+        if p_key == entry_key:
+            updated = dict(p)
+            updated.update(entry)
+            portals[idx] = _normalize_portal_entry(updated) or entry
+            save_mac_json(portals)
+            return portals[idx]
+
+    portals.append(entry)
     save_mac_json(portals)
+    return entry
+
 
 def get_random_sn():
     """Generuje losowy numer seryjny."""
@@ -180,6 +250,10 @@ def translate_error(e, url=""):
         return "Connection error: Auth Failed.\nPortal returned no token (handshake).\nCheck MAC/URL and see /tmp/iptvdream.log"
     if "500" in err_str or "502" in err_str: 
         return f"{_('err_server', lang)}.\n{_('try_later', lang)}"
+    if "INVALID_MAC" in err_str or "INVALID_MAC_OR_HOST" in err_str:
+        if lang == 'pl':
+            return "Nieprawidłowy adres MAC lub host.\nUżyj formatu 00:11:22:33:44:55 oraz poprawnego URL portalu."
+        return "Invalid MAC address or host.\nUse format 00:11:22:33:44:55 and a valid portal URL."
     if "BAD_JSON_RESPONSE" in err_str or "Expecting value" in err_str:
         # Serwer zwrócił HTML/pustą odpowiedź (często redirect lub zły endpoint)
         if lang == 'pl':
@@ -874,8 +948,10 @@ def _handshake(host, mac):
     """Returns (session, endpoint, token, headers_auth, portal_root, portal_ui)."""
     base_url, hint_path = _base_url_from_host(host)
 
-    # Normalize MAC (keep colons if present)
-    mac = (mac or '').strip().upper()
+    # Normalize MAC to canonical xx:xx:xx:xx:xx:xx form used by Stalker/MAG cookies.
+    mac = normalize_mac(mac)
+    if not mac:
+        raise Exception('INVALID_MAC')
 
     headers = _mag_headers(base_url, mac, timezone=_read_local_timezone())
 
@@ -1013,10 +1089,10 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
 
     progress_callback: optional callable(pct:int, msg:str)
     """
-    host = (host or '').strip()
-    mac = (mac or '').strip()
+    host = normalize_host(host)
+    mac = normalize_mac(mac)
     if not host or not mac:
-        raise Exception('Missing host/mac')
+        raise Exception('INVALID_MAC')
 
     try:
         LOG_MAC.info('MAC start type=%s host=%s mac=%s', content_type, host, _mask_mac(mac))

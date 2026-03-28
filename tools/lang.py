@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 LANG = {
     "pl": {
-        "title": "IPTV Dream v6.5",
+        "title": "IPTV Dream v6.5.1",
         "load_url": "Wczytaj listę z URL",
         "pick_file": "Wskaż plik M3U",
         "xtream": "Xtream Codes",
@@ -39,7 +39,7 @@ LANG = {
         "Ładowanie z cache...": "Ładowanie z cache...",
         "Gotowe": "Gotowe",
         "error": "Błąd",
-        "foot": "Twórca: Paweł Pawełek, {date} | msisystem@t.pl", 
+        "foot": "Twórca: Paweł Pawełek, {date} | aio-iptv@wp.pl", 
         "epg_url_saved_info": "Adres URL EPG został zapisany. Naciśnij ŻÓŁTY, aby zainstalować źródła.",
         "epg_install_success_info": "Teraz wejdź w EPG Import -> Źródła i zaznacz 'IPTV Dream EPG (MEGA)'.",
         "download_error": "Błąd pobierania!",
@@ -228,7 +228,7 @@ LANG = {
 
     },
     "en": {
-        "title": "IPTV Dream v6.5",
+        "title": "IPTV Dream v6.5.1",
         "load_url": "Load M3U from URL",
         "pick_file": "Pick M3U file",
         "xtream": "Xtream Codes",
@@ -266,7 +266,7 @@ LANG = {
         "Ładowanie z cache...": "Loaded from cache...",
         "Gotowe": "Done",
         "error": "Error",
-        "foot": "Creator: Paweł Pawełek, {date} | msisystem@t.pl",
+        "foot": "Creator: Paweł Pawełek, {date} | aio-iptv@wp.pl",
         "epg_url_saved_info": "EPG URL saved. Press YELLOW to install sources.",
         "epg_install_success_info": "Now go to EPG Import -> Sources and select 'IPTV Dream EPG (MEGA)'.",
         "download_error": "Download error!",

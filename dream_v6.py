@@ -71,7 +71,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.5"
+    return "6.5.1"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
@@ -122,7 +122,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.5">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.5.1">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -175,6 +175,10 @@ class IPTVDreamV6(Screen):
     def __init__(self, session):
         Screen.__init__(self, session)
         self.session = session
+        try:
+            self.setTitle("IPTV Dream v%s" % PLUGIN_VERSION)
+        except Exception:
+            pass
 
         # Initial language is taken from the system. It may be overridden by plugin config later.
         self.lang = (language.getLanguage() or "pl")[:2].lower()
@@ -200,9 +204,9 @@ class IPTVDreamV6(Screen):
 
         self["qr"] = Pixmap()
         if self.lang == "pl":
-            support_txt = "\c00ffffffPodoba Ci się wtyczka?\n\c0000ff00Wesprzyj twórcę i rozwój.\n\c00ffcc00Dziękuję!\c00ffffff"
+            support_txt = "\\c00ffffffPodoba Ci się wtyczka?\n\\c0000ff00Wesprzyj twórcę i rozwój.\n\\c00ffcc00Dziękuję!\\c00ffffff"
         else:
-            support_txt = "\c00ffffffDo you like the plugin?\n\c0000ff00Support the creator & development.\n\c00ffcc00Thank you!\c00ffffff"
+            support_txt = "\\c00ffffffDo you like the plugin?\n\\c0000ff00Support the creator & development.\n\\c00ffcc00Thank you!\\c00ffffff"
         self["support"] = Label(support_txt)
 
         self["support_fb"] = Label('Facebook: Enigma 2 Oprogramowanie i dodatki')
@@ -475,13 +479,13 @@ class IPTVDreamV6(Screen):
 
         # Kolory numerów (jak w referencyjnych screenach v5):
         # 1-4 zielony, 5 szary, 6 fiolet, 7 pomarańcz, 8 niebieski, 9 czerwony.
-        num_reset = "\c00ffffff"
+        num_reset = "\\c00ffffff"
         num_colors = {
-            1: "\c0000ff00", 2: "\c0000ff00", 3: "\c0000ff00", 4: "\c0000ff00",
-            5: "\c00a0a0a0", 6: "\c00b000ff", 7: "\c00ff7a00", 8: "\c000080ff", 9: "\c00ff0000",
+            1: "\\c0000ff00", 2: "\\c0000ff00", 3: "\\c0000ff00", 4: "\\c0000ff00",
+            5: "\\c00a0a0a0", 6: "\\c00b000ff", 7: "\\c00ff7a00", 8: "\\c000080ff", 9: "\\c00ff0000",
         }
         def N(i):
-            return "%s%d%s" % (num_colors.get(i, "\c00ffffff"), i, num_reset)
+            return "%s%d%s" % (num_colors.get(i, "\\c00ffffff"), i, num_reset)
 
         if self.lang == "pl":
             lbl1 = "🌐 M3U z URL"
@@ -957,7 +961,7 @@ class IPTVDreamV6(Screen):
         for p in portals:
             host = p.get("host", "")
             mac = p.get("mac", "")
-            items.append(("🔑 %s | %s" % (host, mac), ("mac_pick", p)))
+            items.append(("🔑 %s | %s" % (host, (mac or "").upper()), ("mac_pick", p)))
         items.append((_("🗑️ Usuń portal", self.lang), "mac_delete"))
         items.append((_("⬅️ Powrót", self.lang), "back_main"))
         self.menu_context = "mac_menu"
@@ -1054,7 +1058,7 @@ class IPTVDreamV6(Screen):
             return
         items = []
         for idx, p in enumerate(portals):
-            items.append((_("Usuń: %s | %s", self.lang) % (p.get("host", ""), p.get("mac", "")), idx))
+            items.append((_("Usuń: %s | %s", self.lang) % (p.get("host", ""), (p.get("mac", "") or "").upper()), idx))
         self.session.openWithCallback(self.onMacDeletePicked, ChoiceBox, title=_("Wybierz portal do usunięcia", self.lang), list=items)
 
     def onMacDeletePicked(self, choice):

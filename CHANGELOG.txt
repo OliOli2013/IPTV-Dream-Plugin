@@ -1,3 +1,14 @@
+v6.5.1 (2026-03-28)
+- MAC: added canonical MAC normalization (accepts :, -, ., spaces and raw 12-hex input) with validation before handshake.
+- MAC: automatic repair of saved portal list (dedupe, cleanup of invalid entries, migration of old/single-entry JSON format).
+- MAC: unified host normalization in GUI/WebIF/save/load paths to reduce duplicate entries and broken portal records.
+- MAC: saved portal lists now display normalized MAC values consistently and use safer add/update semantics.
+- UPDATE: updater now compares semantic versions instead of treating every version difference as a newer release.
+- UPDATE: updater more reliably locates plugin files inside GitHub ZIPs and removes __pycache__ / test artifacts after install.
+- PACKAGE: removed runtime/developer artifacts from the IPK payload (__pycache__, *.pyc, test_plugin.py).
+- META: bumped package/plugin version to 6.5.1 and refreshed setup metadata for Python 3 / GitHub support.
+- META: replaced all visible support e-mail addresses with aio-iptv@wp.pl.
+
 v6.5 (2026-02-25)
 - MAC/STALKER: Uodporniony handshake (warm-up /c/, pełniejsze nagłówki MAG, fallbacki endpointów) + czytelniejsze logowanie do /tmp/iptvdream.log.
 - MAC/STALKER: Poprawiony eksport wielu bukietów (brak nadpisywania plików – odporne nazwy + hash).
