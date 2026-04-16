@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Moduł narzędzi dla wtyczki IPTV Dream v6.5.1
+Moduł narzędzi dla wtyczki IPTV Dream v6.5.2
 """
 
 from . import lang
@@ -12,7 +12,7 @@ from . import epg_picon
 from . import webif
 
 # Wersja modułu narzędzi
-TOOLS_VERSION = "6.5.1"
+TOOLS_VERSION = "6.5.2"
 
 __all__ = [
     'lang',

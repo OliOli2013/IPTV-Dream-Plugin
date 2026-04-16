@@ -17,7 +17,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.5.1"
+    return "6.5.2"
 
 __version__ = _read_version()
 __author__ = "IPTV Dream Team"
@@ -29,15 +29,22 @@ PLUGIN_NAME = "IPTV Dream v%s" % __version__
 PLUGIN_VERSION = __version__
 PLUGIN_DESCRIPTION = "Wtyczka IPTV (PL/EN) - REWOLUCJA / REVOLUTION!"
 
-# Import main classes
-from .dream_v6 import IPTVDreamMain
-from .export_v2 import export_bouquets, add_to_bouquets_index
+# Do not eagerly import Enigma2 UI modules here. The plugin list should stay lightweight
+# and should not fail just because an optional runtime dependency (e.g. Pillow for picons)
+# is not installed yet. Import the heavy modules only when the plugin is actually opened.
 
-# Make main classes available
+def get_main_class():
+    from .dream_v6 import IPTVDreamMain
+    return IPTVDreamMain
+
+
+def get_export_functions():
+    from .export_v2 import export_bouquets, add_to_bouquets_index
+    return export_bouquets, add_to_bouquets_index
+
 __all__ = [
-    'IPTVDreamMain',
-    'export_bouquets',
-    'add_to_bouquets_index',
+    'get_main_class',
+    'get_export_functions',
     'PLUGIN_NAME',
     'PLUGIN_VERSION',
     'PLUGIN_DESCRIPTION'

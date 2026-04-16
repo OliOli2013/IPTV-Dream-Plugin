@@ -1,8 +1,8 @@
-# IPTV Dream v6.5.1 - The Ultimate IPTV Plugin
+# IPTV Dream v6.5.2 - The Ultimate IPTV Plugin
 
 ## 🎯 What You've Received
 
-This package contains the **complete IPTV Dream v6.5.1** plugin - a revolutionary upgrade that transforms your Enigma 2 device into a premium IPTV powerhouse.
+This package contains the **complete IPTV Dream v6.5.2** plugin - a revolutionary upgrade that transforms your Enigma 2 device into a premium IPTV powerhouse.
 
 ## 📦 Package Contents
 
@@ -218,7 +218,7 @@ IPTV Dream v6.0 isn't just an upgrade - it's a complete transformation of your I
 
 ---
 
-**Version**: 6.5.1  
+**Version**: 6.5.2  
 **Release Date**: 2025-12-14  
 **Compatibility**: All Enigma 2 devices  
 **Requirements**: Python 2.7+, Enigma 2 image

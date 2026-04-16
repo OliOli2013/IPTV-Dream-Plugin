@@ -9,8 +9,16 @@ IPTV Dream v6.0 - MENADŻER PICON
 """
 
 import os, re, requests, time, hashlib, json
-from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except Exception:
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+    PIL_AVAILABLE = False
 
 class PiconManager:
     """Zaawansowany menadżer picon."""
@@ -143,28 +151,35 @@ class PiconManager:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             
-            # Przetwórz obraz
-            processed_file = self._process_picon(temp_file, channel_name)
-            
-            if processed_file:
-                # Przenieś do katalogu picon
-                os.rename(processed_file, picon_file)
-                
-                # Cache
+            if PIL_AVAILABLE:
+                # Przetwórz obraz
+                processed_file = self._process_picon(temp_file, channel_name)
+                if processed_file:
+                    # Przenieś do katalogu picon
+                    os.rename(processed_file, picon_file)
+                    # Cache
+                    if self.config.get("cache_enabled", True):
+                        import shutil
+                        shutil.copy2(picon_file, cache_file)
+                    # Wyczyść tymczasowy
+                    try:
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
+                    return picon_file
+            else:
+                # Pillow is optional: keep downloaded picons usable even without resize/generation.
+                os.rename(temp_file, picon_file)
                 if self.config.get("cache_enabled", True):
                     import shutil
                     shutil.copy2(picon_file, cache_file)
-                
-                # Wyczyść tymczasowy
-                os.remove(temp_file)
-                
                 return picon_file
             
         except Exception as e:
             print(f"[PiconManager] Błąd pobierania picon dla {channel_name}: {e}")
             
-            # Fallback na generowany picon
-            if self.config.get("generate_fallback", True):
+            # Fallback na generowany picon tylko jeśli Pillow jest dostępne.
+            if self.config.get("generate_fallback", True) and PIL_AVAILABLE:
                 return self.generate_picon(channel_name)
         
         return None
@@ -172,6 +187,8 @@ class PiconManager:
     def _process_picon(self, image_file, channel_name):
         """Przetwarza pobrany obraz picon."""
         try:
+            if not PIL_AVAILABLE:
+                return image_file if os.path.exists(image_file) else None
             # Otwórz obraz
             img = Image.open(image_file)
             
@@ -202,6 +219,8 @@ class PiconManager:
     def generate_picon(self, channel_name, color_scheme=None):
         """Generuje picon z nazwą kanału."""
         try:
+            if not PIL_AVAILABLE:
+                return None
             if not color_scheme:
                 color_scheme = self._select_color_scheme(channel_name)
             

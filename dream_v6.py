@@ -53,6 +53,7 @@ from .tools.favorites import FavoritesManager
 from .tools.statistics import StatisticsManager
 from .tools.history import HistoryManager
 from .tools.mac_portal import load_mac_json, save_mac_json, add_mac_portal
+from .tools.mac_portal import _parse_json_flexible as parse_json_flexible_mac
 from .tools.mac_portal import parse_mac_playlist
 from .tools.picon_manager_v6 import PiconManager
 from .tools.epg_manager_v6 import EPGManager
@@ -71,7 +72,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.5.1"
+    return "6.5.2"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
@@ -122,7 +123,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.5.1">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.5.2">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -984,11 +985,14 @@ class IPTVDreamV6(Screen):
         if not txt:
             return
         try:
-            data = json.loads(txt)
-            host = (data.get("host") or "").strip()
-            mac = (data.get("mac") or "").strip()
+            data = parse_json_flexible_mac(txt)
+            if isinstance(data, list):
+                data = data[0] if data else {}
+            host = ((data or {}).get("host") or (data or {}).get("url") or (data or {}).get("portal") or "").strip()
+            mac = ((data or {}).get("mac") or (data or {}).get("mac_address") or "").strip()
             if not host or not mac:
-                self.session.open(MessageBox, _("Brak host/mac w JSON.", self.lang), MessageBox.TYPE_ERROR)
+                example = "\n\nPrzykład:\n{\"host\":\"http://portal/c\",\"mac\":\"00:11:22:33:44:55\"}"
+                self.session.open(MessageBox, _("Brak host/mac w JSON.", self.lang) + example, MessageBox.TYPE_ERROR)
                 return
             add_mac_portal(host, mac)
             self.session.open(MessageBox, _("Dodano portal MAC.", self.lang), MessageBox.TYPE_INFO, timeout=3)

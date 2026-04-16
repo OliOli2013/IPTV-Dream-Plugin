@@ -5,6 +5,7 @@ from .logger import get_logger, mask_sensitive
 from Components.Language import language
 
 MAC_FILE = "/etc/enigma2/iptvdream_mac.json"
+LEGACY_MAC_FILES = ["/etc/enigma2/iptvdream_mylinks.json"]
 COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
 
 # Timeout dla zapytań sieciowych (Bezpieczeństwo)
@@ -74,11 +75,11 @@ def _portal_name_from_host(host, fallback=''):
 def _normalize_portal_entry(entry):
     if not isinstance(entry, dict):
         return None
-    host = normalize_host(entry.get('host') or '')
-    mac = normalize_mac(entry.get('mac') or '')
+    host = normalize_host(_entry_host_value(entry))
+    mac = normalize_mac(entry.get('mac') or entry.get('mac_address') or '')
     if not host or not mac:
         return None
-    name = _portal_name_from_host(host, entry.get('name') or '')
+    name = _portal_name_from_host(host, entry.get('name') or entry.get('title') or '')
     return {'name': name, 'host': host, 'mac': mac}
 
 
@@ -135,38 +136,82 @@ def _safe_json(resp):
             raise Exception('BAD_JSON_RESPONSE')
         raise
 
-def load_mac_json():
-    """Wczytuje listę portali, naprawia stary format i usuwa uszkodzone/zdublowane wpisy."""
+
+def _parse_json_flexible(raw_text):
+    """Parse JSON in a forgiving way for manual FTP edits.
+
+    Accepted forms:
+    - canonical list of dicts
+    - single dict
+    - newline separated dict objects (JSONL-like)
+    """
+    raw_text = (raw_text or '').strip()
+    if not raw_text:
+        return []
     try:
-        if not os.path.exists(MAC_FILE):
-            return []
+        return json.loads(raw_text)
+    except Exception:
+        pass
 
-        data = None
+    items = []
+    for line in raw_text.splitlines():
+        line = line.strip().rstrip(',')
+        if not line or line.startswith('#'):
+            continue
         try:
-            with open(MAC_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            obj = json.loads(line)
+            items.append(obj)
         except Exception:
-            bak = MAC_FILE + ".bak"
-            if os.path.exists(bak):
-                with open(bak, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            else:
-                raise
+            continue
+    return items
 
-        # Migracja: stary format pojedynczego słownika -> lista
-        if isinstance(data, dict) and "host" in data:
-            data = [{"name": data.get("name") or "Portal", "host": data.get("host"), "mac": data.get("mac")}]
 
-        normalized = _normalize_portal_list(data)
-        if normalized != data:
+def _entry_host_value(entry):
+    if not isinstance(entry, dict):
+        return ''
+    return entry.get('host') or entry.get('url') or entry.get('portal') or entry.get('portal_url') or ''
+
+def load_mac_json():
+    """Wczytuje listę portali, naprawia stary format i usuwa uszkodzone/zdublowane wpisy.
+
+    Dodatkowo obsługuje starszy/omyłkowy plik /etc/enigma2/iptvdream_mylinks.json,
+    bo część użytkowników nadal ręcznie edytuje właśnie ten plik przez FTP.
+    """
+    try:
+        candidates = [MAC_FILE, MAC_FILE + '.bak'] + LEGACY_MAC_FILES + [x + '.bak' for x in LEGACY_MAC_FILES]
+        merged = []
+        for path in candidates:
+            if not os.path.exists(path):
+                continue
             try:
-                save_mac_json(normalized)
+                with open(path, 'r', encoding='utf-8') as f:
+                    raw = f.read()
+                data = _parse_json_flexible(raw)
             except Exception:
-                pass
+                continue
+
+            # Migracja: pojedynczy słownik -> lista
+            if isinstance(data, dict) and (_entry_host_value(data) and (data.get('mac') or data.get('mac_address'))):
+                data = [{
+                    'name': data.get('name') or data.get('title') or 'Portal',
+                    'host': _entry_host_value(data),
+                    'mac': data.get('mac') or data.get('mac_address')
+                }]
+
+            # Stare mylinks mogły zawierać mix M3U/Xtream/MAC. Zachowaj tylko rekordy MAC.
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and _entry_host_value(item) and (item.get('mac') or item.get('mac_address')):
+                        merged.append(item)
+
+        normalized = _normalize_portal_list(merged)
+        try:
+            save_mac_json(normalized)
+        except Exception:
+            pass
         return normalized
     except Exception:
         return []
-
 
 def save_mac_json(data):
     """Zapisuje listę portali w formacie kanonicznym."""
@@ -1082,6 +1127,53 @@ def _handshake(host, mac):
 
 
 
+
+def _best_group_for_live_item(item, genres_map):
+    if not isinstance(item, dict):
+        return 'Inne'
+
+    # Direct group fields used by some portals.
+    for key in ('group', 'group_name', 'category_name', 'tv_genre', 'genre_title', 'genre_name'):
+        val = clean_name(item.get(key) or '')
+        if val and val.lower() not in ('no name', 'none', 'null'):
+            return val
+
+    # ID-based lookups.
+    ids = []
+    for key in ('tv_genre_id', 'category_id', 'genre_id', 'group_id'):
+        val = item.get(key)
+        if val is None:
+            continue
+        sval = str(val).strip()
+        if sval:
+            ids.append(sval)
+    for gid in ids:
+        if gid in genres_map and genres_map[gid]:
+            return genres_map[gid]
+
+    # Adult channels are frequently left without a proper genre; detect common markers.
+    hay = ' '.join(str(item.get(k) or '') for k in ('name', 'title', 'cmd', 'xmltv_id', 'number')).lower()
+    if any(tok in hay for tok in ('xxx', 'adult', '18+', 'sex')):
+        return 'XXX'
+
+    return 'Inne'
+
+
+def _live_url_needs_create_link(url_clean, raw_cmd):
+    cmd = (raw_cmd or '').strip().lower()
+    u = (url_clean or '').strip().lower()
+    if not u:
+        return True
+    if u.startswith('http://localhost') or u.startswith('https://localhost'):
+        return True
+    if '/ch/' in u or '/mpegts_to_ts/' in u:
+        return True
+    if 'ch_id=' in cmd:
+        return True
+    if cmd and '://' not in cmd and not cmd.startswith('ffmpeg http') and not cmd.startswith('auto http'):
+        return True
+    return False
+
 def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
     """Parsuje playlistę z portalu MAC/Stalker.
 
@@ -1138,7 +1230,13 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
                 lst = _js_data(data_g)
                 if isinstance(lst, list):
                     for g in lst:
-                        genres[str(g.get('id'))] = clean_name(g.get('title', 'Inne'))
+                        gid = str(g.get('id') or '').strip()
+                        gname = clean_name(g.get('title') or g.get('name') or 'Inne')
+                        if gid:
+                            genres[gid] = gname
+                        alias = str(g.get('alias') or '').strip()
+                        if alias:
+                            genres[alias] = gname
             except Exception:
                 pass
 
@@ -1155,17 +1253,29 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
 
             out = []
             total = len(ch_list) or 1
+            live_link_cache = {}
             for i, item in enumerate(ch_list):
                 if i % 50 == 0:
                     _cb(15 + int((i / float(total)) * 80.0), "LIVE %d/%d" % (i, total))
-                name = clean_name(item.get('name', 'No Name'))
-                cmd = item.get('cmd', '')
-                logo = item.get('logo', '')
-                gid = str(item.get('tv_genre_id', ''))
+                name = clean_name(item.get('name') or item.get('title') or 'No Name')
+                cmd = item.get('cmd') or item.get('cmds') or ''
+                logo = item.get('logo') or item.get('screenshot_uri') or item.get('cover') or ''
                 url_clean = _extract_cmd_url(cmd, portal_root)
+                if _live_url_needs_create_link(url_clean, cmd):
+                    cache_key = str(cmd)
+                    if cache_key in live_link_cache:
+                        url_clean = live_link_cache[cache_key]
+                    else:
+                        try:
+                            resolved = _create_link(s, endpoint, token, 'itv', cmd)
+                            if resolved:
+                                url_clean = resolved
+                                live_link_cache[cache_key] = resolved
+                        except Exception:
+                            pass
                 if logo and not str(logo).startswith('http'):
                     logo = "%s/%s" % (portal_root, str(logo).lstrip('/'))
-                out.append({'title': name, 'url': url_clean, 'group': genres.get(gid, 'Inne'), 'logo': logo, 'epg': ''})
+                out.append({'title': name, 'url': url_clean, 'group': _best_group_for_live_item(item, genres), 'logo': logo, 'epg': ''})
 
             _cb(100, "OK")
             return out
@@ -1335,7 +1445,6 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
         # translate_error already produces user-friendly message (PL/EN)
         friendly_msg = translate_error(e, host)
         raise Exception(friendly_msg)
-
 
 def parse_m3u_text(content):
     """Parsuje tekst M3U do listy kanałów."""

@@ -2,9 +2,10 @@
 from Plugins.Plugin import PluginDescriptor
 from Components.Language import language
 from .tools.lang import _
-from .dream_v6 import IPTVDreamMain
-
 def main(session, **kwargs):
+    # Lazy import: keep plugin listing lightweight and resilient on images
+    # where optional runtime dependencies are missing.
+    from .dream_v6 import IPTVDreamMain
     session.open(IPTVDreamMain)
 
 def Plugins(**kwargs):

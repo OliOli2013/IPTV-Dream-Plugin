@@ -161,6 +161,11 @@ def get_html_page(lang):
                 <form method="POST"><input type="hidden" name="type" value="mac">
                     <input type="text" name="mac_host" placeholder="{ph_mac_host}" required>
                     <input type="text" name="mac_addr" placeholder="{ph_mac_addr}" required>
+                    <select name="mac_mode" style="width:100%; padding:10px; margin:10px 0; border-radius:5px; border:1px solid #555; background:#444; color:white;">
+                        <option value="live">LIVE</option>
+                        <option value="vod">VOD</option>
+                        <option value="series">SERIES</option>
+                    </select>
                     <input type="submit" value="{_('webif_submit', lang)}">
                 </form>
             </div>
@@ -221,8 +226,11 @@ class IPTVDreamWebIf(Resource):
                     host = "http://" + host
                 if is_valid_url(host):
                     mac = request.args.get(b"mac_addr", [b""])[0].decode().strip().upper()
+                    mode = request.args.get(b"mac_mode", [b"live"])[0].decode().strip().lower()
+                    if mode not in ("live", "vod", "series"):
+                        mode = "live"
                     if mac:  # Sprawdzenie czy MAC nie jest pusty
-                        data = {"type": "mac", "host": host, "mac": mac}
+                        data = {"type": "mac", "host": host, "mac": mac, "mode": mode}
 
             if data and _on_data_ready_callback:
                 _on_data_ready_callback(data)
