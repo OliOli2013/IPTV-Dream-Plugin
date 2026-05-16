@@ -10,6 +10,11 @@ IPTV Dream v6.0 - MENADŻER PICON
 
 import os, re, requests, time, hashlib, json
 from io import BytesIO
+try:
+    from .channel_name_utils import normalize_channel_key, channel_name_variants
+except Exception:
+    normalize_channel_key = None
+    channel_name_variants = None
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -19,6 +24,22 @@ except Exception:
     ImageDraw = None
     ImageFont = None
     PIL_AVAILABLE = False
+
+
+
+def _safe_picon_basename(channel_name):
+    """Generate TvMad-like stable picon filename from channel name."""
+    try:
+        if normalize_channel_key:
+            key = normalize_channel_key(channel_name)
+            if key:
+                return key
+    except Exception:
+        pass
+    try:
+        return re.sub(r'[^A-Za-z0-9]+', '_', str(channel_name or '')).strip('_').lower() or 'channel'
+    except Exception:
+        return 'channel'
 
 class PiconManager:
     """Zaawansowany menadżer picon."""
@@ -123,7 +144,7 @@ class PiconManager:
                 return cache_file
         
         # Bezpieczna nazwa pliku
-        safe_name = re.sub(r'[^\w]', '_', channel_name).strip().lower()
+        safe_name = _safe_picon_basename(channel_name)
         picon_file = os.path.join(self.picon_dir, f"{safe_name}.png")
         
         # Jeśli plik już istnieje
@@ -263,7 +284,7 @@ class PiconManager:
             draw.text((x, y), display_name, fill=text_color, font=font, align='center')
             
             # Zapisz
-            safe_name = re.sub(r'[^\w]', '_', channel_name).strip().lower()
+            safe_name = _safe_picon_basename(channel_name)
             picon_file = os.path.join(self.picon_dir, f"{safe_name}.png")
             img.save(picon_file, "PNG", optimize=True)
             

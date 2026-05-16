@@ -8,7 +8,7 @@ import os
 import json
 import requests
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from ..tools.lang import _
 from Components.Language import language
 
@@ -30,6 +30,9 @@ EPG_SOURCES = [
     {"url": "https://iptv-epg.org/files/epg-za.xml.gz", "description": "IPTV Dream - South Africa"},
     # EUROPA
     {"url": "https://iptv-epg.org/files/epg-de.xml.gz", "description": "IPTV Dream - Germany"},
+    {"url": "https://iptv-epg.org/files/epg-es.xml.gz", "description": "IPTV Dream - Spain"},
+    {"url": "https://iptv-epg.org/files/epg-sa.xml.gz", "description": "IPTV Dream - Arabic / Saudi Arabia"},
+    {"url": "https://iptv-epg.org/files/epg-ae.xml.gz", "description": "IPTV Dream - Arabic / UAE"},
     {"url": "https://iptv-epg.org/files/epg-fr.xml.gz", "description": "IPTV Dream - France"},
     # ŚWIAT
     {"url": "http://epg.bevy.be/bevy.xml.gz", "description": "IPTV Dream - World Mix (Bevy)"}
@@ -157,10 +160,13 @@ class EPGManager:
                 return programs
                 
             # Obsługa gzip jeśli potrzebne
-            if url.endswith('.gz'):
-                import gzip
-                epg_content = gzip.decompress(epg_content)
-                
+            try:
+                if isinstance(epg_content, (bytes, bytearray)) and epg_content[:2] == b'\x1f\x8b':
+                    import gzip
+                    epg_content = gzip.decompress(epg_content)
+            except Exception:
+                pass
+
             root = ET.fromstring(epg_content)
             
             for programme in root.findall('.//programme'):

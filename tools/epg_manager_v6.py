@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.0 - MENADŻER EPG
+IPTV Dream v6.6.0 - MENADŻER EPG
 - Rozszerzone źródła EPG (20+ źródeł)
 - Inteligentne mapowanie do kanałów satelitarnych
 - Automatyczna instalacja EPG
@@ -10,6 +10,11 @@ IPTV Dream v6.0 - MENADŻER EPG
 
 import os, re, json, time, requests
 from datetime import datetime, timedelta
+try:
+    from .channel_name_utils import normalize_channel_key, channel_name_variants
+except Exception:
+    normalize_channel_key = None
+    channel_name_variants = None
 
 class EPGManager:
     """Zaawansowany menadżer EPG."""
@@ -52,6 +57,10 @@ class EPGManager:
             {"url": "https://iptv-epg.org/files/epg-fr.xml.gz", "name": "IPTV-EPG France", "country": "fr", "priority": 1},
             {"url": "https://iptv-epg.org/files/epg-it.xml.gz", "name": "IPTV-EPG Italy", "country": "it", "priority": 1},
             {"url": "https://iptv-epg.org/files/epg-es.xml.gz", "name": "IPTV-EPG Spain", "country": "es", "priority": 1},
+            {"url": "https://iptv-epg.org/files/epg-es.xml.gz", "name": "IPTV-EPG Spain mirror", "country": "es", "priority": 2},
+            {"url": "https://iptv-epg.org/files/epg-sa.xml.gz", "name": "IPTV-EPG Saudi Arabia", "country": "ar", "priority": 1},
+            {"url": "https://iptv-epg.org/files/epg-ae.xml.gz", "name": "IPTV-EPG UAE", "country": "ar", "priority": 2},
+            {"url": "https://iptv-epg.org/files/epg-qa.xml.gz", "name": "IPTV-EPG Qatar", "country": "ar", "priority": 3},
             {"url": "https://iptv-epg.org/files/epg-nl.xml.gz", "name": "IPTV-EPG Netherlands", "country": "nl", "priority": 1},
             {"url": "https://iptv-epg.org/files/epg-tr.xml.gz", "name": "IPTV-EPG Turkey", "country": "tr", "priority": 1},
             {"url": "https://iptv-epg.org/files/epg-ru.xml.gz", "name": "IPTV-EPG Russia", "country": "ru", "priority": 1},
@@ -94,7 +103,7 @@ class EPGManager:
         try:
             # Tworzenie pliku sources.xml
             content = '<?xml version="1.0" encoding="utf-8"?>\n<sources>\n'
-            content += '    <sourcecat sourcecatname="IPTV Dream v6.0 EPG Sources">\n'
+            content += '    <sourcecat sourcecatname="IPTV Dream v6.6.0 EPG Sources">\n'
             
             # Dodaj wszystkie źródła
             for source in self.epg_sources:
@@ -188,10 +197,17 @@ class EPGManager:
 
     def _get_satellite_ref(self, title):
         """Pobiera referencję satelitarną dla tytułu."""
-        title_clean = re.sub(r'[^a-z0-9]', '', title.lower())
-        
+        if normalize_channel_key:
+            try:
+                title_clean = normalize_channel_key(title)
+            except Exception:
+                title_clean = re.sub(r'[^a-z0-9]', '', title.lower())
+        else:
+            title_clean = re.sub(r'[^a-z0-9]', '', title.lower())
+
         for sat_name, ref in self.satellite_mapping.items():
-            if sat_name in title_clean:
+            key = normalize_channel_key(sat_name) if normalize_channel_key else re.sub(r'[^a-z0-9]', '', sat_name.lower())
+            if key and key in title_clean:
                 return ref
         
         return None

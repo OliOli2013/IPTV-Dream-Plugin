@@ -42,7 +42,7 @@ except Exception:
 # lokalne moduły
 from .file_pick import M3UFilePick
 from .export_v2 import export_bouquets
-from .tools.lang import _
+from .tools.lang import _, SUPPORTED_LANGS, LANGUAGE_NAMES, normalize_lang
 from .tools.net import http_get
 from .tools.logger import get_logger, mask_sensitive
 from .tools.bouquet_picker import BouquetPicker
@@ -72,7 +72,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.5.2"
+    return "6.6.0"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
@@ -83,6 +83,19 @@ LOAD_TIMEOUT_DEFAULT_MS = 300000  # 5 minut (domyślnie)
 MAC_VODSERIES_TIMEOUT_MS = 14400000  # 4 godziny (VOD/Seriale z MAC; duże biblioteki)
 LOAD_TIMEOUT_MS = LOAD_TIMEOUT_DEFAULT_MS
 WEBIF_PORT = 9999
+
+
+def _detect_system_language():
+    """Return supported system language or English fallback."""
+    try:
+        lang = (language.getLanguage() or "en")[:2].lower()
+    except Exception:
+        lang = "en"
+    return lang if lang in SUPPORTED_LANGS else "en"
+
+def _language_display_name(code):
+    code = normalize_lang(code, 'en')
+    return LANGUAGE_NAMES.get(code, code.upper())
 
 EPG_URL_KEY = "epg_url"
 
@@ -123,7 +136,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.5.2">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.6.0">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -131,7 +144,8 @@ class IPTVDreamV6(Screen):
         <eLabel position="20,18" size="1160,70" backgroundColor="#1a1a1a" cornerRadius="14" zPosition="-4" />
         <eLabel position="20,18" size="1160,4" backgroundColor="#00c800" zPosition="-3" />
         <widget name="title_label" position="40,30" size="1120,44" font="Regular;34" halign="center" valign="center" foregroundColor="#00ff88" transparent="1" />
-        <widget name="footer" position="40,74" size="1120,18" font="Regular;16" halign="center" valign="center" foregroundColor="#9a9a9a" transparent="1" />
+        <widget name="footer" position="120,74" size="1040,18" font="Regular;16" halign="center" valign="center" foregroundColor="#9a9a9a" transparent="1" />
+        <widget name="creator_logo" position="40,25" size="64,64" alphatest="on" zPosition="2" />
 
         <!-- PASEK STATUSU -->
         <eLabel position="20,95" size="1160,40" backgroundColor="#222222" cornerRadius="10" zPosition="-4" />
@@ -181,10 +195,10 @@ class IPTVDreamV6(Screen):
         except Exception:
             pass
 
-        # Initial language is taken from the system. It may be overridden by plugin config later.
-        self.lang = (language.getLanguage() or "pl")[:2].lower()
-        if self.lang not in ("pl", "en"):
-            self.lang = "pl"
+        # Initial language: system language if supported, otherwise English.
+        # Plugin config can keep manual language or AUTO mode.
+        self.language_mode = "auto"
+        self.lang = _detect_system_language()
 
         # UI
         self["title_label"] = Label(_("title", self.lang))
@@ -204,19 +218,13 @@ class IPTVDreamV6(Screen):
         self["key_blue"] = Label(_("export", self.lang))
 
         self["qr"] = Pixmap()
-        if self.lang == "pl":
-            support_txt = "\\c00ffffffPodoba Ci się wtyczka?\n\\c0000ff00Wesprzyj twórcę i rozwój.\n\\c00ffcc00Dziękuję!\\c00ffffff"
-        else:
-            support_txt = "\\c00ffffffDo you like the plugin?\n\\c0000ff00Support the creator & development.\n\\c00ffcc00Thank you!\\c00ffffff"
-        self["support"] = Label(support_txt)
+        self["creator_logo"] = Pixmap()
+        self["support"] = Label(_("support_ui", self.lang))
 
         self["support_fb"] = Label('Facebook: Enigma 2 Oprogramowanie i dodatki')
 
 
-        if self.lang == "pl":
-            self["hint"] = Label("Naciśnij 1-9 lub OK, aby wybrać opcję.\nWebIF: port 9999 • Cache i streaming aktywne.")
-        else:
-            self["hint"] = Label("Press 1-9 or OK to select an option.\nWebIF: port 9999 • Cache & streaming enabled.")
+        self["hint"] = Label(_("hint_ui", self.lang))
         try:
             foot_date = time.strftime("%Y-%m-%d")
         except Exception:
@@ -235,7 +243,7 @@ class IPTVDreamV6(Screen):
             self.cfg = {}
 
         # ustawienia domyślne
-        self.cfg.setdefault('language', self.lang)
+        self.cfg.setdefault('language', 'auto')
         self.cfg.setdefault('service_type', 4097)
         self.cfg.setdefault('webif_enabled', False)
         self.cfg.setdefault('last_url', 'http://')
@@ -248,13 +256,21 @@ class IPTVDreamV6(Screen):
         self.cfg.setdefault('net_retries', 2)
         self.cfg.setdefault('net_backoff', 0.8)
 
-        # Prefer language from plugin config if present (normalize)
+        # Prefer language from plugin config; AUTO follows Enigma2 system language.
         try:
-            cfg_lang = str(self.cfg.get('language', self.lang)).strip().lower()
-            if cfg_lang in ("pl", "en"):
+            cfg_lang = str(self.cfg.get('language', 'auto')).strip().lower()
+            if cfg_lang == 'auto':
+                self.language_mode = 'auto'
+                self.lang = _detect_system_language()
+            elif cfg_lang in SUPPORTED_LANGS:
+                self.language_mode = cfg_lang
                 self.lang = cfg_lang
+            else:
+                self.language_mode = 'auto'
+                self.lang = _detect_system_language()
         except Exception:
-            pass
+            self.language_mode = 'auto'
+            self.lang = _detect_system_language()
 
         # Apply language-dependent static UI texts now that config is loaded
         self._apply_language_to_static_ui()
@@ -280,6 +296,12 @@ class IPTVDreamV6(Screen):
         self.statistics = StatisticsManager()
         self.history = HistoryManager()
         self.picons = PiconManager()
+        try:
+            saved_picon_dir = (self.cfg.get('picon_save_dir') or '').strip()
+            if saved_picon_dir:
+                self.picons.picon_dir = saved_picon_dir
+        except Exception:
+            pass
         self.epg_manager = EPGManager()
 
         # timeout watchdog (wydłużony w LOAD_TIMEOUT_MS)
@@ -372,7 +394,7 @@ class IPTVDreamV6(Screen):
         """
         try:
             # Uzupełnij wartości runtime
-            self.cfg["language"] = self.lang
+            self.cfg["language"] = getattr(self, "language_mode", self.lang)
             self.cfg["service_type"] = int(getattr(self, "service_type", 4097))
             self.cfg["webif_enabled"] = bool(getattr(self, "webif_enabled", False))
             if getattr(self, "last_source", None) is not None:
@@ -401,7 +423,7 @@ class IPTVDreamV6(Screen):
 
     def _init_ui(self):
         """Uzupełnia UI po utworzeniu ekranu (menu + QR) i uruchamia WebIF jeśli włączone."""
-        # QR
+        # QR + logo twórcy
         try:
             from Tools.LoadPixmap import LoadPixmap
             qr_path = os.path.join(os.path.dirname(__file__), "pic", "qrcode.png")
@@ -410,6 +432,12 @@ class IPTVDreamV6(Screen):
                 if p is not None and getattr(self["qr"], "instance", None):
                     self["qr"].instance.setPixmap(p)
                     self["qr"].show()
+            logo_path = os.path.join(os.path.dirname(__file__), "pic", "pawel_logo.png")
+            if os.path.exists(logo_path):
+                lp = LoadPixmap(path=logo_path)
+                if lp is not None and getattr(self["creator_logo"], "instance", None):
+                    self["creator_logo"].instance.setPixmap(lp)
+                    self["creator_logo"].show()
         except Exception:
             pass
 
@@ -488,26 +516,15 @@ class IPTVDreamV6(Screen):
         def N(i):
             return "%s%d%s" % (num_colors.get(i, "\\c00ffffff"), i, num_reset)
 
-        if self.lang == "pl":
-            lbl1 = "🌐 M3U z URL"
-            lbl2 = "📁 M3U z pliku"
-            lbl3 = "⚡ Xtream Codes"
-            lbl4 = "🔑 MAC Portal"
-            lbl5 = "⭐ Ulubione"
-            lbl6 = "⚙️ Zarządzanie"
-            lbl7 = "📊 Statystyki"
-            lbl8 = "🌐 Web Interfejs (%s)  %s" % (webif_txt, webif_url)
-            lbl9 = "🔄 Aktualizacje"
-        else:
-            lbl1 = "🌐 M3U URL"
-            lbl2 = "📁 M3U File"
-            lbl3 = "⚡ Xtream Codes"
-            lbl4 = "🔑 MAC Portal"
-            lbl5 = "⭐ Favorites"
-            lbl6 = "⚙️ Management"
-            lbl7 = "📊 Statistics"
-            lbl8 = "🌐 Web Interface (%s)  %s" % (webif_txt, webif_url)
-            lbl9 = "🔄 Updates"
+        lbl1 = _("menu_m3u_url", self.lang)
+        lbl2 = _("menu_m3u_file", self.lang)
+        lbl3 = _("menu_xtream", self.lang)
+        lbl4 = _("menu_mac", self.lang)
+        lbl5 = _("menu_favorites", self.lang)
+        lbl6 = _("menu_management", self.lang)
+        lbl7 = _("menu_stats", self.lang)
+        lbl8 = _("menu_webif", self.lang) % (webif_txt, webif_url)
+        lbl9 = _("menu_updates", self.lang)
 
         items = [
             ("%s  %s" % (N(1), lbl1), "m3u_url"),
@@ -523,43 +540,72 @@ class IPTVDreamV6(Screen):
         self.menu_context = "main"
         self["menu_list"].setList(items)
 
-        if self.lang == "pl":
-            self["status_bar"].setText("Naciśnij 1-9 lub OK, aby wybrać opcję")
-            self["hint"].setText("1-4: źródło • 5: ulubione • 6: zarządzanie\n7: statystyki • 8: WebIF (9999) • 9: aktualizacje")
+        self["status_bar"].setText(_("main_status", self.lang))
+        self["hint"].setText(_("main_hint", self.lang))
+
+
+    def _language_label(self):
+        try:
+            mode = getattr(self, 'language_mode', 'auto')
+            if mode == 'auto':
+                return _("language_auto_label", self.lang) % _language_display_name(_detect_system_language())
+            return _("language_manual_label", self.lang) % _language_display_name(mode)
+        except Exception:
+            return self.lang.upper()
+
+    def openLanguageChoice(self):
+        items = [
+            (_("lang_auto", self.lang) + " (%s)" % _language_display_name(_detect_system_language()), "auto"),
+            (_("lang_polish", self.lang), "pl"),
+            (_("lang_english", self.lang), "en"),
+            (_("lang_german", self.lang), "de"),
+            (_("lang_arabic", self.lang), "ar"),
+            (_("lang_spanish", self.lang), "es"),
+        ]
+        self.session.openWithCallback(self.onLanguageChoice, ChoiceBox, title=_("select_language", self.lang), list=items)
+
+    def onLanguageChoice(self, choice):
+        if not choice:
+            return
+        mode = choice[1]
+        if mode == 'auto':
+            self.language_mode = 'auto'
+            self.lang = _detect_system_language()
+        elif mode in SUPPORTED_LANGS:
+            self.language_mode = mode
+            self.lang = mode
         else:
-            self["status_bar"].setText("Press 1-9 or OK to select an option")
-            self["hint"].setText("1-4: source • 5: favorites • 6: management\n7: statistics • 8: WebIF (9999) • 9: updates")
+            self.language_mode = 'auto'
+            self.lang = _detect_system_language()
+        self.cfg["language"] = self.language_mode
+        self._save_cfg()
+        self._apply_language_to_static_ui()
+        try:
+            self.updateInfoPanel(_("Witamy", self.lang), _("welcome_body", self.lang) % PLUGIN_VERSION)
+        except Exception:
+            pass
+        try:
+            self.session.open(MessageBox, _("language_saved", self.lang) % self._language_label(), MessageBox.TYPE_INFO, timeout=2)
+        except Exception:
+            pass
+        return self.showManagementMenu()
 
     def showManagementMenu(self):
         self.menu_context = "manage"
 
         dbg_on = bool(self.cfg.get('debug', False))
-        if self.lang == "pl":
-            st_title = "Zarządzanie"
-            back_lbl = "⬅️ Powrót"
-            cache_lbl = "🧹 Wyczyść cache (M3U)"
-            hist_lbl = "🗑️ Wyczyść historię"
-            hint_txt = "OK: wybór • EXIT: powrót/wyjście\nCache: włączony • Streaming: tak"
-            lang_lbl = "⚙️ Język: %s" % ("PL" if self.lang == "pl" else "EN")
-            stype_lbl = "🎬 Typ serwisu: %d" % self.service_type
-            epg_lbl = "📺 EPG URL (custom)"
-            dbg_lbl = "🪲 Debug: %s" % ("ON" if dbg_on else "OFF")
-            log_lbl = "📄 Pokaż log (/tmp/iptvdream.log)"
-            logc_lbl = "🧹 Wyczyść log"
-            delbq_lbl = "🗑️ Usuń bukiety IPTV Dream"
-        else:
-            st_title = "Management"
-            back_lbl = "⬅️ Back"
-            cache_lbl = "🧹 Clear cache (M3U)"
-            hist_lbl = "🗑️ Clear history"
-            hint_txt = "OK: select • EXIT: back/close\nCache: enabled • Streaming: yes"
-            lang_lbl = "⚙️ Language: %s" % ("PL" if self.lang == "pl" else "EN")
-            stype_lbl = "🎬 Service type: %d" % self.service_type
-            epg_lbl = "📺 EPG URL (custom)"
-            dbg_lbl = "🪲 Debug: %s" % ("ON" if dbg_on else "OFF")
-            log_lbl = "📄 Show log (/tmp/iptvdream.log)"
-            logc_lbl = "🧹 Clear log"
-            delbq_lbl = "🗑️ Delete IPTV Dream bouquets"
+        st_title = _("management", self.lang)
+        back_lbl = _("back", self.lang)
+        cache_lbl = _("clear_cache", self.lang)
+        hist_lbl = _("clear_history", self.lang)
+        hint_txt = _("management_hint", self.lang)
+        lang_lbl = _("language_menu_label", self.lang) % self._language_label()
+        stype_lbl = _("service_type_label", self.lang) % self.service_type
+        epg_lbl = _("epg_url_label", self.lang)
+        dbg_lbl = _("debug_label", self.lang) % ("ON" if dbg_on else "OFF")
+        log_lbl = _("show_log_label", self.lang)
+        logc_lbl = _("clear_log_label", self.lang)
+        delbq_lbl = _("delete_bouquets_label", self.lang)
 
         items = [
             (lang_lbl, "lang"),
@@ -697,17 +743,7 @@ class IPTVDreamV6(Screen):
             return self.checkUpdates()
 
         if action == "lang":
-            self.lang = "en" if self.lang == "pl" else "pl"
-            self.cfg["language"] = self.lang
-            self._save_cfg()
-            # Refresh language-dependent static UI and info panel immediately.
-            self._apply_language_to_static_ui()
-            try:
-                self.updateInfoPanel(_("Witamy", self.lang), _("welcome_body", self.lang) % PLUGIN_VERSION)
-            except Exception:
-                pass
-            self.session.open(MessageBox, (_("lang_changed", self.lang) + " %s") % self.lang.upper(), MessageBox.TYPE_INFO, timeout=2)
-            return self.showManagementMenu()
+            return self.openLanguageChoice()
 
         if action == "stype":
             self.service_type = 5002 if self.service_type == 4097 else 4097
@@ -718,7 +754,7 @@ class IPTVDreamV6(Screen):
 
         if action == "epgurl":
             cur = self.cfg.get(EPG_URL_KEY, "http://")
-            title = "Wklej URL EPG:" if self.lang == "pl" else "Paste EPG URL:"
+            title = _('Wklej URL EPG:', self.lang)
             self.session.openWithCallback(self.onEpgUrlReady, VirtualKeyBoard, title=title, text=cur)
             return
         if action == "debug_toggle":
@@ -1010,7 +1046,7 @@ class IPTVDreamV6(Screen):
         if not host or not mac:
             return
         self._mac_pick_ctx = (host, mac, pname)
-        opts = [("LIVE", 'live'), ("VOD", 'vod'), ("SERIALE", 'series')]
+        opts = [("LIVE", 'live'), ("VOD", 'vod'), ("SERIALE", 'series'), (_("mac_adult", self.lang), 'adult')]
         self.session.openWithCallback(self.onMacTypeSelected, ChoiceBox, title=_("Wybierz typ treści", self.lang), list=opts)
 
     def onMacTypeSelected(self, choice):
@@ -1051,7 +1087,7 @@ class IPTVDreamV6(Screen):
             ident = (portal_name or dom).strip() or dom
             ident = ident.replace('/', '_').replace(' ', '_')
             return '%s_%s' % (ident, mac_id) if mac_id else ident
-        suffix = 'LIVE' if content_type == 'live' else ('VOD' if content_type == 'vod' else 'SERIES')
+        suffix = 'LIVE' if content_type == 'live' else ('VOD' if content_type == 'vod' else ('ADULT' if content_type == 'adult' else 'SERIES'))
         pl_name = 'MAC-%s-%s' % (_mk_id(), suffix)
         run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, pl_name, err))
 
@@ -1112,7 +1148,7 @@ class IPTVDreamV6(Screen):
                 host = data.get("host")
                 mac = data.get("mac")
                 mode = (data.get('mode') or data.get('filter') or 'live')
-                if mode not in ('live','vod','series'):
+                if mode not in ('live','vod','series','adult'):
                     mode = 'live'
                 if host and mac:
                     try:
@@ -1206,8 +1242,15 @@ class IPTVDreamV6(Screen):
         if not self.current_playlist:
             return
 
-        def _ask_group(_):
-            self.session.openWithCallback(self.onFavGroupName, VirtualKeyBoard, title=_("Nazwa grupy ulubionych:", self.lang), text="Ulubione")
+        def _ask_group(answer):
+            if not answer:
+                return
+            self.session.openWithCallback(
+                self.onFavGroupName,
+                VirtualKeyBoard,
+                title=_("Nazwa grupy ulubionych:", self.lang),
+                text="Ulubione"
+            )
 
         self.session.openWithCallback(_ask_group, MessageBox, _("Dodać wszystkie kanały do ulubionych?", self.lang), MessageBox.TYPE_YESNO)
 
@@ -1229,7 +1272,7 @@ class IPTVDreamV6(Screen):
         def _list_destinations():
             dests = []
             # 1) tuner (domyślnie)
-            dests.append(("Tuner: /usr/share/enigma2/picon", "/usr/share/enigma2/picon"))
+            dests.append((_('picon_receiver', self.lang), "/usr/share/enigma2/picon"))
 
             # 2) wykryj nośniki (/media/*) i zaproponuj /picon
             try:
@@ -1246,7 +1289,7 @@ class IPTVDreamV6(Screen):
                             continue
                         pdir = os.path.join(base, 'picon')
                         # ładny opis
-                        label = "Nośnik: %s → %s" % (n, pdir)
+                        label = _("picon_media", self.lang) % (n, pdir)
                         dests.append((label, pdir))
             except Exception:
                 pass
@@ -1386,12 +1429,12 @@ class IPTVDreamV6(Screen):
         dests = _list_destinations()
         if last and os.path.isabs(last):
             # dołóż "ostatnio używane" na górę
-            dests = [("Ostatnio: %s" % last, last)] + [d for d in dests if d[1] != last]
+            dests = [(_("picon_last", self.lang) % last, last)] + [d for d in dests if d[1] != last]
 
         self.session.openWithCallback(
             _on_dest,
             ChoiceBox,
-            title=("Wybierz miejsce zapisu picon" if self.lang == 'pl' else "Select picon save location"),
+            title=_("select_picon_location", self.lang),
             list=dests
         )
 
@@ -1505,10 +1548,10 @@ class IPTVDreamV6(Screen):
 
     def showSettings(self):
         items = []
-        items.append((_("Język: %s", self.lang) % ("PL" if self.lang == "pl" else "EN"), "lang"))
-        items.append((_("Typ serwisu: %d", self.lang) % self.service_type, "stype"))
-        items.append(("EPG URL (custom)", "epgurl"))
-        items.append((_("⬅️ Powrót", self.lang), "back"))
+        items.append((_("language_menu_label", self.lang) % self._language_label(), "lang"))
+        items.append((_("service_type_label", self.lang) % self.service_type, "stype"))
+        items.append((_("epg_url_label", self.lang), "epgurl"))
+        items.append((_("back", self.lang), "back"))
 
         self.session.openWithCallback(self.onSettingsChoice, ChoiceBox, title=_("Ustawienia", self.lang), list=items)
 
@@ -1517,11 +1560,7 @@ class IPTVDreamV6(Screen):
             return
         act = choice[1]
         if act == "lang":
-            self.lang = "en" if self.lang == "pl" else "pl"
-            self.cfg["language"] = self.lang
-            self._save_cfg()
-            self.session.open(MessageBox, (_("lang_changed", self.lang) + " %s") % self.lang.upper(), MessageBox.TYPE_INFO, timeout=2)
-            return
+            return self.openLanguageChoice()
         if act == "stype":
             self.service_type = 5002 if self.service_type == 4097 else 4097
             self.cfg["service_type"] = self.service_type
@@ -1704,7 +1743,7 @@ class IPTVDreamV6(Screen):
             except Exception:
                 pass
 
-        self.startLoading(("Eksport do bukietów ..." if self.lang == 'pl' else "Exporting bouquets ..."))
+        self.startLoading(_("exporting_bouquets", self.lang))
 
         def _do_export():
             # export_bouquets może zgłosić wyjątek (np. problem pliku) – nie może to robić GS.

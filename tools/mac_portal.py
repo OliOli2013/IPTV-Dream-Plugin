@@ -1128,6 +1128,11 @@ def _handshake(host, mac):
 
 
 
+
+def _is_adult_title_group(title, group=''):
+    hay = ('%s %s' % (title or '', group or '')).lower()
+    return any(tok in hay for tok in ('xxx', 'adult', '18+', 'porn', 'erotic', 'sex', '18 '))
+
 def _best_group_for_live_item(item, genres_map):
     if not isinstance(item, dict):
         return 'Inne'
@@ -1177,7 +1182,7 @@ def _live_url_needs_create_link(url_clean, raw_cmd):
 def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
     """Parsuje playlistę z portalu MAC/Stalker.
 
-    content_type: 'live' | 'vod' | 'series'
+    content_type: 'live' | 'vod' | 'series' | 'adult'
 
     progress_callback: optional callable(pct:int, msg:str)
     """
@@ -1206,13 +1211,17 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
     base_url, _hint_path = _base_url_from_host(host)
 
     # (opcjonalnie) szybka próba m3u dla LIVE - nie wszystkie portale to wspierają
-    if content_type == 'live':
+    if content_type in ('live', 'adult'):
         url_xc = "%s/get.php?username=%s&password=%s&type=m3u_plus&output=ts" % (base_url, mac, mac)
         try:
             r = requests.get(url_xc, timeout=10, headers={'User-Agent': COMMON_UA}, verify=False, allow_redirects=True)
             if r.status_code == 200 and '#EXTINF' in (r.text or ''):
                 _cb(100, "OK")
-                return parse_m3u_text(r.text)
+                
+                parsed = parse_m3u_text(r.text)
+                if content_type == 'adult':
+                    parsed = [x for x in parsed if _is_adult_title_group(x.get('title',''), x.get('group',''))]
+                return parsed
         except Exception:
             pass
 
@@ -1220,8 +1229,8 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
         _cb(2, "Handshake")
         s, endpoint, token, _hdr, portal_root, portal_ui = _handshake(host, mac)
 
-        # --- LIVE ---
-        if content_type == 'live':
+        # --- LIVE / ADULT ---
+        if content_type in ('live', 'adult'):
             genres = {}
             _cb(5, "Genres")
             try:
@@ -1275,7 +1284,12 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
                             pass
                 if logo and not str(logo).startswith('http'):
                     logo = "%s/%s" % (portal_root, str(logo).lstrip('/'))
-                out.append({'title': name, 'url': url_clean, 'group': _best_group_for_live_item(item, genres), 'logo': logo, 'epg': ''})
+                group_name = _best_group_for_live_item(item, genres)
+                if _is_adult_title_group(name, group_name):
+                    group_name = 'XXX'
+                if content_type == 'adult' and not _is_adult_title_group(name, group_name):
+                    continue
+                out.append({'title': name, 'url': url_clean, 'group': group_name, 'logo': logo, 'epg': '', 'is_adult': _is_adult_title_group(name, group_name)})
 
             _cb(100, "OK")
             return out
@@ -1447,23 +1461,37 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
         raise Exception(friendly_msg)
 
 def parse_m3u_text(content):
-    """Parsuje tekst M3U do listy kanałów."""
+    """Parsuje tekst M3U do listy kanałów z zachowaniem group-title/tvg-logo/tvg-id."""
     channels = []
     current_info = {}
-    for line in content.splitlines():
+    attr_re = re.compile(r'([\w-]+)="(.*?)"')
+    for line in (content or '').splitlines():
         line = line.strip()
-        if not line: 
+        if not line:
             continue
         if line.startswith('#EXTINF'):
             title = line.rsplit(',', 1)[1].strip() if ',' in line else "No Name"
-            current_info = {"title": clean_name(title), "group": "Main"}
-        elif line.startswith('http') and current_info:
+            attrs = {}
+            try:
+                before = line.split(',', 1)[0]
+                attrs = {k.lower(): v for k, v in attr_re.findall(before)}
+            except Exception:
+                attrs = {}
+            group = attrs.get('group-title') or attrs.get('group') or 'Main'
+            logo = attrs.get('tvg-logo') or attrs.get('logo') or ''
+            tvg_id = attrs.get('tvg-id') or attrs.get('epg-id') or attrs.get('id') or ''
+            current_info = {"title": clean_name(title), "group": clean_name(group), "logo": logo, "epg_id": tvg_id}
+        elif (line.startswith('http') or '://' in line) and current_info:
             channels.append({
-                "title": current_info["title"],
+                "title": current_info.get("title") or "No Name",
                 "url": line.strip(),
-                "group": current_info["group"],
-                "logo": "",
-                "epg": ""
+                "group": current_info.get("group") or "Main",
+                "logo": current_info.get("logo") or "",
+                "tvg-logo": current_info.get("logo") or "",
+                "epg": "",
+                "epg_id": current_info.get("epg_id") or "",
+                "tvg-id": current_info.get("epg_id") or "",
+                "is_adult": _is_adult_title_group(current_info.get("title"), current_info.get("group"))
             })
             current_info = {}
     return channels

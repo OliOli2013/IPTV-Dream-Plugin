@@ -2,32 +2,35 @@
 <setupxml>
     <plugin
         key="IPTVDreamV6"
-        name="IPTV Dream v6.5.2"
-        description="Wtyczka IPTV dla Enigma2 - M3U / Xtream / MAC / EPG / WebIF"
+        name="IPTV Dream v6.6.0"
+        description="Wtyczka IPTV dla Enigma2 - M3U / Xtream / MAC / EPG / Pikony / WebIF"
         author="IPTV Dream Team"
-        version="6.5.2"
+        version="6.6.0"
         icon="plugin.png"
         type="1"
         namespace="iptv_dream_v6"
     >
         <labels>
             <![CDATA[
-                IPTV Dream v6.5.2
+                IPTV Dream v6.6.0
 
                 Najważniejsze funkcje:
                 • M3U z URL i pliku
                 • Xtream Codes
-                • Portale MAC / Stalker
+                • Portale MAC / Stalker, również kategorie ADULT / XXX
                 • Eksport do bukietów Enigma2
-                • EPG + pikony + WebIF
-                • Cache, statystyki i historia
+                • EPG Import + pikony według mechanizmów zgodnych z TvMad
+                • WebIF na porcie 9999
+                • Języki: Polski, English, Deutsch, Español, العربية
 
-                Zmiany w 6.5.2:
-                • Naprawiona i ujednolicona obsługa MAC
-                • Usuwanie duplikatów/uszkodzonych wpisów portali
-                • Lepsza walidacja host/MAC w WebIF i GUI
-                • Bezpieczniejsze sprawdzanie aktualizacji z GitHuba
-                • Czyszczenie artefaktów developerskich z paczki
+                Zmiany w 6.6.0:
+                • Przebudowane mapowanie EPG i piconów: normalizacja nazw, aliasy i warianty service-ref
+                • Generowanie plików /etc/epgimport/iptvdream.channels.xml oraz iptvdream.sources.xml
+                • Lepsze przypisywanie istniejących picon z /usr/share/enigma2/picon i nośników USB/HDD
+                • Dodany wybór języka w menu + automatyczny język systemu, fallback do English
+                • Dodany język niemiecki, arabski i hiszpański
+                • Poprawione pobieranie kanałów dla dorosłych z MAC Stalker
+                • Dodane logo autora w ekranie głównym
             ]]>
         </labels>
         <prerequisites>
@@ -41,11 +44,11 @@
             ]]>
         </prerequisites>
         <attributes>
-            <attribute name="version" value="6.5.2" />
+            <attribute name="version" value="6.6.0" />
             <attribute name="api_version" value="1.0" />
             <attribute name="plugin_type" value="iptv" />
             <attribute name="category" value="multimedia" />
-            <attribute name="tags" value="iptv,m3u,xtream,mac,bouquet,streaming" />
+            <attribute name="tags" value="iptv,m3u,xtream,mac,stalker,bouquet,streaming,epg,picon" />
             <attribute name="license" value="GPLv2" />
             <attribute name="homepage" value="https://github.com/OliOli2013/IPTV-Dream-Plugin" />
             <attribute name="support" value="aio-iptv@wp.pl" />

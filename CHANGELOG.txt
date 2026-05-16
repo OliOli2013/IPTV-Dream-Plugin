@@ -1,3 +1,13 @@
+v6.6.0 (2026-05-16)
+- EPG/PICON: przebudowano eksport bukietów: normalizacja nazw kanałów, aliasy, warianty EPG Import i service-ref.
+- EPG/PICON: automatyczne tworzenie /etc/epgimport/iptvdream.channels.xml oraz /etc/epgimport/iptvdream.sources.xml.
+- PICONY: lepsze dopasowanie istniejących piconów z /usr/share/enigma2/picon oraz nośników /media/hdd, /media/usb i /media/mmc.
+- JĘZYKI: dodano pełne menu wyboru języka: Polski, English, Deutsch, Español, العربية.
+- JĘZYKI: dodano automatyczne wykrywanie języka systemu; przy braku obsługi języka wtyczka przełącza się na English.
+- MAC/STALKER: dodano tryb ADULT / XXX oraz filtrowanie kanałów dla dorosłych, aby nie były pomijane przy dodawaniu z portalu MAC.
+- WEBIF: dodano obsługę języków PL/EN/DE/ES/AR oraz tryb MAC ADULT / XXX.
+- UI: dodano logo Paweł Pawełek w ekranie głównym i WebIF.
+
 v6.5.2 (2026-03-28)
 - MAC: added canonical MAC normalization (accepts :, -, ., spaces and raw 12-hex input) with validation before handshake.
 - MAC: automatic repair of saved portal list (dedupe, cleanup of invalid entries, migration of old/single-entry JSON format).
