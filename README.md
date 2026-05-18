@@ -1,8 +1,8 @@
-# IPTV Dream v6.6.0
+# IPTV Dream v6.6.1
 
 IPTV Dream to wtyczka IPTV dla Enigma2 obsługująca M3U, Xtream Codes, MAC/Stalker, eksport do bukietów, EPG Import, pikony oraz WebIF na porcie 9999.
 
-## Najważniejsze zmiany w v6.6.0
+## Najważniejsze zmiany w v6.6.1
 
 - Nowy mechanizm EPG i piconów oparty na rozwiązaniach zgodnych z TvMad: normalizacja nazw kanałów, aliasy i wiele wariantów identyfikatorów.
 - Generowanie plików EPG Import:
@@ -26,7 +26,7 @@ IPTV Dream to wtyczka IPTV dla Enigma2 obsługująca M3U, Xtream Codes, MAC/Stal
 ## Instalacja IPK
 
 ```sh
-opkg install /tmp/enigma2-plugin-extensions-iptvdream_6.6.0_all.ipk
+opkg install /tmp/enigma2-plugin-extensions-iptvdream_6.6.1_all.ipk
 killall -9 enigma2
 ```
 
@@ -34,7 +34,7 @@ killall -9 enigma2
 
 ```sh
 opkg remove enigma2-plugin-extensions-iptvdream
-opkg install /tmp/enigma2-plugin-extensions-iptvdream_6.6.0_all.ipk
+opkg install /tmp/enigma2-plugin-extensions-iptvdream_6.6.1_all.ipk
 killall -9 enigma2
 ```
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.6.0 - eksport bukietów + EPG/Picon.
+IPTV Dream v6.6.1 - eksport bukietów + EPG/Picon.
 
 Wersja przebudowana pod mechanizmy zgodne z TvMad:
 - normalizacja nazw kanałów i aliasy picon,
@@ -44,6 +44,11 @@ PICON_SOURCE_DIRS = [
     "/media/mmc/picon",
     "/etc/enigma2/picon",
 ]
+
+# Bezpieczne limity dla słabszych tunerów i ogromnych list MAC.
+# Eksport bukietów ma być szybki; EPG/picon aliasy nie mogą generować setek tysięcy operacji.
+MAX_EPG_CHANNELS = 1800
+MAX_PICON_ALIAS_CHANNELS = 1200
 
 # User-Agent MAG250 dla odtwarzania strumieni IPTV.
 RAW_UA = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
@@ -181,11 +186,13 @@ def _picon_name_variants(channel_name, tvg_id=""):
     return [v for v in vals if v]
 
 
-def _find_existing_picon(channel_name, tvg_id=""):
-    cands = []
-    for v in _picon_name_variants(channel_name, tvg_id):
-        cands.append(v)
-    # szukaj bez wielkości znaków i z typowymi rozszerzeniami
+def _build_picon_index():
+    """Buduje indeks piconów tylko raz na eksport.
+
+    Stara wersja robiła os.listdir() dla każdego kanału i każdego katalogu.
+    Przy dużych listach MAC eksport trwał przez to bardzo długo.
+    """
+    index = {}
     dirs = []
     for d in PICON_SOURCE_DIRS:
         if d not in dirs:
@@ -194,23 +201,30 @@ def _find_existing_picon(channel_name, tvg_id=""):
         try:
             if not os.path.isdir(d):
                 continue
-            names = set(os.listdir(d))
+            for n in os.listdir(d):
+                if not n.lower().endswith('.png'):
+                    continue
+                path = os.path.join(d, n)
+                low = n.lower()
+                base = low[:-4]
+                index.setdefault(low, path)
+                index.setdefault(base, path)
         except Exception:
             continue
-        lower_map = {}
-        try:
-            for n in names:
-                lower_map.setdefault(n.lower(), n)
-        except Exception:
-            lower_map = {}
-        for c in cands:
-            for ext in ('.png', '.PNG'):
-                fn = c + ext
-                real = lower_map.get(fn.lower())
-                if real:
-                    path = os.path.join(d, real)
-                    if os.path.exists(path):
-                        return path
+    return index
+
+
+def _find_existing_picon(channel_name, tvg_id="", picon_index=None):
+    cands = _picon_name_variants(channel_name, tvg_id)
+    if picon_index is None:
+        picon_index = _build_picon_index()
+    for c in cands:
+        key = (c or '').lower().strip()
+        if not key:
+            continue
+        src = picon_index.get(key) or picon_index.get(key + '.png')
+        if src and os.path.exists(src):
+            return src
     return None
 
 
@@ -239,17 +253,18 @@ def _copy_or_link(src, dst):
         return False
 
 
-def _link_picon_for_channel(channel_name, tvg_id, service_refs, dest_dir=PICON_DEST_DIR):
-    src = _find_existing_picon(channel_name, tvg_id)
+def _link_picon_for_channel(channel_name, tvg_id, service_refs, dest_dir=PICON_DEST_DIR, picon_index=None):
+    src = _find_existing_picon(channel_name, tvg_id, picon_index=picon_index)
     if not src:
         return False
     ok = False
     targets = []
-    for ref in service_refs or []:
-        for b in _service_ref_picon_basenames(ref):
+    # Wystarczy alias po service-ref + kilka najważniejszych nazw tekstowych.
+    # Ograniczenie zapobiega tysiącom symlinków przy dużych playlistach.
+    for ref in (service_refs or [])[:2]:
+        for b in _service_ref_picon_basenames(ref)[:4]:
             targets.append(os.path.join(dest_dir, b + '.png'))
-    # Dodatkowo nazwy tekstowe, dla skinów/wtyczek szukających po nazwie kanału.
-    for b in _picon_name_variants(channel_name, tvg_id)[:20]:
+    for b in _picon_name_variants(channel_name, tvg_id)[:5]:
         targets.append(os.path.join(dest_dir, b + '.png'))
     seen = set()
     for t in targets:
@@ -266,7 +281,13 @@ def _link_picon_for_channel(channel_name, tvg_id, service_refs, dest_dir=PICON_D
 
 def _is_adult_channel(title, group=""):
     hay = (title + ' ' + group).lower()
-    return any(x in hay for x in ('xxx', 'adult', '18+', 'porn', 'erotic', 'sex'))
+    return any(x in hay for x in ('xxx', 'adult', '18+', '+18', 'porn', 'porno', 'erotic', 'sex'))
+
+
+def _is_vod_like(title, group="", url=""):
+    hay = (title + ' ' + group + ' ' + url).lower()
+    # VOD/series exports can be massive; they normally do not need live EPGImport mappings.
+    return any(x in hay for x in ('vod', 'movie', 'movies', 'film', 'films', 'series', 'serial', 'seriale', '/movie/', '/series/'))
 
 
 def _epg_id_variants(name, tvg_id="", group=""):
@@ -290,7 +311,7 @@ def _epg_id_variants(name, tvg_id="", group=""):
         pass
 
     # TvMad-style suffix expansion for common XMLTV sources.
-    suffixes = ['pl', 'gb', 'uk', 'us', 'de', 'at', 'ch', 'es', 'mx', 'ar', 'fr', 'it', 'nl', 'tr', 'cz', 'sk', 'ro', 'hu', 'eu', 'world']
+    suffixes = ['pl', 'gb', 'uk', 'us', 'de', 'at', 'ch', 'es', 'mx', 'ar', 'ru', 'fr', 'it', 'nl', 'tr', 'cz', 'sk', 'ro', 'hu', 'eu', 'world']
     base_names = set()
     for v in list(ids):
         v = _safe_text(v).strip()
@@ -326,7 +347,7 @@ def _epg_id_variants(name, tvg_id="", group=""):
         if x not in seen:
             seen.add(x)
             out.append(x)
-    return out[:120]
+    return out[:10]
 
 
 def add_to_bouquets_index(bq_filename):
@@ -359,6 +380,7 @@ def _write_epg_sources():
             ("IPTV Dream - USA", "https://iptv-epg.org/files/epg-us.xml.gz"),
             ("IPTV Dream - France", "https://iptv-epg.org/files/epg-fr.xml.gz"),
             ("IPTV Dream - Italy", "https://iptv-epg.org/files/epg-it.xml.gz"),
+            ("IPTV Dream - Russia", "https://iptv-epg.org/files/epg-ru.xml.gz"),
             ("IPTV Dream - World Mix", "http://epg.bevy.be/bevy.xml.gz"),
         ]
         buf = ['<?xml version="1.0" encoding="utf-8"?>\n<sources>\n', '  <sourcecat sourcecatname="IPTV Dream EPG">\n']
@@ -417,14 +439,24 @@ def create_epg_xml(mapping):
 
 
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097"):
-    """Eksportuje playlistę do bukietów Enigma2 + tworzy EPGImport i picon aliases."""
+    """Eksportuje playlistę do bukietów Enigma2 + tworzy lekkie EPGImport i picon aliases.
+
+    Tryb szybki dla dużych list MAC:
+    - zapis bukietów buforowany w pamięci i jednym writelines(),
+    - EPG ograniczone do kanałów LIVE i rozsądnego limitu,
+    - picony indeksowane raz na cały eksport,
+    - brak reloadBouquets() w tej funkcji; GUI robi reload tylko raz po zakończeniu.
+    """
     try:
         service_type = str(int(service_type))
     except Exception:
         service_type = str(service_type or "4097")
 
+    playlist = list(playlist or [])
     groups = {}
-    for ch in playlist or []:
+    for ch in playlist:
+        if not isinstance(ch, dict):
+            continue
         grp = ch.get("group", "Main") if keep_groups else "Main"
         grp = _safe_text(grp).strip() or "Main"
         groups.setdefault(grp, []).append(ch)
@@ -436,40 +468,40 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
 
     ua_encoded = urllib.parse.quote(RAW_UA)
     ua_suffix = "#User-Agent=%s" % ua_encoded
+    _ensure_dir(BOUQUET_DIR)
 
     for grp, chans in groups.items():
         filename = _mk_bouquet_filename(bouquet_name, grp)
         bq_fullpath = os.path.join(BOUQUET_DIR, filename)
         try:
-            _ensure_dir(BOUQUET_DIR)
-            with open(bq_fullpath, "w", encoding="utf-8") as f:
-                f.write("#NAME %s - %s\n" % (bouquet_name or "IPTV", grp))
-                for ch in chans:
-                    url = _safe_text(ch.get("url", "")).strip()
-                    if not url:
-                        continue
-                    title_raw = ch.get("title") or ch.get("name") or "No Name"
-                    title = sanit_title(title_raw)
-                    tvg_id = (ch.get("epg_id") or ch.get("tvg-id") or ch.get("tvg_id") or ch.get("tvg-name") or ch.get("tvg_name") or "")
-                    logo = (ch.get("logo") or ch.get("tvg-logo") or ch.get("tvg_logo") or "")
-                    url = url.replace(" ", "%20")
-                    if "User-Agent" not in url and "user-agent" not in url.lower():
-                        url += ua_suffix
-                    sid = _stable_sid(url, title)
-                    sid_hex = "%X" % sid
-                    ref_prefix = "%s:0:1:%s:0:0:0:0:0:0" % (service_type, sid_hex)
-                    full_ref = "%s:%s:%s" % (ref_prefix, url, title)
-                    f.write("#SERVICE %s\n" % full_ref)
-                    f.write("#DESCRIPTION %s\n" % title)
+            lines = ["#NAME %s - %s\n" % (bouquet_name or "IPTV", grp)]
+            for ch in chans:
+                url = _safe_text(ch.get("url", "")).strip()
+                if not url:
+                    continue
+                title_raw = ch.get("title") or ch.get("name") or "No Name"
+                title = sanit_title(title_raw)
+                tvg_id = (ch.get("epg_id") or ch.get("tvg-id") or ch.get("tvg_id") or ch.get("tvg-name") or ch.get("tvg_name") or "")
+                logo = (ch.get("logo") or ch.get("tvg-logo") or ch.get("tvg_logo") or "")
+                url = url.replace(" ", "%20")
+                if "User-Agent" not in url and "user-agent" not in url.lower():
+                    url += ua_suffix
+                sid = _stable_sid(url, title)
+                sid_hex = "%X" % sid
+                ref_prefix = "%s:0:1:%s:0:0:0:0:0:0" % (service_type, sid_hex)
+                full_ref = "%s:%s:%s" % (ref_prefix, url, title)
+                lines.append("#SERVICE %s\n" % full_ref)
+                lines.append("#DESCRIPTION %s\n" % title)
 
-                    refs = [ref_prefix]
-                    # Keep EPG/Picon compatible across common IPTV players.
-                    for alt_type in ("4097", "5002", "1"):
-                        refs.append("%s:0:1:%s:0:0:0:0:0:0" % (alt_type, sid_hex))
-                    for r in refs:
-                        epg_mapping.append({'ref': r, 'name': title, 'tvg': tvg_id, 'group': grp})
+                refs = [ref_prefix]
+                if len(epg_mapping) < MAX_EPG_CHANNELS and not _is_vod_like(title, grp, url):
+                    epg_mapping.append({'ref': ref_prefix, 'name': title, 'tvg': tvg_id, 'group': grp})
+                if len(picon_tasks) < MAX_PICON_ALIAS_CHANNELS:
                     picon_tasks.append((title, tvg_id, refs, logo))
-                    total_channels += 1
+                total_channels += 1
+
+            with open(bq_fullpath, "w", encoding="utf-8") as f:
+                f.writelines(lines)
         except Exception as e:
             print('[IPTVDream] Export bouquet error %s: %s' % (filename, e))
             continue
@@ -479,21 +511,15 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
 
     create_epg_xml(epg_mapping)
 
-    # Picon: link/copy existing picons to service-ref filenames. This is fast and does not require network.
-    linked = 0
+    try:
+        picon_index = _build_picon_index()
+    except Exception:
+        picon_index = {}
     for title, tvg_id, refs, logo in picon_tasks:
         try:
-            if _link_picon_for_channel(title, tvg_id, refs, PICON_DEST_DIR):
-                linked += 1
+            _link_picon_for_channel(title, tvg_id, refs, PICON_DEST_DIR, picon_index=picon_index)
         except Exception:
             pass
-
-    try:
-        if eDVBDB:
-            eDVBDB.getInstance().reloadBouquets()
-            eDVBDB.getInstance().reloadServicelist()
-    except Exception:
-        pass
 
     return total_bouquets, total_channels
 

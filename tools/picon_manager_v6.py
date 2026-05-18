@@ -141,7 +141,15 @@ class PiconManager:
             cache_file = os.path.join(self.cache_dir, f"{cache_key}.png")
             
             if self.is_cache_valid(cache_file):
-                return cache_file
+                safe_name = _safe_picon_basename(channel_name)
+                picon_file = os.path.join(self.picon_dir, f"{safe_name}.png")
+                try:
+                    if not os.path.exists(picon_file):
+                        import shutil
+                        shutil.copy2(cache_file, picon_file)
+                    return picon_file
+                except Exception:
+                    return cache_file
         
         # Bezpieczna nazwa pliku
         safe_name = _safe_picon_basename(channel_name)
@@ -163,7 +171,7 @@ class PiconManager:
             
             # Sprawdź czy to obraz
             content_type = response.headers.get('content-type', '').lower()
-            if 'image' not in content_type:
+            if 'image' not in content_type and not str(url).lower().split('?', 1)[0].endswith(('.png', '.jpg', '.jpeg', '.webp')):
                 raise Exception("Nieprawidłowy typ zawartości")
             
             # Zapisz plik tymczasowy

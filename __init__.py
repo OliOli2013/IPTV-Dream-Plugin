@@ -17,7 +17,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.6.0"
+    return "6.6.1"
 
 __version__ = _read_version()
 __author__ = "IPTV Dream Team"
@@ -27,7 +27,7 @@ __description__ = "Ultra-fast IPTV plugin for Enigma2 - REVOLUTION!"
 # Package metadata
 PLUGIN_NAME = "IPTV Dream v%s" % __version__
 PLUGIN_VERSION = __version__
-PLUGIN_DESCRIPTION = "Wtyczka IPTV (PL/EN/DE/ES/AR) - M3U / Xtream / MAC / EPG / Pikony / WebIF"
+PLUGIN_DESCRIPTION = "Wtyczka IPTV (PL/EN/DE/ES/AR/RU) - M3U / Xtream / MAC / EPG / Pikony / WebIF"
 
 # Do not eagerly import Enigma2 UI modules here. The plugin list should stay lightweight
 # and should not fail just because an optional runtime dependency (e.g. Pillow for picons)

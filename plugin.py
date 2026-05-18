@@ -9,6 +9,7 @@ _DESCRIPTIONS = {
     "de": "IPTV-Plugin - M3U / Xtream / MAC / Stalker / EPG / Picons / WebIF",
     "es": "Plugin IPTV - M3U / Xtream / MAC / Stalker / EPG / Picons / WebIF",
     "ar": "إضافة IPTV - M3U / Xtream / MAC / Stalker / EPG / Picons / WebIF",
+    "ru": "IPTV-плагин - M3U / Xtream / MAC / Stalker / EPG / пиконы / WebIF",
 }
 
 def _system_lang():

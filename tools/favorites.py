@@ -27,10 +27,70 @@ class FavoritesManager:
     def _save_favorites(self):
         """Zapisuje ulubione do pliku"""
         try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.favorites, f, indent=2)
-        except:
+            base = os.path.dirname(self.config_file)
+            if base and not os.path.isdir(base):
+                try:
+                    os.makedirs(base)
+                except Exception:
+                    pass
+            tmp = self.config_file + ".tmp"
+            with open(tmp, 'w') as f:
+                json.dump(self.favorites, f, indent=2, ensure_ascii=False)
+                try:
+                    f.flush()
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+            try:
+                os.rename(tmp, self.config_file)
+            except Exception:
+                try:
+                    import shutil
+                    shutil.copyfile(tmp, self.config_file)
+                    os.remove(tmp)
+                except Exception:
+                    pass
+        except Exception:
             pass
+
+    def add_many_to_favorites(self, channels, group_name="Ulubione"):
+        """Dodaje wiele kanałów do ulubionych i zapisuje plik tylko raz.
+
+        Stara metoda zapisywała JSON po każdym kanale, co przy dużych listach MAC
+        blokowało tuner przez bardzo długi czas.
+        """
+        try:
+            if not isinstance(self.favorites, dict):
+                self.favorites = {"groups": {}, "channels": {}}
+            self.favorites.setdefault("groups", {})
+            self.favorites.setdefault("channels", {})
+            group_name = str(group_name or "Ulubione").strip() or "Ulubione"
+            if group_name not in self.favorites["groups"]:
+                self.favorites["groups"][group_name] = {
+                    "name": group_name,
+                    "created": "",
+                    "channels": []
+                }
+            group = self.favorites["groups"][group_name]
+            group.setdefault("channels", [])
+            existing = set(group.get("channels") or [])
+            count = 0
+            for channel in channels or []:
+                if not isinstance(channel, dict):
+                    continue
+                channel_id = channel.get("url") or channel.get("title") or channel.get("name") or ""
+                if not channel_id:
+                    continue
+                if channel_id not in self.favorites["channels"]:
+                    self.favorites["channels"][channel_id] = channel
+                if channel_id not in existing:
+                    group["channels"].append(channel_id)
+                    existing.add(channel_id)
+                    count += 1
+            self._save_favorites()
+            return count
+        except Exception:
+            return 0
             
     def add_to_favorites(self, channel, group_name="Ulubione"):
         """

@@ -1,5 +1,14 @@
+v6.6.1 (2026-05-18)
+- dodano język rosyjski (RU) w menu, WebIF i komunikatach wtyczki,
+- poprawiono filtr ADULT / XXX: nie łapie już zwykłych kanałów/filmów z liczbą 18 w tytule,
+- przy MAC Portal grupa XXX pobiera tylko realne kategorie/kanały dla dorosłych, jeśli portal je udostępnia,
+- przyspieszono pobieranie list MAC: ograniczono niepotrzebne create_link dla każdego kanału LIVE,
+- ograniczono ryzyko blue/green screen przy eksporcie dużych list MAC/Xtream/VOD przez odciążenie mapowania EPG dla VOD/Series,
+- poprawiono EPGImport: dodano źródło RU i zmniejszono nadmiar aliasów na kanał,
+- poprawiono picony: cache jest kopiowany do katalogu picon, obsługa obrazów bez poprawnego nagłówka Content-Type.
+
 v6.6.0 (2026-05-16)
-- EPG/PICON: przebudowano eksport bukietów: normalizacja nazw kanałów, aliasy, warianty EPG Import i service-ref.
+- EPG/PICON: przebudowano eksport bukietów na mechanizm zgodny z TvMad: normalizacja nazw kanałów, aliasy, warianty EPG Import i service-ref.
 - EPG/PICON: automatyczne tworzenie /etc/epgimport/iptvdream.channels.xml oraz /etc/epgimport/iptvdream.sources.xml.
 - PICONY: lepsze dopasowanie istniejących piconów z /usr/share/enigma2/picon oraz nośników /media/hdd, /media/usb i /media/mmc.
 - JĘZYKI: dodano pełne menu wyboru języka: Polski, English, Deutsch, Español, العربية.

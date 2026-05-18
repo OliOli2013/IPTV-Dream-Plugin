@@ -10,7 +10,7 @@ COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML
 
 # Timeout dla zapytań sieciowych (Bezpieczeństwo)
 # Timeout dla zapytań sieciowych (wydłużony - duże portale potrafią odpowiadać wolniej)
-REQ_TIMEOUT = 30
+REQ_TIMEOUT = 12
 
 # Logger (writes to /tmp/iptvdream.log)
 LOG_MAC = get_logger("IPTVDream.MAC", log_file="/tmp/iptvdream.log", debug=False)
@@ -425,21 +425,14 @@ def _iter_ordered_list(session, endpoint, token, kind, category_id, sortby='adde
         frm = page * max_page
         to = frm + max_page
 
-        variants = [
-            # standard stalker
-            {'p': page},
-            {'p': page + 1},
-            # portals with different pagination keys
-            {'page': page},
-            {'page': page + 1},
-            {'offset': frm, 'limit': max_page},
-            {'offset': frm, 'count': max_page},
-            {'start': frm, 'limit': max_page},
-            # range style
-            {'from': frm, 'to': to},
-            {'p': page, 'from': frm, 'to': to},
-            {'p': page + 1, 'from': frm, 'to': to},
-        ]
+        # SZYBKI tryb: wcześniej wykonywało się nawet 10 zapytań na każdą stronę.
+        # Przy dużych portalach MAC powodowało to wielominutowe pobieranie.
+        # Zostawiamy najczęstsze warianty Stalker/MAG; fallback page działa dla portali
+        # które nie akceptują parametru p.
+        if page == 0:
+            variants = [{'p': 0}, {'p': 1}, {'page': 1}]
+        else:
+            variants = [{'p': page}, {'p': page + 1}, {'page': page + 1}]
 
         best_items = None
         best_new = -1  # allow selecting a response even if 0 new
@@ -1129,9 +1122,32 @@ def _handshake(host, mac):
 
 
 
+ADULT_RE = re.compile(
+    r'(?i)(^|[\s\|_\-\[\]\(\):/])('
+    r'xxx|adult|adults|porn|porno|pornhub|erotic|erotica|sex|sexy|hardcore|redlight|'
+    r'hustler|brazzers|playboy|private|dorcel|babestation|venus|naughty|spice|blue\s*hustler|'
+    r'18\+|\+18|for\s*adults|only\s*adults|dla\s*doroslych|dla\s*dorosłych'
+    r')([\s\|_\-\[\]\(\):/]|$)'
+)
+ADULT_FALSE_RE = re.compile(r'(?i)\b(18\s*(lat|years|yo|roku|rok)|u18|under\s*18|18\s*hd|channel\s*18|canal\s*18)\b')
+
+
 def _is_adult_title_group(title, group=''):
-    hay = ('%s %s' % (title or '', group or '')).lower()
-    return any(tok in hay for tok in ('xxx', 'adult', '18+', 'porn', 'erotic', 'sex', '18 '))
+    """Strict XXX classifier.
+
+    Do NOT classify plain "18" as adult. The XXX group is only for real adult/porn channels,
+    not every channel or movie that contains number 18 in title/category.
+    """
+    hay = ('%s %s' % (title or '', group or '')).strip().lower()
+    if not hay:
+        return False
+    if ADULT_FALSE_RE.search(hay):
+        return False
+    return bool(ADULT_RE.search(' %s ' % hay))
+
+
+def _is_adult_category_name(name):
+    return _is_adult_title_group('', name)
 
 def _best_group_for_live_item(item, genres_map):
     if not isinstance(item, dict):
@@ -1158,7 +1174,7 @@ def _best_group_for_live_item(item, genres_map):
 
     # Adult channels are frequently left without a proper genre; detect common markers.
     hay = ' '.join(str(item.get(k) or '') for k in ('name', 'title', 'cmd', 'xmltv_id', 'number')).lower()
-    if any(tok in hay for tok in ('xxx', 'adult', '18+', 'sex')):
+    if _is_adult_title_group(hay, ''):
         return 'XXX'
 
     return 'Inne'
@@ -1214,7 +1230,7 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
     if content_type in ('live', 'adult'):
         url_xc = "%s/get.php?username=%s&password=%s&type=m3u_plus&output=ts" % (base_url, mac, mac)
         try:
-            r = requests.get(url_xc, timeout=10, headers={'User-Agent': COMMON_UA}, verify=False, allow_redirects=True)
+            r = requests.get(url_xc, timeout=3, headers={'User-Agent': COMMON_UA}, verify=False, allow_redirects=True)
             if r.status_code == 200 and '#EXTINF' in (r.text or ''):
                 _cb(100, "OK")
                 
@@ -1232,6 +1248,7 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
         # --- LIVE / ADULT ---
         if content_type in ('live', 'adult'):
             genres = {}
+            adult_genre_ids = []
             _cb(5, "Genres")
             try:
                 r_g = s.get(endpoint, params={'type': 'itv', 'action': 'get_genres', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
@@ -1243,11 +1260,49 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
                         gname = clean_name(g.get('title') or g.get('name') or 'Inne')
                         if gid:
                             genres[gid] = gname
+                            if _is_adult_category_name(gname):
+                                adult_genre_ids.append(gid)
                         alias = str(g.get('alias') or '').strip()
                         if alias:
                             genres[alias] = gname
             except Exception:
                 pass
+
+            def _live_item_to_channel(item, group_name=None):
+                name = clean_name(item.get('name') or item.get('title') or 'No Name')
+                cmd = item.get('cmd') or item.get('cmds') or ''
+                logo = item.get('logo') or item.get('screenshot_uri') or item.get('cover') or ''
+                url_clean = _extract_cmd_url(cmd, portal_root)
+
+                # LIVE ma być szybkie: nie wykonujemy create_link dla każdego kanału.
+                # Portale MAC często mają kilka tysięcy kanałów; create_link per kanał
+                # daje wielominutowe pobieranie i może zawiesić Enigma2.
+                # _extract_cmd_url() buduje bezpośredni adres /mpegts_to_ts/ dla raw cmd.
+
+                if logo and not str(logo).startswith('http'):
+                    logo = "%s/%s" % (portal_root, str(logo).lstrip('/'))
+                grp = group_name or _best_group_for_live_item(item, genres)
+                adult = _is_adult_title_group(name, grp)
+                if adult:
+                    grp = 'XXX'
+                return {'title': name, 'url': url_clean, 'group': grp, 'logo': logo, 'epg': '', 'is_adult': adult}
+
+            out = []
+
+            # For ADULT/XXX: if portal exposes real adult genres, fetch only these categories.
+            # This prevents mixed normal channels/films containing number "18" from landing in XXX.
+            if content_type == 'adult' and adult_genre_ids:
+                total_cats = len(adult_genre_ids) or 1
+                for cidx, gid in enumerate(adult_genre_ids):
+                    gname = genres.get(gid, 'XXX')
+                    _cb(15 + int((cidx / float(total_cats)) * 80.0), "XXX: %s" % gname)
+                    for item in _iter_ordered_list(s, endpoint, token, 'itv', gid, sortby='name'):
+                        ch = _live_item_to_channel(item, 'XXX')
+                        ch['group'] = 'XXX'
+                        ch['is_adult'] = True
+                        out.append(ch)
+                _cb(100, "OK")
+                return out
 
             _cb(15, "Channels")
             r = s.get(endpoint, params={'type': 'itv', 'action': 'get_all_channels', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
@@ -1260,36 +1315,16 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
             if not isinstance(ch_list, list):
                 raise Exception('Empty List')
 
-            out = []
             total = len(ch_list) or 1
-            live_link_cache = {}
             for i, item in enumerate(ch_list):
-                if i % 50 == 0:
+                if i % 75 == 0:
                     _cb(15 + int((i / float(total)) * 80.0), "LIVE %d/%d" % (i, total))
-                name = clean_name(item.get('name') or item.get('title') or 'No Name')
-                cmd = item.get('cmd') or item.get('cmds') or ''
-                logo = item.get('logo') or item.get('screenshot_uri') or item.get('cover') or ''
-                url_clean = _extract_cmd_url(cmd, portal_root)
-                if _live_url_needs_create_link(url_clean, cmd):
-                    cache_key = str(cmd)
-                    if cache_key in live_link_cache:
-                        url_clean = live_link_cache[cache_key]
-                    else:
-                        try:
-                            resolved = _create_link(s, endpoint, token, 'itv', cmd)
-                            if resolved:
-                                url_clean = resolved
-                                live_link_cache[cache_key] = resolved
-                        except Exception:
-                            pass
-                if logo and not str(logo).startswith('http'):
-                    logo = "%s/%s" % (portal_root, str(logo).lstrip('/'))
-                group_name = _best_group_for_live_item(item, genres)
-                if _is_adult_title_group(name, group_name):
-                    group_name = 'XXX'
-                if content_type == 'adult' and not _is_adult_title_group(name, group_name):
+                ch = _live_item_to_channel(item)
+                if content_type == 'adult' and not ch.get('is_adult'):
                     continue
-                out.append({'title': name, 'url': url_clean, 'group': group_name, 'logo': logo, 'epg': '', 'is_adult': _is_adult_title_group(name, group_name)})
+                if content_type == 'live' and ch.get('is_adult'):
+                    continue
+                out.append(ch)
 
             _cb(100, "OK")
             return out

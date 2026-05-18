@@ -72,7 +72,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.6.0"
+    return "6.6.1"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
@@ -136,7 +136,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.6.0">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.6.1">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -561,6 +561,7 @@ class IPTVDreamV6(Screen):
             (_("lang_german", self.lang), "de"),
             (_("lang_arabic", self.lang), "ar"),
             (_("lang_spanish", self.lang), "es"),
+            (_("lang_russian", self.lang), "ru"),
         ]
         self.session.openWithCallback(self.onLanguageChoice, ChoiceBox, title=_("select_language", self.lang), list=items)
 
@@ -1013,7 +1014,7 @@ class IPTVDreamV6(Screen):
         self.session.openWithCallback(
             self.onMacJson,
             VirtualKeyBoard,
-            title=("Wklej JSON:" if self.lang == "pl" else "Paste JSON:"),
+            title=_("Wklej JSON: {", self.lang).rstrip("{").strip(),
             text='{"host":"...","mac":"..."}'
         )
 
@@ -1064,7 +1065,7 @@ class IPTVDreamV6(Screen):
         tmo = MAC_VODSERIES_TIMEOUT_MS if content_type in ("vod","series") else LOAD_TIMEOUT_MS
         msg = _("Pobieranie z MAC Portal ...", self.lang)
         if content_type in ("vod","series"):
-            msg = (_("Pobieranie z MAC Portal ...", self.lang) + ("\n(duża biblioteka może wczytywać się długo)" if self.lang=="pl" else "\n(large libraries may take a long time)"))
+            msg = (_("Pobieranie z MAC Portal ...", self.lang) + _("mac_large_library", self.lang))
         self.startLoading(msg, timeout_ms=tmo)
 
         def _load():
@@ -1242,27 +1243,48 @@ class IPTVDreamV6(Screen):
         if not self.current_playlist:
             return
 
-        def _ask_group(answer):
+        def ask_group_confirm(answer):
             if not answer:
                 return
-            self.session.openWithCallback(
-                self.onFavGroupName,
-                VirtualKeyBoard,
-                title=_("Nazwa grupy ulubionych:", self.lang),
-                text="Ulubione"
-            )
+            # Nie wolno używać parametru callbacka o nazwie "_".
+            # W Enigma2 wartość True/False z MessageBox nadpisywała funkcję tłumaczenia _()
+            # i powodowała blue screen: TypeError: 'bool' object is not callable.
+            title = _("Nazwa grupy ulubionych:", self.lang)
+            self.session.openWithCallback(self.onFavGroupName, VirtualKeyBoard, title=title, text="Ulubione")
 
-        self.session.openWithCallback(_ask_group, MessageBox, _("Dodać wszystkie kanały do ulubionych?", self.lang), MessageBox.TYPE_YESNO)
+        self.session.openWithCallback(ask_group_confirm, MessageBox, _("Dodać wszystkie kanały do ulubionych?", self.lang), MessageBox.TYPE_YESNO)
 
     def onFavGroupName(self, group_name):
         if not group_name:
             return
-        try:
-            for ch in self.current_playlist:
+        group_name = str(group_name).strip() or "Ulubione"
+        playlist_snapshot = list(self.current_playlist or [])
+        if not playlist_snapshot:
+            return
+
+        self.startLoading(_("Dodawanie do ulubionych ...", self.lang))
+
+        def _work():
+            if hasattr(self.favorites, "add_many_to_favorites"):
+                return self.favorites.add_many_to_favorites(playlist_snapshot, group_name=group_name)
+            count = 0
+            for ch in playlist_snapshot:
                 self.favorites.add_to_favorites(ch, group_name=group_name)
-            self.session.open(MessageBox, _("Dodano do ulubionych (grupa: %s).", self.lang) % group_name, MessageBox.TYPE_INFO, timeout=3)
-        except Exception as e:
-            self.session.open(MessageBox, _("Błąd ulubionych: %s", self.lang) % e, MessageBox.TYPE_ERROR)
+                count += 1
+            return count
+
+        def _done(res, err):
+            self.stopLoading()
+            if err:
+                self.session.open(MessageBox, _("Błąd ulubionych: %s", self.lang) % err, MessageBox.TYPE_ERROR)
+                return
+            try:
+                count = int(res)
+            except Exception:
+                count = len(playlist_snapshot)
+            self.session.open(MessageBox, _("Dodano do ulubionych (grupa: %s).", self.lang) % group_name + "\n%d" % count, MessageBox.TYPE_INFO, timeout=4)
+
+        run_in_thread(_work, _done)
 
     def downloadPiconsForPlaylist(self):
         if not self.current_playlist:
@@ -1348,11 +1370,15 @@ class IPTVDreamV6(Screen):
             def _work():
                 """Pobiera pikony szybciej (wielowątkowo) i aktualizuje progress."""
                 items = []
+                seen = set()
                 for ch in (self.current_playlist or []):
-                    title = (ch.get("title") or "").strip()
-                    purl = (ch.get("tvg-logo") or ch.get("logo") or "").strip()
+                    title = (ch.get("title") or ch.get("name") or "").strip()
+                    purl = (ch.get("tvg-logo") or ch.get("tvg_logo") or ch.get("logo") or "").strip()
                     if title and purl:
-                        items.append((purl, title))
+                        key = (purl, title.lower())
+                        if key not in seen:
+                            seen.add(key)
+                            items.append((purl, title))
 
                 total = len(items)
                 if total <= 0:
