@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.6.3 - eksport bukietów + EPG/Picon.
+IPTV Dream v6.6.7 - eksport bukietów + EPG/Picon.
 
 Wersja przebudowana pod mechanizmy zgodne z TvMad:
 - normalizacja nazw kanałów i aliasy picon,
@@ -14,6 +14,7 @@ import os
 import re
 import zlib
 import shutil
+import hashlib
 import urllib.parse
 from xml.sax.saxutils import escape
 
@@ -101,6 +102,22 @@ def _stable_sid(url, title=""):
     raw = (_safe_text(url) + "|" + _safe_text(title)).encode("utf-8", "ignore")
     sid = zlib.crc32(raw) & 0xffff
     return sid or 1
+
+
+def _stable_dvb_ids(url, title="", tvg_id=""):
+    """Stable DVB-like ids for IPTV service refs.
+
+    This follows the same idea used by mature IPTV bouquet/EPG tools: do not
+    export every IPTV channel as SID/TSID/ONID/namespace equal to zero. Unique
+    fields make EPGImport, epgcache and picon aliases much more reliable.
+    """
+    raw = (_safe_text(tvg_id) or (_safe_text(url) + "|" + _safe_text(title))).encode("utf-8", "ignore")
+    h = hashlib.md5(raw).hexdigest().upper()
+    sid = h[0:4] or "1"
+    tsid = h[4:8] or "1"
+    onid = h[8:12] or "1"
+    namespace = h[12:20] or "0"
+    return sid, tsid, onid, namespace
 
 
 def _short_service_ref(service_ref):
@@ -423,8 +440,14 @@ def create_epg_xml(mapping):
         return False
 
 
-def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097"):
-    """Eksportuje playlistę do bukietów Enigma2 + tworzy EPGImport i picon aliases."""
+def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097", include_epg_picons=False):
+    """Szybki eksport playlisty do bukietów Enigma2.
+
+    Ważne: od v6.6.7 eksport bukietów nie buduje już ciężkich map EPG/Picon
+    w tej samej operacji. To przywraca szybkie działanie eksportu i eliminuje
+    wiszący pasek 0% oraz GSOD przy dużych listach/MAC. EPG i pikony pozostają
+    obsługiwane przez osobne funkcje wtyczki.
+    """
     try:
         service_type = str(int(service_type))
     except Exception:
@@ -432,14 +455,16 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
 
     groups = {}
     for ch in playlist or []:
-        grp = ch.get("group", "Main") if keep_groups else "Main"
+        try:
+            grp = ch.get("group", "Main") if keep_groups else "Main"
+        except Exception:
+            grp = "Main"
         grp = _safe_text(grp).strip() or "Main"
         groups.setdefault(grp, []).append(ch)
 
     total_channels = 0
     total_bouquets = 0
-    epg_mapping = []
-    picon_tasks = []
+    export_errors = []
 
     ua_encoded = urllib.parse.quote(RAW_UA)
     ua_suffix = "#User-Agent=%s" % ua_encoded
@@ -447,56 +472,95 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
     for grp, chans in groups.items():
         filename = _mk_bouquet_filename(bouquet_name, grp)
         bq_fullpath = os.path.join(BOUQUET_DIR, filename)
+        written_in_group = 0
         try:
             _ensure_dir(BOUQUET_DIR)
             with open(bq_fullpath, "w", encoding="utf-8") as f:
                 f.write("#NAME %s - %s\n" % (bouquet_name or "IPTV", grp))
                 for ch in chans:
+                    try:
+                        url = _safe_text(ch.get("url", "")).strip()
+                        if not url:
+                            continue
+                        title_raw = ch.get("title") or ch.get("name") or "No Name"
+                        title = sanit_title(title_raw)
+                        url = url.replace(" ", "%20")
+                        if "User-Agent" not in url and "user-agent" not in url.lower():
+                            url += ua_suffix
+                        sid = _stable_sid(url, title)
+                        sid_hex = "%X" % sid
+                        ref_prefix = "%s:0:1:%s:0:0:0:0:0:0" % (service_type, sid_hex)
+                        full_ref = "%s:%s:%s" % (ref_prefix, url, title)
+                        f.write("#SERVICE %s\n" % full_ref)
+                        f.write("#DESCRIPTION %s\n" % title)
+                        written_in_group += 1
+                        total_channels += 1
+                    except Exception as e:
+                        # Pojedynczy uszkodzony kanał nie może zatrzymać całego eksportu.
+                        try:
+                            export_errors.append('channel skipped in %s: %s' % (grp, e))
+                        except Exception:
+                            pass
+                        continue
+        except Exception as e:
+            msg = '[IPTVDream] Export bouquet error %s: %s' % (filename, e)
+            print(msg)
+            try:
+                export_errors.append(msg)
+            except Exception:
+                pass
+            continue
+
+        if written_in_group > 0:
+            add_to_bouquets_index(filename)
+            total_bouquets += 1
+        else:
+            # Nie zostawiaj pustych bukietów po grupach bez poprawnych URL.
+            try:
+                if os.path.exists(bq_fullpath):
+                    os.remove(bq_fullpath)
+            except Exception:
+                pass
+
+    if total_channels == 0 and playlist:
+        last_error = export_errors[-1] if export_errors else 'no valid stream URLs found'
+        raise Exception('No channels exported. %s' % last_error)
+
+    # Ciężkie EPG/Picon można nadal uruchomić świadomie przez osobny tryb,
+    # ale GUI domyślnie wywołuje szybki eksport bez tych operacji.
+    if include_epg_picons:
+        try:
+            # Lekka kompatybilność wsteczna; nie jest używana przez główny przycisk export.
+            epg_mapping = []
+            picon_tasks = []
+            for ch in playlist or []:
+                try:
                     url = _safe_text(ch.get("url", "")).strip()
                     if not url:
                         continue
-                    title_raw = ch.get("title") or ch.get("name") or "No Name"
-                    title = sanit_title(title_raw)
+                    title = sanit_title(ch.get("title") or ch.get("name") or "No Name")
                     tvg_id = (ch.get("epg_id") or ch.get("tvg-id") or ch.get("tvg_id") or ch.get("tvg-name") or ch.get("tvg_name") or "")
                     logo = (ch.get("logo") or ch.get("tvg-logo") or ch.get("tvg_logo") or "")
-                    url = url.replace(" ", "%20")
-                    if "User-Agent" not in url and "user-agent" not in url.lower():
-                        url += ua_suffix
                     sid = _stable_sid(url, title)
                     sid_hex = "%X" % sid
-                    ref_prefix = "%s:0:1:%s:0:0:0:0:0:0" % (service_type, sid_hex)
-                    full_ref = "%s:%s:%s" % (ref_prefix, url, title)
-                    f.write("#SERVICE %s\n" % full_ref)
-                    f.write("#DESCRIPTION %s\n" % title)
-
-                    refs = [ref_prefix]
-                    # Keep EPG/Picon compatible across common IPTV players.
-                    for alt_type in ("4097", "5002", "1"):
-                        refs.append("%s:0:1:%s:0:0:0:0:0:0" % (alt_type, sid_hex))
-                    # Do not generate huge EPGImport maps for VOD/series libraries; this was a common
-                    # reason for blue/green screen during "export all" on large MAC/Xtream lists.
+                    refs = ["%s:0:1:%s:0:0:0:0:0:0" % (t, sid_hex) for t in (service_type, "4097", "5002", "1")]
+                    grp = ch.get("group", "Main")
                     if not _is_vod_like(title, grp, url):
                         for r in refs:
                             epg_mapping.append({'ref': r, 'name': title, 'tvg': tvg_id, 'group': grp})
                     picon_tasks.append((title, tvg_id, refs, logo))
-                    total_channels += 1
+                except Exception:
+                    pass
+            create_epg_xml(epg_mapping[:20000])
+            linked = 0
+            for title, tvg_id, refs, logo in picon_tasks[:20000]:
+                try:
+                    if _link_picon_for_channel(title, tvg_id, refs, PICON_DEST_DIR):
+                        linked += 1
+                except Exception:
+                    pass
         except Exception as e:
-            print('[IPTVDream] Export bouquet error %s: %s' % (filename, e))
-            continue
-
-        add_to_bouquets_index(filename)
-        total_bouquets += 1
-
-    create_epg_xml(epg_mapping)
-
-    # Picon: link/copy existing picons to service-ref filenames. This is fast and does not require network.
-    linked = 0
-    for title, tvg_id, refs, logo in picon_tasks:
-        try:
-            if _link_picon_for_channel(title, tvg_id, refs, PICON_DEST_DIR):
-                linked += 1
-        except Exception:
-            pass
+            print('[IPTVDream] Optional EPG/Picon export skipped: %s' % e)
 
     try:
         if eDVBDB:
@@ -506,7 +570,6 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
         pass
 
     return total_bouquets, total_channels
-
 
 def create_satellite_epg_mapping():
     """Compatibility stub kept for old imports."""

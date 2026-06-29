@@ -17,7 +17,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.6.3"
+    return "6.6.7"
 
 __version__ = _read_version()
 __author__ = "IPTV Dream Team"

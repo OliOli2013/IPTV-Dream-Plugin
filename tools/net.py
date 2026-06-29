@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream - Network helpers (v6.6.3 hotfix)
+"""IPTV Dream - Network helpers (v6.6.7 hotfix)
 
 Provides:
 - timeouts (connect/read)

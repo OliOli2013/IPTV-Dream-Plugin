@@ -52,7 +52,7 @@ from .tools.epg_picon import install_epg_sources
 from .tools.favorites import FavoritesManager
 from .tools.statistics import StatisticsManager
 from .tools.history import HistoryManager
-from .tools.mac_portal import load_mac_json, save_mac_json, add_mac_portal
+from .tools.mac_portal import load_mac_json, save_mac_json, add_mac_portal, clear_mac_backups
 from .tools.mac_portal import _parse_json_flexible as parse_json_flexible_mac
 from .tools.mac_portal import parse_mac_playlist
 from .tools.picon_manager_v6 import PiconManager
@@ -72,7 +72,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.6.3"
+    return "6.6.7"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
@@ -136,7 +136,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.6.3">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.6.7">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -1110,6 +1110,8 @@ class IPTVDreamV6(Screen):
         if 0 <= idx < len(portals):
             portals.pop(idx)
             save_mac_json(portals)
+            if not portals:
+                clear_mac_backups()
             self.session.open(MessageBox, _("Usunięto portal.", self.lang), MessageBox.TYPE_INFO, timeout=3)
         self.openMacMenu()
 
@@ -1243,7 +1245,11 @@ class IPTVDreamV6(Screen):
         if not self.current_playlist:
             return
 
-        def _ask_group(_):
+        def _ask_group(answer):
+            # Nie używamy nazwy argumentu "_", bo zasłania funkcję tłumaczeń i powoduje GSOD:
+            # TypeError: 'bool' object is not callable
+            if not answer:
+                return
             self.session.openWithCallback(self.onFavGroupName, VirtualKeyBoard, title=_("Nazwa grupy ulubionych:", self.lang), text="Ulubione")
 
         self.session.openWithCallback(_ask_group, MessageBox, _("Dodać wszystkie kanały do ulubionych?", self.lang), MessageBox.TYPE_YESNO)
@@ -1741,32 +1747,43 @@ class IPTVDreamV6(Screen):
             except Exception:
                 pass
 
-        self.startLoading(_("exporting_bouquets", self.lang))
+        if not final_list:
+            self.session.open(MessageBox, _("Nie wybrano kanałów do eksportu.", self.lang), MessageBox.TYPE_INFO, timeout=3)
+            return
 
-        def _do_export():
-            # export_bouquets może zgłosić wyjątek (np. problem pliku) – nie może to robić GS.
-            return export_bouquets(final_list, self.playlist_name)
+        # v6.6.7: szybki eksport jak wcześniej — bez ciężkiego paska 0%, bez EPG/Picon w tej samej operacji.
+        try:
+            self["progress_bar"].hide()
+            self["progress_text"].hide()
+        except Exception:
+            pass
+        try:
+            self["status_bar"].setText(_("exporting_bouquets", self.lang))
+        except Exception:
+            pass
 
-        def _done(res, err):
-            self.stopLoading()
-            if err:
-                self.session.open(MessageBox, "Export error: %s" % err, MessageBox.TYPE_ERROR)
-                return
+        try:
+            total_bq, total_ch = export_bouquets(final_list, self.playlist_name)
+        except Exception as e:
             try:
-                total_bq, total_ch = res
-            except Exception:
-                total_bq, total_ch = (0, 0)
-
-            try:
-                if eDVBDB:
-                    eDVBDB.getInstance().reloadBouquets()
-                    eDVBDB.getInstance().reloadServicelist()
+                self["status_bar"].setText("Export error")
             except Exception:
                 pass
+            self.session.open(MessageBox, "Export error: %s" % e, MessageBox.TYPE_ERROR)
+            return
 
-            self.session.open(MessageBox, _("exported_channels_bouquets", self.lang) % (total_ch, total_bq), MessageBox.TYPE_INFO)
+        try:
+            if eDVBDB:
+                eDVBDB.getInstance().reloadBouquets()
+                eDVBDB.getInstance().reloadServicelist()
+        except Exception:
+            pass
 
-        run_in_thread(_do_export, _done)
+        try:
+            self["status_bar"].setText(_("exported_channels_bouquets", self.lang) % (total_ch, total_bq))
+        except Exception:
+            pass
+        self.session.open(MessageBox, _("exported_channels_bouquets", self.lang) % (total_ch, total_bq), MessageBox.TYPE_INFO)
 
     # ---------- close ----------
 
