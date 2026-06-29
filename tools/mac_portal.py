@@ -10,7 +10,7 @@ COMMON_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML
 
 # Timeout dla zapytań sieciowych (Bezpieczeństwo)
 # Timeout dla zapytań sieciowych (wydłużony - duże portale potrafią odpowiadać wolniej)
-REQ_TIMEOUT = 12
+REQ_TIMEOUT = 30
 
 # Logger (writes to /tmp/iptvdream.log)
 LOG_MAC = get_logger("IPTVDream.MAC", log_file="/tmp/iptvdream.log", debug=False)
@@ -300,10 +300,20 @@ def translate_error(e, url=""):
             return "Nieprawidłowy adres MAC lub host.\nUżyj formatu 00:11:22:33:44:55 oraz poprawnego URL portalu."
         return "Invalid MAC address or host.\nUse format 00:11:22:33:44:55 and a valid portal URL."
     if "BAD_JSON_RESPONSE" in err_str or "Expecting value" in err_str:
-        # Serwer zwrócił HTML/pustą odpowiedź (często redirect lub zły endpoint)
+        # Serwer zwrócił HTML/pustą odpowiedź (często redirect, zły endpoint, Cloudflare albo blokada panelu)
         if lang == 'pl':
-            return "Portal zwrócił nieprawidłową odpowiedź (brak JSON).\nSprawdź URL (najlepiej końcówka /c/), port oraz czy portal nie przekierowuje na HTTPS."
-        return "Portal returned invalid response (not JSON).\nCheck URL (prefer /c/), port and whether the portal redirects to HTTPS."
+            return ("Portal zwrócił stronę HTML/pustą odpowiedź zamiast JSON.\n"
+                    "Najczęstsze przyczyny: zły adres portalu, zła ścieżka (/c/ lub /stalker_portal/c/), "
+                    "przekierowanie HTTP/HTTPS, Cloudflare/blokada IP albo portal nie obsługuje trybu Stalker/MAG.\n"
+                    "Sprawdź host z końcówką /c/, port oraz czy portal otwiera się na tunerze w tej samej sieci.")
+        return ("Portal returned HTML/empty response instead of JSON.\n"
+                "Most common reasons: wrong portal URL, wrong path (/c/ or /stalker_portal/c/), "
+                "HTTP/HTTPS redirect, Cloudflare/IP block, or a portal that is not Stalker/MAG compatible.\n"
+                "Check host with /c/, port and whether the portal opens from the receiver/network.")
+    if "RemoteDisconnected" in err_str or "remote end closed" in err_str.lower() or "Connection aborted" in err_str:
+        if lang == 'pl':
+            return "Portal zamknął połączenie. To zwykle blokada/przeciążenie panelu, zły adres/port albo limit połączeń dla MAC."
+        return "The portal closed the connection. This usually means panel blocking/overload, wrong host/port, or a MAC connection limit."
     if "timeout" in err_str.lower() or "connection" in err_str.lower(): 
         return _("err_timeout", lang)
     return f"{_('err_generic', lang)}:\n{err_str[:100]}..."
@@ -425,14 +435,21 @@ def _iter_ordered_list(session, endpoint, token, kind, category_id, sortby='adde
         frm = page * max_page
         to = frm + max_page
 
-        # SZYBKI tryb: wcześniej wykonywało się nawet 10 zapytań na każdą stronę.
-        # Przy dużych portalach MAC powodowało to wielominutowe pobieranie.
-        # Zostawiamy najczęstsze warianty Stalker/MAG; fallback page działa dla portali
-        # które nie akceptują parametru p.
-        if page == 0:
-            variants = [{'p': 0}, {'p': 1}, {'page': 1}]
-        else:
-            variants = [{'p': page}, {'p': page + 1}, {'page': page + 1}]
+        variants = [
+            # standard stalker
+            {'p': page},
+            {'p': page + 1},
+            # portals with different pagination keys
+            {'page': page},
+            {'page': page + 1},
+            {'offset': frm, 'limit': max_page},
+            {'offset': frm, 'count': max_page},
+            {'start': frm, 'limit': max_page},
+            # range style
+            {'from': frm, 'to': to},
+            {'p': page, 'from': frm, 'to': to},
+            {'p': page + 1, 'from': frm, 'to': to},
+        ]
 
         best_items = None
         best_new = -1  # allow selecting a response even if 0 new
@@ -662,14 +679,23 @@ def _mag_headers(host, mac, timezone=None):
 
 
 def _safe_json_any(resp):
-    """Like _safe_json but tolerates servers returning JSON as text."""
+    """Like _safe_json but tolerates servers returning JSON as text/JSONP-like body."""
     try:
         return _safe_json(resp)
-    except Exception:
+    except Exception as first_error:
         try:
-            return json.loads(resp.text)
+            txt = (resp.text or '').strip()
+            if txt:
+                try:
+                    return json.loads(txt)
+                except Exception:
+                    # Some bad panels wrap JSON in extra text. Extract only clear JSON object/array.
+                    m = re.search(r'(\{.*\}|\[.*\])', txt, re.S)
+                    if m:
+                        return json.loads(m.group(1))
         except Exception:
-            raise
+            pass
+        raise first_error
 
 
 def _extract_loader_path_from_stream(resp, ui_url):
@@ -834,17 +860,17 @@ def _perform_handshake(session, endpoint, headers, mac, referer=None):
             pass
 
     # Some portals reject unknown params in handshake – start minimal.
-    variants = [
+    base_variants = [
         # 1) simplest
-        {"type": "stb", "action": "handshake", "JsHttpRequest": JS_HTTPREQUEST},
+        {"type": "stb", "action": "handshake"},
         # 2) with mac
-        {"type": "stb", "action": "handshake", "JsHttpRequest": JS_HTTPREQUEST, "mac": mac},
+        {"type": "stb", "action": "handshake", "mac": mac},
     ]
 
     # Legacy MAG-ish (fallback)
     sn = get_random_sn()
     ver = 'ImageDescription: 0.2.18-r14-250; ImageDate: Fri Jan 15 15:20:44 EET 2016; PORTAL version: 5.1.0; API Version: JS API version: 328; STB API version: 134;'
-    variants.append({
+    base_variants.append({
         "type": "stb",
         "action": "handshake",
         "token": "",
@@ -852,8 +878,20 @@ def _perform_handshake(session, endpoint, headers, mac, referer=None):
         "stb_type": "MAG250",
         "ver": ver,
         "sn": sn,
-        "JsHttpRequest": JS_HTTPREQUEST,
     })
+
+    # MAG/Stalker panels differ: most want 1-xml, some want 1-json, some fail if this param exists.
+    variants = []
+    seen_variants = set()
+    for base in base_variants:
+        for jsreq in (JS_HTTPREQUEST, '1-json', ''):
+            v = dict(base)
+            if jsreq:
+                v['JsHttpRequest'] = jsreq
+            key = tuple(sorted(v.items()))
+            if key not in seen_variants:
+                seen_variants.add(key)
+                variants.append(v)
 
     def _try(method, params, hdrs):
         try:
@@ -1058,6 +1096,31 @@ def _handshake(host, mac):
             _add(base_url + '/server/load.php')
             _add(base_url + '/portal.php')
 
+    # Some panels silently redirect or only answer on the opposite scheme. Try both HTTP and HTTPS.
+    try:
+        alt_base = None
+        if base_url.startswith('http://'):
+            alt_base = 'https://' + base_url[len('http://'):]
+        elif base_url.startswith('https://'):
+            alt_base = 'http://' + base_url[len('https://'):]
+        if alt_base:
+            snapshot = list(cands)
+            for ep in snapshot:
+                if ep.startswith(base_url):
+                    _add(alt_base + ep[len(base_url):])
+            for pref in ['/stalker_portal', '/portal', '/mag', '/c', '']:
+                if pref == '/c':
+                    _add(alt_base + '/c/server/load.php')
+                    _add(alt_base + '/c/portal.php')
+                elif pref:
+                    _add(alt_base + pref + '/server/load.php')
+                    _add(alt_base + pref + '/portal.php')
+                else:
+                    _add(alt_base + '/server/load.php')
+                    _add(alt_base + '/portal.php')
+    except Exception:
+        pass
+
     token = None
     token_random = ''
     endpoint = endpoint0
@@ -1065,12 +1128,17 @@ def _handshake(host, mac):
 
     for ep in cands:
         pref = _infer_prefix_from_endpoint(ep)
-        # build referer UI
+        try:
+            pu = urlparse(ep)
+            ep_base = "%s://%s" % (pu.scheme or 'http', pu.netloc)
+        except Exception:
+            ep_base = base_url
+        # build referer UI matching the endpoint scheme/host
         if pref:
-            ui_try = (base_url + pref + '/c/').replace('//c/', '/c/')
+            ui_try = (ep_base + pref + '/c/').replace('//c/', '/c/')
         else:
-            ui_try = base_url + '/c/'
-        referer = ui_final or ui_try
+            ui_try = ep_base + '/c/'
+        referer = (ui_final if ep.startswith(base_url) else ui_try) or ui_try
         try:
             LOG_MAC.info('Handshake try endpoint=%s mac=%s', ep, _mask_mac(mac))
         except Exception:
@@ -1230,7 +1298,7 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
     if content_type in ('live', 'adult'):
         url_xc = "%s/get.php?username=%s&password=%s&type=m3u_plus&output=ts" % (base_url, mac, mac)
         try:
-            r = requests.get(url_xc, timeout=3, headers={'User-Agent': COMMON_UA}, verify=False, allow_redirects=True)
+            r = requests.get(url_xc, timeout=10, headers={'User-Agent': COMMON_UA}, verify=False, allow_redirects=True)
             if r.status_code == 200 and '#EXTINF' in (r.text or ''):
                 _cb(100, "OK")
                 
@@ -1274,10 +1342,15 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
                 logo = item.get('logo') or item.get('screenshot_uri') or item.get('cover') or ''
                 url_clean = _extract_cmd_url(cmd, portal_root)
 
-                # LIVE ma być szybkie: nie wykonujemy create_link dla każdego kanału.
-                # Portale MAC często mają kilka tysięcy kanałów; create_link per kanał
-                # daje wielominutowe pobieranie i może zawiesić Enigma2.
-                # _extract_cmd_url() buduje bezpośredni adres /mpegts_to_ts/ dla raw cmd.
+                # Speed fix: resolving every live channel through create_link can take minutes
+                # on large MAC portals. Resolve only raw/non-URL commands; keep absolute URLs as-is.
+                if _live_url_needs_create_link(url_clean, cmd) and ('://' not in (url_clean or '')):
+                    try:
+                        resolved = _create_link(s, endpoint, token, 'itv', cmd)
+                        if resolved:
+                            url_clean = resolved
+                    except Exception:
+                        pass
 
                 if logo and not str(logo).startswith('http'):
                     logo = "%s/%s" % (portal_root, str(logo).lstrip('/'))

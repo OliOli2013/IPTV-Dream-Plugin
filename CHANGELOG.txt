@@ -1,3 +1,12 @@
+v6.6.2 (2026-06-29)
+- M3U: dodano hotfix dla błędów NET-HTTP-884, RemoteDisconnected, Connection aborted oraz Remote end closed connection.
+- M3U: zmieniono domyślne połączenia na Connection: close i dodano bezpieczniejsze nagłówki HTTP dla paneli IPTV.
+- M3U: dodano czytelniejsze komunikaty błędów dla 884, 401/403, 404, timeoutów, przerwanych połączeń i odpowiedzi HTML zamiast playlisty.
+- M3U: dodano awaryjne użycie starego cache, gdy serwer chwilowo przerywa pobieranie albo zwraca błędną odpowiedź.
+- MAC/STALKER: poprawiono obsługę odpowiedzi nie-JSON, HTML/pustych odpowiedzi oraz zamykania połączenia przez portal.
+- MAC/STALKER: handshake testuje warianty JsHttpRequest=1-xml, JsHttpRequest=1-json oraz wariant bez tego parametru.
+- MAC/STALKER: dodano próbę połączenia przez alternatywny schemat HTTP/HTTPS przy problemach z przekierowaniem portalu.
+
 v6.6.1 (2026-05-18)
 - dodano język rosyjski (RU) w menu, WebIF i komunikatach wtyczki,
 - poprawiono filtr ADULT / XXX: nie łapie już zwykłych kanałów/filmów z liczbą 18 w tytule,

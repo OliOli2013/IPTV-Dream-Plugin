@@ -44,7 +44,7 @@ class PlaylistLoader:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
             'Accept': '*/*',
             'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
+            'Connection': 'close',
             'Cache-Control': 'no-cache'
         })
         
@@ -148,6 +148,57 @@ class PlaylistLoader:
             pass
         return {}
 
+    def _read_cache_file_any_age(self, cache_file):
+        """Return cached playlist even if it is stale; used only as emergency fallback."""
+        try:
+            if cache_file and os.path.exists(cache_file) and os.path.getsize(cache_file) > 0:
+                with open(cache_file, 'rb') as f:
+                    return f.read()
+        except Exception:
+            pass
+        return None
+
+    def _friendly_m3u_error(self, err):
+        s = str(err or '')
+        low = s.lower()
+        if 'net-http-884' in low or 'http 884' in low:
+            return ("Serwer IPTV odrzucił pobranie playlisty (HTTP 884). "
+                    "To niestandardowy kod po stronie dostawcy/panelu: zwykle wygasły lub błędny link, "
+                    "blokada IP, limit połączeń albo wymagany User-Agent/Referer. "
+                    "Sprawdź link M3U w przeglądarce/VLC albo dopisz nagłówki w formacie: "
+                    "URL|User-Agent=...&Referer=...")
+        if 'net-aborted' in low or 'remotedisconnected' in low or 'remote end closed connection' in low or 'connection aborted' in low:
+            return ("Serwer zamknął połączenie podczas pobierania playlisty. "
+                    "Najczęściej oznacza blokadę po stronie dostawcy, przeciążony panel, limit aktywnych połączeń "
+                    "albo wymagany inny User-Agent/Referer. Wtyczka ponowiła próbę z bezpiecznym Connection: close.")
+        if 'net-timeout' in low or 'timeout' in low:
+            return "Timeout podczas pobierania playlisty. Serwer odpowiada za wolno albo lista jest bardzo duża. Spróbuj ponownie później lub zwiększ timeout w konfiguracji."
+        if 'net-http-401' in low or 'net-http-403' in low:
+            return "Serwer odrzucił autoryzację playlisty (401/403). Sprawdź login/hasło, ważność konta oraz ewentualną blokadę IP."
+        if 'net-http-404' in low:
+            return "Nie znaleziono playlisty (404). Link M3U jest błędny albo został zmieniony przez dostawcę."
+        if 'html' in low and 'm3u' in low:
+            return "Serwer zwrócił stronę HTML zamiast playlisty M3U. To zwykle przekierowanie, Cloudflare/login panel albo błędny link."
+        return s
+
+    def _looks_like_wrong_m3u_response(self, data):
+        """Detect common HTML/portal/error responses saved under a M3U URL."""
+        try:
+            if data is None:
+                return False
+            sample = data[:4096] if isinstance(data, (bytes, bytearray)) else str(data)[:4096]
+            if not isinstance(sample, str):
+                sample = sample.decode('utf-8', 'ignore')
+            t = sample.lstrip().lower()
+            if not t:
+                return False
+            if '#extinf' in t or '#extm3u' in t:
+                return False
+            bad_markers = ('<html', '<!doctype html', '<body', 'cloudflare', 'access denied', 'forbidden', 'login', 'captcha')
+            return any(x in t for x in bad_markers)
+        except Exception:
+            return False
+
 
     def load_m3u_url(self, url, progress_callback=None, headers=None):
         """Streaming M3U download with cache, conditional GET, timeouts and retries."""
@@ -205,18 +256,26 @@ class PlaylistLoader:
         # 2) No valid cache or cache disabled -> full download (stream)
         try:
             _cb(1, "Downloading..." if self.config.get("language") == "en" else "Pobieranie...")
-            r = http_get(
-                url,
-                session=self.session,
-                headers=headers,
-                stream=True,
-                verify=self.ssl_verify,
-                timeout=self.net_timeout,
-                retries=self.net_retries,
-                backoff=self.net_backoff,
-                debug=bool(self.config.get("debug", False)),
-                log_file=self.config.get("log_file", "/tmp/iptvdream.log"),
-            )
+            try:
+                r = http_get(
+                    url,
+                    session=self.session,
+                    headers=headers,
+                    stream=True,
+                    verify=self.ssl_verify,
+                    timeout=self.net_timeout,
+                    retries=self.net_retries,
+                    backoff=self.net_backoff,
+                    debug=bool(self.config.get("debug", False)),
+                    log_file=self.config.get("log_file", "/tmp/iptvdream.log"),
+                )
+            except Exception as e:
+                cached = self._read_cache_file_any_age(cache_file)
+                if cached:
+                    self.log.warning("M3U download failed, using stale cache: %s", mask_sensitive(e))
+                    _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
+                    return cached
+                raise Exception(self._friendly_m3u_error(e))
 
             total_size = int(r.headers.get('content-length', 0) or 0)
             content = io.BytesIO()
@@ -237,18 +296,24 @@ class PlaylistLoader:
                             # chunked/unknown size: show activity every ~512KB
                             if downloaded % (512 * 1024) < chunk_size:
                                 _cb(20, "Downloaded: %.1f MB" % (downloaded/1024.0/1024.0) if self.config.get("language") == "en" else "Pobrano: %.1f MB" % (downloaded/1024.0/1024.0))
-            except requests.exceptions.RequestException:
-                # If we have any cache, fall back.
-                if os.path.exists(cache_file):
-                    try:
-                        _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
-                        with open(cache_file, 'rb') as f:
-                            return f.read()
-                    except Exception:
-                        pass
-                raise
+            except Exception as e:
+                # If the provider breaks the stream mid-download, fall back to any existing cache.
+                cached = self._read_cache_file_any_age(cache_file)
+                if cached:
+                    self.log.warning("M3U stream failed, using stale cache: %s", mask_sensitive(e))
+                    _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
+                    return cached
+                raise Exception(self._friendly_m3u_error(e))
 
             content_data = content.getvalue()
+            if self._looks_like_wrong_m3u_response(content_data):
+                cached = self._read_cache_file_any_age(cache_file)
+                if cached:
+                    self.log.warning("Server returned HTML/not-M3U, using stale cache")
+                    _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
+                    return cached
+                raise Exception("Serwer zwrócił HTML/stronę błędu zamiast playlisty M3U. Sprawdź, czy URL jest bezpośrednim linkiem do playlisty, a nie stroną logowania/panelem.")
+
             # Save cache + metadata
             try:
                 self.cache_content(url, content_data, headers=headers)
@@ -267,7 +332,7 @@ class PlaylistLoader:
             return content_data
 
         except Exception as e:
-            raise Exception("M3U load error: %s" % e)
+            raise Exception("M3U load error: %s" % self._friendly_m3u_error(e))
 
     def load_m3u_file(self, file_path):
         """Ładuje M3U z pliku."""
