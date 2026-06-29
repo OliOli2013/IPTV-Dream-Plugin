@@ -208,7 +208,7 @@ LANG = {'ar': {'Aktualizacja zakończona (brak szczegółów).': 'Update finishe
         'show_log_label': '📄 عرض السجل (/tmp/iptvdream.log)',
         'support_text_long': 'هل أعجبتك الإضافة؟ ادعم المطور والتطوير.\nشكراً!',
         'support_ui': '\\c00ffffffهل أعجبتك الإضافة؟\n\\c0000ff00ادعم المطور والتطوير.\n\\c00ffcc00شكراً!\\c00ffffff',
-        'title': 'IPTV Dream v6.6.1',
+        'title': 'IPTV Dream v6.6.2',
         'toggle_lang': 'اللغة',
         'try_later': 'حاول لاحقاً.',
         'update_ask': 'هل تريد التحديث؟',
@@ -460,7 +460,7 @@ LANG = {'ar': {'Aktualizacja zakończona (brak szczegółów).': 'Update finishe
         'support_ui': '\\c00ffffffGefällt dir das Plugin?\n'
                       '\\c0000ff00Unterstütze den Ersteller & die Entwicklung.\n'
                       '\\c00ffcc00Danke!\\c00ffffff',
-        'title': 'IPTV Dream v6.6.1',
+        'title': 'IPTV Dream v6.6.2',
         'toggle_lang': 'Sprache',
         'try_later': 'Später erneut versuchen.',
         'update_ask': 'Möchtest du aktualisieren?',
@@ -710,7 +710,7 @@ LANG = {'ar': {'Aktualizacja zakończona (brak szczegółów).': 'Update finishe
         'show_log_label': '📄 Show log (/tmp/iptvdream.log)',
         'support_text_long': 'Do you like the plugin? Support the creator and development.\nThank you!',
         'support_ui': '\\c00ffffffDo you like the plugin?\n\\c0000ff00Support the creator & development.\n\\c00ffcc00Thank you!\\c00ffffff',
-        'title': 'IPTV Dream v6.6.1',
+        'title': 'IPTV Dream v6.6.2',
         'toggle_lang': 'PL / EN',
         'try_later': 'Try again later.',
         'update_ask': 'Do you want to update?',
@@ -960,7 +960,7 @@ LANG = {'ar': {'Aktualizacja zakończona (brak szczegółów).': 'Update finishe
         'show_log_label': '📄 Mostrar log (/tmp/iptvdream.log)',
         'support_text_long': '¿Te gusta el plugin? Apoya al creador y el desarrollo.\n¡Gracias!',
         'support_ui': '\\c00ffffff¿Te gusta el plugin?\n\\c0000ff00Apoya al creador y el desarrollo.\n\\c00ffcc00¡Gracias!\\c00ffffff',
-        'title': 'IPTV Dream v6.6.1',
+        'title': 'IPTV Dream v6.6.2',
         'toggle_lang': 'Idioma',
         'try_later': 'Inténtalo más tarde.',
         'update_ask': '¿Quieres actualizar?',
@@ -1212,7 +1212,7 @@ LANG = {'ar': {'Aktualizacja zakończona (brak szczegółów).': 'Update finishe
         'show_log_label': '📄 Pokaż log (/tmp/iptvdream.log)',
         'support_text_long': 'Podoba Ci się wtyczka? Wesprzyj twórcę i rozwój wtyczki.\nDziękuję!',
         'support_ui': '\\c00ffffffPodoba Ci się wtyczka?\n\\c0000ff00Wesprzyj twórcę i rozwój.\n\\c00ffcc00Dziękuję!\\c00ffffff',
-        'title': 'IPTV Dream v6.6.1',
+        'title': 'IPTV Dream v6.6.2',
         'toggle_lang': 'PL / EN',
         'try_later': 'Spróbuj później.',
         'update_ask': 'Czy chcesz zaktualizować?',
@@ -1368,7 +1368,7 @@ TRANSLATION_OVERRIDES_V660 = {
  'menu_updates': '🔄 Updates',
  'menu_xtream': '⚡ Xtream Codes',
  'picon_receiver': 'Receiver: /usr/share/enigma2/picon',
- 'title': 'IPTV Dream v6.6.1',
+ 'title': 'IPTV Dream v6.6.2',
  'webif_ph_m3u': 'http://playlist.m3u',
  'webif_tab_m3u': 'M3U',
  'webif_tab_mac': 'MAC-Portal',
@@ -1494,7 +1494,7 @@ TRANSLATION_OVERRIDES_V660 = {
  'menu_updates': '🔄 Actualizaciones',
  'menu_xtream': '⚡ Xtream Codes',
  'picon_receiver': 'Receptor: /usr/share/enigma2/picon',
- 'title': 'IPTV Dream v6.6.1',
+ 'title': 'IPTV Dream v6.6.2',
  'webif_ph_m3u': 'http://playlist.m3u',
  'webif_tab_m3u': 'M3U',
  'webif_tab_mac': 'Portal MAC',
@@ -1620,7 +1620,7 @@ TRANSLATION_OVERRIDES_V660 = {
  'menu_updates': '🔄 التحديثات',
  'menu_xtream': '⚡ Xtream Codes',
  'picon_receiver': 'الرسيفر: /usr/share/enigma2/picon',
- 'title': 'IPTV Dream v6.6.1',
+ 'title': 'IPTV Dream v6.6.2',
  'webif_ph_m3u': 'http://playlist.m3u',
  'webif_tab_m3u': 'M3U',
  'webif_tab_mac': 'بوابة MAC',
@@ -1651,7 +1651,7 @@ for _l, _values in TRANSLATION_OVERRIDES_V660.items():
 
 
 
-# --- IPTV Dream v6.6.1 Russian language pack ---
+# --- IPTV Dream v6.6.2 Russian language pack ---
 try:
     if 'ru' not in SUPPORTED_LANGS:
         SUPPORTED_LANGS = tuple(list(SUPPORTED_LANGS) + ['ru'])
@@ -1859,7 +1859,7 @@ try:
  'show_log_label': '📄 Показать лог (/tmp/iptvdream.log)',
  'support_text_long': 'Нравится плагин? Поддержите автора и развитие плагина.\nСпасибо!',
  'support_ui': '\\c00ffffffНравится плагин?\n\\c0000ff00Поддержите автора и развитие.\n\\c00ffcc00Спасибо!\\c00ffffff',
- 'title': 'IPTV Dream v6.6.1',
+ 'title': 'IPTV Dream v6.6.2',
  'toggle_lang': 'PL / EN / RU',
  'try_later': 'Попробуйте позже.',
  'update_ask': 'Хотите обновить?',

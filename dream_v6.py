@@ -136,7 +136,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.6.1">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.6.2">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -201,7 +201,7 @@ class IPTVDreamV6(Screen):
         self.lang = _detect_system_language()
 
         # UI
-        self["title_label"] = Label(_("title", self.lang))
+        self["title_label"] = Label("IPTV Dream v%s" % PLUGIN_VERSION)
         self["menu_list"] = MenuList([])
         self["info_title"] = Label("")
         self["info_text"] = Label("")
@@ -348,7 +348,7 @@ class IPTVDreamV6(Screen):
     def _apply_language_to_static_ui(self):
         """Refresh static UI labels that depend on language."""
         try:
-            self["title_label"].setText(_("title", self.lang))
+            self["title_label"].setText("IPTV Dream v%s" % PLUGIN_VERSION)
             self["key_red"].setText(_("exit", self.lang))
             self["key_green"].setText(_("check_upd", self.lang))
             self["key_yellow"].setText(_("epg_install", self.lang))

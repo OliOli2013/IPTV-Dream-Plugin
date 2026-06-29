@@ -21,7 +21,7 @@ class ConfigManager:
     def ensure_defaults(self):
         """Upewnia się, że istnieją wszystkie domyślne ustawienia."""
         defaults = {
-            "version": "6.6.1",
+            "version": "6.6.2",
             "language": "pl",
             "debug": False,
             "log_file": "/tmp/iptvdream.log",
