@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.6.2 - MENADŻER EPG
+IPTV Dream v6.6.3 - MENADŻER EPG
 - Rozszerzone źródła EPG (20+ źródeł)
 - Inteligentne mapowanie do kanałów satelitarnych
 - Automatyczna instalacja EPG
@@ -103,7 +103,7 @@ class EPGManager:
         try:
             # Tworzenie pliku sources.xml
             content = '<?xml version="1.0" encoding="utf-8"?>\n<sources>\n'
-            content += '    <sourcecat sourcecatname="IPTV Dream v6.6.2 EPG Sources">\n'
+            content += '    <sourcecat sourcecatname="IPTV Dream v6.6.3 EPG Sources">\n'
             
             # Dodaj wszystkie źródła
             for source in self.epg_sources:

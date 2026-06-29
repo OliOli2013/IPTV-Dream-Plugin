@@ -698,6 +698,82 @@ def _safe_json_any(resp):
         raise first_error
 
 
+def _headers_with_referer(headers, referer=None):
+    """Return MAG headers enriched with Referer/Origin for eStalker-like portals."""
+    h = dict(headers or {})
+    if referer:
+        h["Referer"] = referer
+        try:
+            p = urlparse(referer)
+            if p.scheme and p.netloc:
+                h["Origin"] = "%s://%s" % (p.scheme, p.netloc)
+        except Exception:
+            pass
+    return h
+
+
+def _warmup_portal_ui(session, ui_url, headers):
+    """Open portal UI before API calls to collect cookies/redirects.
+
+    Some panels used by eStalker return HTML for API requests until the UI path
+    (/c/ or /stalker_portal/c/) has been visited in the same session.
+    """
+    final_url = ui_url
+    try:
+        r = session.get(ui_url, headers=_headers_with_referer(headers, ui_url), timeout=(6, 12), verify=False, allow_redirects=True)
+        try:
+            if getattr(r, 'url', None):
+                final_url = r.url
+        except Exception:
+            pass
+    except Exception as e:
+        try:
+            LOG_MAC.info('UI warmup fail %s: %s', ui_url, mask_sensitive(e))
+        except Exception:
+            pass
+    return final_url or ui_url
+
+
+def _request_stalker_json(session, endpoint, params, headers=None, timeout=REQ_TIMEOUT, allow_post=True):
+    """GET/POST JSON request with JsHttpRequest fallbacks.
+
+    This improves compatibility with portals that work in eStalker but return
+    HTML/empty data when only one Stalker request variant is used.
+    """
+    last_error = None
+    base = dict(params or {})
+    js_variants = [JS_HTTPREQUEST, '1-json', '']
+    methods = ['get', 'post'] if allow_post else ['get']
+    seen = set()
+    for jsreq in js_variants:
+        q = dict(base)
+        if jsreq:
+            q['JsHttpRequest'] = jsreq
+        else:
+            q.pop('JsHttpRequest', None)
+        key = tuple(sorted(q.items()))
+        if key in seen:
+            continue
+        seen.add(key)
+        for method in methods:
+            try:
+                if method == 'post':
+                    r = session.post(endpoint, params=q, data='', headers=headers, timeout=timeout, verify=False, allow_redirects=True)
+                else:
+                    r = session.get(endpoint, params=q, headers=headers, timeout=timeout, verify=False, allow_redirects=True)
+                r.raise_for_status()
+                return _safe_json_any(r)
+            except Exception as e:
+                last_error = e
+                try:
+                    LOG_MAC.info('json request fail %s %s action=%s js=%s: %s', method.upper(), endpoint, q.get('action'), jsreq or 'none', mask_sensitive(e))
+                except Exception:
+                    pass
+    if last_error:
+        raise last_error
+    raise Exception('BAD_JSON_RESPONSE')
+
+
 def _extract_loader_path_from_stream(resp, ui_url):
     """Extract loader PHP path from portal UI (streaming). Returns path starting with '/' or None."""
     portal_prefix = _portal_prefix_from_url(ui_url)
@@ -908,11 +984,41 @@ def _perform_handshake(session, endpoint, headers, mac, referer=None):
                 pass
             return None
 
+    # Try several header profiles. Some eStalker-compatible portals are strict
+    # about MAG model / User-Agent and answer with HTML when headers differ.
+    header_variants = [h]
+    try:
+        h_mag254 = dict(h)
+        h_mag254["User-Agent"] = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG254 stbapp ver: 2 rev: 369 Safari/533.3"
+        h_mag254["X-User-Agent"] = "Model: MAG254; Link: WiFi"
+        header_variants.append(h_mag254)
+    except Exception:
+        pass
+    try:
+        h_plain = dict(h)
+        h_plain["User-Agent"] = MAG_UA
+        h_plain["Accept"] = "application/json, text/javascript, */*; q=0.01"
+        header_variants.append(h_plain)
+    except Exception:
+        pass
+
     js = None
-    for params in variants:
-        # POST first – many portals expect this
-        for method in ("post", "get"):
-            js = _try(method, params, h)
+    for hdr_try in header_variants:
+        for params in variants:
+            # POST first – many portals expect this
+            for method in ("post", "get"):
+                js = _try(method, params, hdr_try)
+                if js:
+                    try:
+                        h.update(hdr_try)
+                    except Exception:
+                        pass
+                    try:
+                        if isinstance(headers, dict):
+                            headers.update(hdr_try)
+                    except Exception:
+                        pass
+                    break
             if js:
                 break
         if js:
@@ -1041,16 +1147,7 @@ def _handshake(host, mac):
         pass
 
     # Warm-up UI to pick up cookies (some portals require session cookie before handshake)
-    ui_final = ui_url0
-    try:
-        r0 = s.get(ui_url0, headers=headers, timeout=(6, 12), verify=False, allow_redirects=True)
-        if getattr(r0, 'url', None):
-            ui_final = r0.url
-    except Exception as e:
-        try:
-            LOG_MAC.info('UI warmup fail %s: %s', ui_url0, mask_sensitive(e))
-        except Exception:
-            pass
+    ui_final = _warmup_portal_ui(s, ui_url0, headers)
 
     def _infer_prefix_from_endpoint(ep):
         try:
@@ -1125,6 +1222,7 @@ def _handshake(host, mac):
     token_random = ''
     endpoint = endpoint0
     portal_prefix = portal_prefix0
+    selected_referer = ui_final
 
     for ep in cands:
         pref = _infer_prefix_from_endpoint(ep)
@@ -1138,9 +1236,13 @@ def _handshake(host, mac):
             ui_try = (ep_base + pref + '/c/').replace('//c/', '/c/')
         else:
             ui_try = ep_base + '/c/'
-        referer = (ui_final if ep.startswith(base_url) else ui_try) or ui_try
+        referer = (ui_final if ep.startswith(base_url) and pref == portal_prefix0 else ui_try) or ui_try
+
+        # eStalker compatibility: warm up every candidate UI, not only the first discovered one.
+        referer = _warmup_portal_ui(s, referer, headers)
+
         try:
-            LOG_MAC.info('Handshake try endpoint=%s mac=%s', ep, _mask_mac(mac))
+            LOG_MAC.info('Handshake try endpoint=%s referer=%s mac=%s', ep, referer, _mask_mac(mac))
         except Exception:
             pass
         t, tr = _perform_handshake(s, ep, headers, mac, referer=referer)
@@ -1149,6 +1251,7 @@ def _handshake(host, mac):
             token_random = tr or ''
             endpoint = ep
             portal_prefix = pref
+            selected_referer = referer
             break
 
     if not token:
@@ -1158,9 +1261,10 @@ def _handshake(host, mac):
             pass
         raise Exception('Auth Failed')
 
-    # Set auth
-    headers_auth = dict(headers)
+    # Set auth. Keep Referer/Origin from the endpoint that succeeded.
+    headers_auth = _headers_with_referer(headers, selected_referer)
     headers_auth['Authorization'] = 'Bearer ' + token
+    headers_auth['Cookie'] = "mac=%s; stb_lang=en; timezone=%s;" % (mac, _read_local_timezone())
     try:
         s.headers.update(headers_auth)
     except Exception:
@@ -1319,8 +1423,7 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
             adult_genre_ids = []
             _cb(5, "Genres")
             try:
-                r_g = s.get(endpoint, params={'type': 'itv', 'action': 'get_genres', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
-                data_g = _safe_json_any(r_g)
+                data_g = _request_stalker_json(s, endpoint, {'type': 'itv', 'action': 'get_genres', 'token': token}, headers=_hdr, timeout=REQ_TIMEOUT, allow_post=True)
                 lst = _js_data(data_g)
                 if isinstance(lst, list):
                     for g in lst:
@@ -1378,36 +1481,69 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
                 return out
 
             _cb(15, "Channels")
-            r = s.get(endpoint, params={'type': 'itv', 'action': 'get_all_channels', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
-            r.raise_for_status()
-            data = _safe_json_any(r)
+            data = None
             ch_list = None
-            jsd = data.get('js') if isinstance(data, dict) else None
-            if isinstance(jsd, dict):
-                ch_list = jsd.get('data')
-            if not isinstance(ch_list, list):
-                raise Exception('Empty List')
+            try:
+                data = _request_stalker_json(s, endpoint, {'type': 'itv', 'action': 'get_all_channels', 'token': token}, headers=_hdr, timeout=REQ_TIMEOUT, allow_post=True)
+                jsd = data.get('js') if isinstance(data, dict) else None
+                if isinstance(jsd, dict):
+                    ch_list = jsd.get('data')
+                elif isinstance(jsd, list):
+                    ch_list = jsd
+            except Exception as e_all:
+                try:
+                    LOG_MAC.info('get_all_channels fallback to ordered_list: %s', mask_sensitive(e_all))
+                except Exception:
+                    pass
 
-            total = len(ch_list) or 1
-            for i, item in enumerate(ch_list):
-                if i % 75 == 0:
-                    _cb(15 + int((i / float(total)) * 80.0), "LIVE %d/%d" % (i, total))
-                ch = _live_item_to_channel(item)
-                if content_type == 'adult' and not ch.get('is_adult'):
-                    continue
-                if content_type == 'live' and ch.get('is_adult'):
-                    continue
-                out.append(ch)
+            if isinstance(ch_list, list):
+                total = len(ch_list) or 1
+                for i, item in enumerate(ch_list):
+                    if i % 75 == 0:
+                        _cb(15 + int((i / float(total)) * 80.0), "LIVE %d/%d" % (i, total))
+                    ch = _live_item_to_channel(item)
+                    if content_type == 'adult' and not ch.get('is_adult'):
+                        continue
+                    if content_type == 'live' and ch.get('is_adult'):
+                        continue
+                    out.append(ch)
+                _cb(100, "OK")
+                return out
 
-            _cb(100, "OK")
-            return out
+            # eStalker compatibility fallback: some portals do not expose get_all_channels
+            # and require get_ordered_list per category.
+            ordered_categories = []
+            seen_cat = set()
+            for gid, gname in genres.items():
+                sgid = str(gid).strip()
+                if not sgid or sgid in seen_cat:
+                    continue
+                seen_cat.add(sgid)
+                ordered_categories.append((sgid, gname or 'Inne'))
+            if not ordered_categories:
+                ordered_categories = [('0', 'Inne'), ('', 'Inne'), ('*', 'Inne')]
+
+            total_cats = len(ordered_categories) or 1
+            for cidx, (gid, gname) in enumerate(ordered_categories):
+                _cb(15 + int((cidx / float(total_cats)) * 80.0), "LIVE: %s" % (gname or gid))
+                for item in _iter_ordered_list(s, endpoint, token, 'itv', gid, sortby='name'):
+                    ch = _live_item_to_channel(item, gname if gname else None)
+                    if content_type == 'adult' and not ch.get('is_adult'):
+                        continue
+                    if content_type == 'live' and ch.get('is_adult'):
+                        continue
+                    out.append(ch)
+
+            if out:
+                _cb(100, "OK")
+                return out
+
+            raise Exception('Empty List')
 
         # --- VOD ---
         if content_type == 'vod':
             _cb(5, "VOD categories")
-            r_c = s.get(endpoint, params={'type': 'vod', 'action': 'get_categories', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
-            r_c.raise_for_status()
-            cats = _js_data(_safe_json_any(r_c))
+            cats = _js_data(_request_stalker_json(s, endpoint, {'type': 'vod', 'action': 'get_categories', 'token': token}, headers=_hdr, timeout=REQ_TIMEOUT, allow_post=True))
             if not isinstance(cats, list):
                 cats = []
 
@@ -1448,9 +1584,7 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
         # --- SERIES ---
         if content_type == 'series':
             _cb(5, "Series categories")
-            r_c = s.get(endpoint, params={'type': 'series', 'action': 'get_categories', 'token': token, 'JsHttpRequest': JS_HTTPREQUEST}, timeout=REQ_TIMEOUT)
-            r_c.raise_for_status()
-            cats = _js_data(_safe_json_any(r_c))
+            cats = _js_data(_request_stalker_json(s, endpoint, {'type': 'series', 'action': 'get_categories', 'token': token}, headers=_hdr, timeout=REQ_TIMEOUT, allow_post=True))
             if not isinstance(cats, list):
                 cats = []
 

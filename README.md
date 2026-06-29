@@ -1,24 +1,32 @@
-# IPTV Dream v6.6.2
+# IPTV Dream v6.6.3
 
-IPTV Dream to wtyczka Enigma2 do obsługi źródeł IPTV: M3U z URL, M3U z pliku, Xtream Codes oraz MAC Portal.
+IPTV Dream to wtyczka dla Enigma2 do obsługi źródeł M3U, Xtream Codes oraz MAC/Stalker/MAG.
 
-## Najważniejsze zmiany w v6.6.2
+## Najważniejsze zmiany w v6.6.3
 
-- Hotfix błędów pobierania M3U: `HTTP 884`, `RemoteDisconnected`, zerwane połączenia.
-- Lepsze ponawianie pobierania i bezpieczniejszy fallback do cache.
-- Czytelniejsze komunikaty błędów dla użytkownika.
-- MAC Portal: dodatkowe warianty handshake i sprawdzanie odpowiedzi niebędących JSON.
-- Poprawiony numer wersji w nagłówku wtyczki, menu, WebIF, setup.xml i tłumaczeniach.
+- poprawka zgodności z portalami, które działają w eStalker, ale w IPTV Dream zwracały HTML/pustą odpowiedź zamiast JSON,
+- dodatkowy warm-up ścieżek `/c/` oraz `/stalker_portal/c/`,
+- dodatkowe warianty handshake dla MAC/Stalker/MAG,
+- obsługa GET/POST oraz `JsHttpRequest=1-xml`, `1-json` i wariantu bez parametru,
+- poprawione nagłówki `Referer`, `Origin`, `Cookie`, MAG250/MAG254,
+- fallback LIVE przez `get_ordered_list`, gdy portal nie obsługuje poprawnie `get_all_channels`,
+- poprawione komunikaty błędów i numer wersji.
 
-## Instalacja z `/tmp`
+## Ważne
+
+Aktualizacja nie naprawia nieaktywnych kont, martwych linków, błędnego MAC, złego portu ani blokad po stronie dostawcy. Poprawia zgodność sposobu połączenia z wybranymi portalami MAC/Stalker/MAG.
+
+## Instalacja ręczna
+
+Wrzuć plik IPK do `/tmp`, a następnie wykonaj:
 
 ```sh
-opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_6.6.2_all.ipk
+opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_6.6.3_all.ipk
 init 4
 sleep 2
 init 3
 ```
 
-## Uwaga
+## Autor
 
-Poprawka nie naprawia martwych linków IPTV, wygasłych kont, blokad IP ani portali, które nie są zgodne z MAG/Stalker. Poprawia obsługę błędów, komunikaty, ponawianie i cache.
+by Paweł Pawełek

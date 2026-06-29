@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.6.2 - eksport bukietów + EPG/Picon.
+IPTV Dream v6.6.3 - eksport bukietów + EPG/Picon.
 
 Wersja przebudowana pod mechanizmy zgodne z TvMad:
 - normalizacja nazw kanałów i aliasy picon,
