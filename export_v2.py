@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v6.6.7 - eksport bukietów + EPG/Picon.
+IPTV Dream v7.0.0 - szybki, bezpieczny eksport bukietów + EPG/Picon.
 
 Wersja przebudowana pod mechanizmy zgodne z TvMad:
 - normalizacja nazw kanałów i aliasy picon,
@@ -239,6 +239,33 @@ def _ensure_dir(path):
         pass
 
 
+def _atomic_write(path, text):
+    parent = os.path.dirname(path)
+    if parent:
+        _ensure_dir(parent)
+    tmp = path + '.tmp'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write(text)
+        try:
+            os.replace(tmp, path)
+        except Exception:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+            os.rename(tmp, path)
+        return True
+    except Exception:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        raise
+
+
 def _copy_or_link(src, dst):
     try:
         if not src or not os.path.exists(src):
@@ -352,20 +379,41 @@ def _epg_id_variants(name, tvg_id="", group=""):
     return out[:45]
 
 
+def _is_iptvdream_include(line):
+    l = (line or '').lower()
+    return 'from bouquet' in l and 'userbouquet.iptv_dream_' in l
+
+
+def _backup_bouquets_once(idx):
+    try:
+        bak = idx + '.iptvdream.bak'
+        if os.path.exists(idx) and not os.path.exists(bak):
+            with open(idx, 'r', errors='ignore') as src:
+                data = src.read()
+            with open(bak, 'w') as dst:
+                dst.write(data)
+    except Exception:
+        pass
+
+
 def add_to_bouquets_index(bq_filename):
     idx = os.path.join(BOUQUET_DIR, "bouquets.tv")
-    entry = '#SERVICE 1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "%s" ORDER BY bouquet\n' % bq_filename
+    entry = '#SERVICE 1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "%s" ORDER BY bouquet' % bq_filename
     try:
+        _backup_bouquets_once(idx)
         lines = []
         if os.path.exists(idx):
             with open(idx, "r", errors="ignore") as f:
-                lines = f.readlines()
+                lines = [x.rstrip('\n') for x in f.readlines()]
+        if not lines:
+            lines = ['#NAME User - bouquets (TV)']
         if not any(entry.strip() == line.strip() for line in lines):
             lines.append(entry)
-            with open(idx, "w") as f:
-                f.writelines(lines)
-    except Exception:
-        pass
+        _atomic_write(idx, '\n'.join(lines).rstrip() + '\n')
+        return True
+    except Exception as e:
+        print('[IPTVDream] bouquets.tv update error: %s' % e)
+        return False
 
 
 def _write_epg_sources():
@@ -443,7 +491,7 @@ def create_epg_xml(mapping):
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097", include_epg_picons=False):
     """Szybki eksport playlisty do bukietów Enigma2.
 
-    Ważne: od v6.6.7 eksport bukietów nie buduje już ciężkich map EPG/Picon
+    Ważne: od v7.0.0 eksport bukietów pozostaje szybki i nie buduje ciężkich map EPG/Picon
     w tej samej operacji. To przywraca szybkie działanie eksportu i eliminuje
     wiszący pasek 0% oraz GSOD przy dużych listach/MAC. EPG i pikony pozostają
     obsługiwane przez osobne funkcje wtyczki.
@@ -475,33 +523,33 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
         written_in_group = 0
         try:
             _ensure_dir(BOUQUET_DIR)
-            with open(bq_fullpath, "w", encoding="utf-8") as f:
-                f.write("#NAME %s - %s\n" % (bouquet_name or "IPTV", grp))
-                for ch in chans:
-                    try:
-                        url = _safe_text(ch.get("url", "")).strip()
-                        if not url:
-                            continue
-                        title_raw = ch.get("title") or ch.get("name") or "No Name"
-                        title = sanit_title(title_raw)
-                        url = url.replace(" ", "%20")
-                        if "User-Agent" not in url and "user-agent" not in url.lower():
-                            url += ua_suffix
-                        sid = _stable_sid(url, title)
-                        sid_hex = "%X" % sid
-                        ref_prefix = "%s:0:1:%s:0:0:0:0:0:0" % (service_type, sid_hex)
-                        full_ref = "%s:%s:%s" % (ref_prefix, url, title)
-                        f.write("#SERVICE %s\n" % full_ref)
-                        f.write("#DESCRIPTION %s\n" % title)
-                        written_in_group += 1
-                        total_channels += 1
-                    except Exception as e:
-                        # Pojedynczy uszkodzony kanał nie może zatrzymać całego eksportu.
-                        try:
-                            export_errors.append('channel skipped in %s: %s' % (grp, e))
-                        except Exception:
-                            pass
+            lines = ["#NAME %s - %s" % (bouquet_name or "IPTV", grp)]
+            for ch in chans:
+                try:
+                    url = _safe_text(ch.get("url", "")).strip()
+                    if not url:
                         continue
+                    title_raw = ch.get("title") or ch.get("name") or "No Name"
+                    title = sanit_title(title_raw)
+                    url = url.replace(" ", "%20")
+                    if "User-Agent" not in url and "user-agent" not in url.lower():
+                        url += ua_suffix
+                    tvg_id = (ch.get("epg_id") or ch.get("tvg-id") or ch.get("tvg_id") or "")
+                    sid, tsid, onid, namespace = _stable_dvb_ids(url, title, tvg_id)
+                    ref_prefix = "%s:0:1:%s:%s:%s:%s:0:0:0" % (service_type, sid, tsid, onid, namespace)
+                    full_ref = "%s:%s:%s" % (ref_prefix, urllib.parse.quote(url, safe=':/?&=%#|+-._~'), title)
+                    lines.append("#SERVICE %s" % full_ref)
+                    lines.append("#DESCRIPTION %s" % title)
+                    written_in_group += 1
+                    total_channels += 1
+                except Exception as e:
+                    # Pojedynczy uszkodzony kanał nie może zatrzymać całego eksportu.
+                    try:
+                        export_errors.append('channel skipped in %s: %s' % (grp, e))
+                    except Exception:
+                        pass
+                    continue
+            _atomic_write(bq_fullpath, "\n".join(lines).rstrip() + "\n")
         except Exception as e:
             msg = '[IPTVDream] Export bouquet error %s: %s' % (filename, e)
             print(msg)

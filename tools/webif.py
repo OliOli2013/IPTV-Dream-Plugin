@@ -58,10 +58,10 @@ def _read_plugin_version():
         if os.path.exists(ver_path):
             with open(ver_path, "r", encoding="utf-8") as f:
                 v = (f.read() or "").strip()
-                return v or "6.6.7"
+                return v or "7.0.0"
     except Exception:
         pass
-    return "6.6.7"
+    return "7.0.0"
 
 
 def _detect_lang_from_system():

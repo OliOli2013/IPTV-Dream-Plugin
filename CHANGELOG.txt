@@ -1,7 +1,11 @@
-v6.6.7 (2026-06-29)
-- Przywrócono szybki eksport bukietów: bez ciężkiego generowania EPG/Picon w tym samym kroku.
-- Usunięto problem paska postępu stojącego na 0% podczas eksportu.
-- Eksport wybranych bukietów zapisuje teraz tylko pliki bukietów i odświeża listę kanałów.
-- Cięższe operacje EPG/Picon pozostają dostępne jako osobne funkcje, żeby nie blokować eksportu.
-- Zachowano poprawkę GSOD z funkcji dodawania całości do ulubionych.
-- Zachowano poprawki MAC/Stalker/eStalker z poprzednich wersji.
+v7.0.0 (2026-07-22)
+- Pełna przebudowa stabilności IPTV Dream.
+- Przebudowany loader M3U z większą zgodnością z panelami IPTV.
+- Nie odrzuca poprawnej listy M3U tylko dlatego, że serwer zwrócił Content-Type: text/html.
+- Dodane kontrolowane warianty User-Agent dla serwerów, które działają w innych wtyczkach.
+- Lepsza obsługa błędów HTTP 884, RemoteDisconnected, timeoutów i błędnych odpowiedzi HTML.
+- Przebudowany parser M3U: group-title, tvg-logo, tvg-id, EXTGRP, przecinki w cudzysłowach.
+- Szybszy i bezpieczniejszy eksport bukietów bez paska postępu stojącego na 0%.
+- Stabilniejsze referencje usług IPTV dla EPG/Picon.
+- Bezpieczny, atomowy zapis bukietów i aktualizacja bouquets.tv.
+- Utrzymane funkcje: M3U URL, M3U file, Xtream Codes, MAC/Stalker/MAG/eStalker, WebIF, EPG, pikony, ulubione, statystyki i aktualizacje.

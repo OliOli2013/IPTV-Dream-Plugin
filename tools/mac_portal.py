@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v6.6.7 - MAC/Stalker/MAG helper.
+"""IPTV Dream v7.0.0 - bounded MAC/Stalker/MAG helper.
 
 Reworked after comparing mature IPTV plugins:
 - fast, deterministic endpoint selection instead of probing many variants,
@@ -57,10 +57,10 @@ MAC_CONNECT_TIMEOUT = 4
 MAC_READ_TIMEOUT = 8
 MAC_REQ_TIMEOUT = (MAC_CONNECT_TIMEOUT, MAC_READ_TIMEOUT)
 MAC_SHORT_TIMEOUT = (3, 5)
-MAC_MAX_LIVE_PAGES = 35
-MAC_MAX_VOD_PAGES = 30
-MAC_MAX_SERIES_PAGES = 20
-MAC_MAX_ENDPOINTS = 5
+MAC_MAX_LIVE_PAGES = 12
+MAC_MAX_VOD_PAGES = 10
+MAC_MAX_SERIES_PAGES = 8
+MAC_MAX_ENDPOINTS = 4
 
 JS_HTTPREQUEST = "1-xml"
 MAG_UA = "Mozilla/5.0 (QtEmbedded; U; Linux; MAG250; en-US) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"

@@ -1,0 +1,13 @@
+IPTV Dream v7.0.0 - instrukcja GitHub
+
+1. Wejdź do repozytorium IPTV-Dream-Plugin.
+2. Podmień całą zawartość katalogu wtyczki plikami z tej paczki.
+3. Nie wrzucaj katalogów __pycache__ ani plików *.pyc.
+4. Zrób commit:
+   IPTV Dream v7.0.0 - full stability rebuild
+5. Utwórz tag:
+   v7.0.0
+6. Dodaj release na GitHubie.
+7. Jako asset dodaj:
+   enigma2-plugin-extensions-iptvdream_7.0.0_all.ipk
+8. Do opisu release wklej RELEASE_BODY_PL.md.

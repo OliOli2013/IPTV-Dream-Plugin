@@ -1,50 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <setupxml>
     <plugin
-        key="IPTVDreamV6"
-        name="IPTV Dream v6.6.7"
+        key="IPTVDreamV7"
+        name="IPTV Dream v7.0.0"
         description="Wtyczka IPTV dla Enigma2 - M3U / Xtream / MAC / EPG / Pikony / WebIF"
-        author="IPTV Dream Team"
-        version="6.6.7"
+        author="Paweł Pawełek"
+        version="7.0.0"
         icon="plugin.png"
         type="1"
-        namespace="iptv_dream_v6"
+        namespace="iptv_dream_v7"
     >
         <labels>
             <![CDATA[
-                IPTV Dream v6.6.7
+                IPTV Dream v7.0.0
 
-                Najważniejsze funkcje:
+                Funkcje:
                 • M3U z URL i pliku
                 • Xtream Codes
-                • Portale MAC / Stalker, również kategorie ADULT / XXX
+                • MAC / Stalker / MAG / eStalker
+                • Ulubione i grupy
                 • Eksport do bukietów Enigma2
-                • EPG Import + pikony według mechanizmów zgodnych z TvMad
+                • EPG Import i pikony
                 • WebIF na porcie 9999
-                • Języki: Polski, English, Deutsch, Español, العربية
+                • Języki: Polski, English, Deutsch, Español, العربية, Русский
 
-                Zmiany w 6.6.7:
-                • Przebudowane mapowanie EPG i piconów: normalizacja nazw, aliasy i warianty service-ref
-                • Generowanie plików /etc/epgimport/iptvdream.channels.xml oraz iptvdream.sources.xml
-                • Lepsze przypisywanie istniejących picon z /usr/share/enigma2/picon i nośników USB/HDD
-                • Dodany wybór języka w menu + automatyczny język systemu, fallback do English
-                • Dodany język niemiecki, arabski i hiszpański
-                • Poprawione pobieranie kanałów dla dorosłych z MAC Stalker
-                • Dodane logo autora w ekranie głównym
+                Zmiany w 7.0.0:
+                • Przebudowany loader M3U
+                • Większa zgodność z serwerami, które zwracają błędny Content-Type
+                • Lepsza obsługa HTTP 884, RemoteDisconnected, timeoutów i HTML zamiast M3U
+                • Odświeżony parser M3U z obsługą EXTGRP, tvg-id, tvg-logo i group-title
+                • Szybki eksport bukietów bez ciężkich operacji EPG/Picon w tym samym kroku
+                • Stabilniejsze referencje usług IPTV dla EPG i picon
+                • Bezpieczniejszy zapis plików bukietów i bouquets.tv
             ]]>
         </labels>
         <prerequisites>
             <![CDATA[
                 Wymagania:
-                • Enigma2 (OpenPLi, Black Hole, OpenATV itp.)
+                • Enigma2
                 • Python 3
                 • python3-requests
                 • python3-twisted
+                • python3-twisted-web
                 • Połączenie internetowe
             ]]>
         </prerequisites>
         <attributes>
-            <attribute name="version" value="6.6.7" />
+            <attribute name="version" value="7.0.0" />
             <attribute name="api_version" value="1.0" />
             <attribute name="plugin_type" value="iptv" />
             <attribute name="category" value="multimedia" />

@@ -1,627 +1,611 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v6.5 - MODUŁ ŁADOWANIA PLAYLIST
-- Ultra-szybkie ładowanie M3U
-- Streamingowe parsowanie
-- Inteligentne cache'owanie
-- Wielowątkowe pobieranie
-- Progresywne ładowanie
-"""
+"""IPTV Dream v7.0.0 - robust playlist loader.
 
-import os, re, requests, time, hashlib, json, threading, gzip, io
-from twisted.internet import reactor
+Rebuilt for provider compatibility:
+- accepts valid M3U even when server sends wrong Content-Type (text/html),
+- tries a small, deterministic set of headers similar to common IPTV tools,
+- never loops endlessly,
+- uses stale cache only as emergency fallback,
+- parses M3U attributes safely with quoted commas and EXTGRP support.
+"""
+from __future__ import absolute_import, print_function
+
+import os
+import re
+import time
+import json
+import gzip
+import hashlib
+import requests
+
+try:
+    from twisted.internet import reactor
+except Exception:
+    reactor = None
+
 from .config_manager import ConfigManager
-from ..tools.net import http_get, NetError
+from ..tools.net import http_get, NetError, response_info, DEFAULT_HEADERS
 from ..tools.logger import get_logger, mask_sensitive
 
-class PlaylistLoader:
-    """Zaawansowany ładowacz playlist z funkcjami optymalizacji."""
-    
+CACHE_DIR = "/tmp/iptvdream_cache"
+DEFAULT_CONFIG = "/etc/enigma2/iptvdream_v6_config.json"
+
+UA_DESKTOP = DEFAULT_HEADERS.get('User-Agent')
+UA_MAG = 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 4 rev: 1812 Mobile Safari/533.3'
+UA_VLC = 'VLC/3.0.20 LibVLC/3.0.20'
+UA_IPTV = 'Mozilla/5.0 IPTV-Dream/7.0.0 Enigma2'
+
+HTML_MARKERS = (
+    '<html', '<!doctype html', '<body', '<head', 'cloudflare', 'captcha',
+    'access denied', 'forbidden', 'login', 'sign in', 'just a moment',
+)
+
+
+class PlaylistLoader(object):
+    """M3U/Xtream playlist loading and parsing."""
+
     def __init__(self):
-        self.config = ConfigManager("/etc/enigma2/iptvdream_v6_config.json")
-        self.cache_dir = "/tmp/iptvdream_cache"
+        self.config = ConfigManager(DEFAULT_CONFIG)
+        self.cache_dir = CACHE_DIR
         self.session = requests.Session()
-        # logger + network settings
-        self.log = get_logger("IPTVDream.Playlist", log_file=self.config.get("log_file", "/tmp/iptvdream.log"), debug=bool(self.config.get("debug", False)))
-        # Streaming M3U bywa wolne; read timeout 30s powoduje fałszywe "Read timed out".
-        # Jeśli użytkownik ma stary config z niskim net_timeout_read, podbijamy go do bezpiecznej wartości.
+        self.debug = bool(self.config.get('debug', False))
+        self.log_file = self.config.get('log_file', '/tmp/iptvdream.log')
+        self.log = get_logger('IPTVDream.Playlist', log_file=self.log_file, debug=self.debug)
         try:
-            ct = int(self.config.get("net_timeout_connect", 10))
-        except Exception:
-            ct = 10
-        try:
-            rt = int(self.config.get("net_timeout_read", 180))
-        except Exception:
-            rt = 180
-        if rt < 90:
-            rt = 180
-        if ct < 3:
-            ct = 3
-        self.net_timeout = (ct, rt)
-        self.net_retries = int(self.config.get("net_retries", 2))
-        self.net_backoff = float(self.config.get("net_backoff", 0.8))
-        self.ssl_verify = bool(self.config.get("ssl_verify", False))
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'close',
-            'Cache-Control': 'no-cache'
-        })
-        
-        # logger / network tuning
-        self.debug = bool(self.config.get("debug", False))
-        self.log_file = self.config.get("log_file", "/tmp/iptvdream.log")
-        self.logger = get_logger("IPTVDream.Playlist", log_file=self.log_file, debug=self.debug)
-
-        # Upewnij się, że katalog cache istnieje
-        os.makedirs(self.cache_dir, exist_ok=True)
-
-
-    def _meta_path(self, cache_key):
-        return os.path.join(self.cache_dir, f"{cache_key}.meta.json")
-
-    def _read_meta(self, cache_key):
-        try:
-            mp = self._meta_path(cache_key)
-            if os.path.exists(mp):
-                with open(mp, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            os.makedirs(self.cache_dir, exist_ok=True)
         except Exception:
             pass
-        return {}
 
-    def _write_meta(self, cache_key, meta):
+        self.session.headers.update(DEFAULT_HEADERS)
         try:
-            mp = self._meta_path(cache_key)
-            with open(mp, 'w', encoding='utf-8') as f:
-                json.dump(meta, f, indent=2, ensure_ascii=False)
+            ct = int(self.config.get('net_timeout_connect', 8))
         except Exception:
-            pass
-    def get_cache_key(self, url):
-        """Generuje klucz cache dla URL."""
-        return hashlib.md5(url.encode('utf-8')).hexdigest()
+            ct = 8
+        try:
+            rt = int(self.config.get('net_timeout_read', 90))
+        except Exception:
+            rt = 90
+        self.net_timeout = (max(3, ct), max(30, rt))
+        self.net_retries = int(self.config.get('net_retries', 1))
+        self.net_backoff = float(self.config.get('net_backoff', 0.7))
+        self.ssl_verify = bool(self.config.get('ssl_verify', False))
+
+    # ---------- cache ----------
+    def get_cache_key(self, value):
+        return hashlib.md5((value or '').encode('utf-8', 'ignore')).hexdigest()
 
     def _cache_key_input(self, url, headers=None):
-        """Stable cache-key material for a URL + optional headers.
-
-        Some providers require headers (UA/Referer). We include them in the cache-key only
-        when explicitly provided, without breaking older call sites.
-        """
+        parts = [url or '']
         try:
-            if headers and isinstance(headers, dict):
-                # only include a small subset to avoid cache explosion
-                keys = [k for k in headers.keys() if k and str(k).lower() in ("user-agent", "referer", "origin")]
-                if keys:
-                    sig = "&".join(["%s=%s" % (k, headers.get(k, "")) for k in sorted(keys)])
-                    return "%s|%s" % (url, sig)
+            for k in ('User-Agent', 'Referer', 'Origin'):
+                v = (headers or {}).get(k)
+                if v:
+                    parts.append('%s=%s' % (k, v))
         except Exception:
             pass
-        return url
+        return '|'.join(parts)
 
-    def is_cache_valid(self, cache_file, max_age=3600):
-        """Sprawdza czy cache jest ważny."""
-        if not os.path.exists(cache_file):
-            return False
-        return (time.time() - os.path.getmtime(cache_file)) < max_age
+    def _paths(self, url, headers=None):
+        key = self.get_cache_key(self._cache_key_input(url, headers=headers))
+        return key, os.path.join(self.cache_dir, key + '.m3u'), os.path.join(self.cache_dir, key + '.meta.json')
 
-    def get_cached_content(self, url, headers=None):
-        """Pobiera zawartość z cache jeśli dostępna."""
-        cache_key = self.get_cache_key(self._cache_key_input(url, headers=headers))
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.m3u")
-        
-        if self.is_cache_valid(cache_file):
-            try:
-                with open(cache_file, 'rb') as f:
-                    return f.read()
-            except:
-                pass
-        return None
-
-    def cache_content(self, url, content, meta=None, headers=None):
-        """Zapisuje zawartość do cache (opcjonalnie z metadanymi HTTP)."""
-        cache_key = self.get_cache_key(self._cache_key_input(url, headers=headers))
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.m3u")
-        meta_file  = os.path.join(self.cache_dir, f"{cache_key}.meta.json")
-
+    def _read_meta_file(self, path):
         try:
-            with open(cache_file, 'wb') as f:
-                f.write(content)
-        except Exception:
-            pass
-
-        if meta:
-            try:
-                with open(meta_file, 'w') as f:
-                    json.dump(meta, f, indent=2)
-            except Exception:
-                pass
-
-    def get_cached_metadata(self, url, headers=None):
-        """Returns cached HTTP metadata (ETag/Last-Modified) if present."""
-        try:
-            cache_key = self.get_cache_key(self._cache_key_input(url, headers=headers))
-            meta_file = os.path.join(self.cache_dir, f"{cache_key}.meta.json")
-            if os.path.exists(meta_file):
-                with open(meta_file, 'r') as f:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception:
             pass
         return {}
 
-    def _read_cache_file_any_age(self, cache_file):
-        """Return cached playlist even if it is stale; used only as emergency fallback."""
+    def _write_meta_file(self, path, meta):
         try:
-            if cache_file and os.path.exists(cache_file) and os.path.getsize(cache_file) > 0:
-                with open(cache_file, 'rb') as f:
-                    return f.read()
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(meta or {}, f, indent=2, ensure_ascii=False)
         except Exception:
             pass
-        return None
 
-    def _friendly_m3u_error(self, err):
+    def _read_cache(self, cache_file, max_age=None):
+        try:
+            if not cache_file or not os.path.exists(cache_file) or os.path.getsize(cache_file) <= 0:
+                return None
+            if max_age is not None and (time.time() - os.path.getmtime(cache_file)) > int(max_age):
+                return None
+            with open(cache_file, 'rb') as f:
+                return f.read()
+        except Exception:
+            return None
+
+    def is_cache_valid(self, cache_file, max_age=3600):
+        return self._read_cache(cache_file, max_age=max_age) is not None
+
+    def get_cached_content(self, url, headers=None):
+        _key, cache_file, _meta = self._paths(url, headers=headers)
+        return self._read_cache(cache_file, max_age=int(self.config.get('cache_max_age', 3600)))
+
+    def get_cached_metadata(self, url, headers=None):
+        _key, _cache, meta = self._paths(url, headers=headers)
+        return self._read_meta_file(meta)
+
+    def cache_content(self, url, content, meta=None, headers=None):
+        _key, cache_file, meta_file = self._paths(url, headers=headers)
+        try:
+            with open(cache_file, 'wb') as f:
+                f.write(content or b'')
+            if meta:
+                self._write_meta_file(meta_file, meta)
+        except Exception:
+            pass
+
+    def _read_cache_file_any_age(self, cache_file):
+        return self._read_cache(cache_file, max_age=None)
+
+    def _meta_path(self, cache_key):
+        return os.path.join(self.cache_dir, cache_key + '.meta.json')
+
+    def _read_meta(self, cache_key):
+        return self._read_meta_file(self._meta_path(cache_key))
+
+    def _write_meta(self, cache_key, meta):
+        return self._write_meta_file(self._meta_path(cache_key), meta)
+
+    # ---------- content detection ----------
+    def _decode_for_probe(self, data, limit=8192):
+        try:
+            if isinstance(data, (bytes, bytearray)):
+                raw = data[:limit]
+                if raw[:2] == b'\x1f\x8b':
+                    try:
+                        raw = gzip.decompress(data)[:limit]
+                    except Exception:
+                        pass
+                return raw.decode('utf-8', 'ignore')
+            return str(data or '')[:limit]
+        except Exception:
+            return ''
+
+    def _maybe_decompress(self, data):
+        try:
+            if isinstance(data, (bytes, bytearray)) and data[:2] == b'\x1f\x8b':
+                return gzip.decompress(data)
+        except Exception:
+            pass
+        return data
+
+    def _is_m3u_bytes(self, data):
+        sample = self._decode_for_probe(data, limit=65536).lstrip('\ufeff\r\n\t ')
+        low = sample.lower()
+        if low.startswith('#extm3u'):
+            return True
+        # Some providers omit the first line but still return a valid list.
+        return ('#extinf' in low and ('http://' in low or 'https://' in low or 'rtmp://' in low or 'rtsp://' in low))
+
+    def _is_html_bytes(self, data):
+        sample = self._decode_for_probe(data).lstrip('\ufeff\r\n\t ').lower()
+        if not sample:
+            return False
+        if self._is_m3u_bytes(data):
+            return False
+        return any(x in sample for x in HTML_MARKERS)
+
+    def _friendly_m3u_error(self, err, last_response=None):
         s = str(err or '')
         low = s.lower()
-        if 'net-http-884' in low or 'http 884' in low:
-            return ("Serwer IPTV odrzucił pobranie playlisty (HTTP 884). "
-                    "To niestandardowy kod po stronie dostawcy/panelu: zwykle wygasły lub błędny link, "
-                    "blokada IP, limit połączeń albo wymagany User-Agent/Referer. "
-                    "Sprawdź link M3U w przeglądarce/VLC albo dopisz nagłówki w formacie: "
-                    "URL|User-Agent=...&Referer=...")
-        if 'net-aborted' in low or 'remotedisconnected' in low or 'remote end closed connection' in low or 'connection aborted' in low:
-            return ("Serwer zamknął połączenie podczas pobierania playlisty. "
-                    "Najczęściej oznacza blokadę po stronie dostawcy, przeciążony panel, limit aktywnych połączeń "
-                    "albo wymagany inny User-Agent/Referer. Wtyczka ponowiła próbę z bezpiecznym Connection: close.")
-        if 'net-timeout' in low or 'timeout' in low:
-            return "Timeout podczas pobierania playlisty. Serwer odpowiada za wolno albo lista jest bardzo duża. Spróbuj ponownie później lub zwiększ timeout w konfiguracji."
-        if 'net-http-401' in low or 'net-http-403' in low:
-            return "Serwer odrzucił autoryzację playlisty (401/403). Sprawdź login/hasło, ważność konta oraz ewentualną blokadę IP."
-        if 'net-http-404' in low:
-            return "Nie znaleziono playlisty (404). Link M3U jest błędny albo został zmieniony przez dostawcę."
-        if 'html' in low and 'm3u' in low:
-            return "Serwer zwrócił stronę HTML zamiast playlisty M3U. To zwykle przekierowanie, Cloudflare/login panel albo błędny link."
-        return s
+        if last_response is not None:
+            try:
+                info = response_info(last_response)
+                sc = int(getattr(last_response, 'status_code', 0) or 0)
+                ctype = (last_response.headers.get('content-type', '') or '').split(';', 1)[0]
+                if sc == 884:
+                    return ("Serwer zwrócił HTTP 884 (%s). To niestandardowa odpowiedź panelu IPTV: zwykle blokada IP, limit połączeń, "
+                            "wymagany User-Agent/Referer albo link nie jest bezpośrednią playlistą M3U. %s" % (ctype or 'unknown type', info))
+                if ctype == 'text/html' and self._is_html_bytes(last_response.content):
+                    return "Serwer zwrócił stronę HTML zamiast listy M3U. Możliwa blokada, Cloudflare, login panel albo przekierowanie. %s" % info
+            except Exception:
+                pass
+        if '884' in low:
+            return "Serwer IPTV zwrócił HTTP 884. Sprawdź konto, blokadę IP, limit połączeń oraz wymagany User-Agent/Referer."
+        if 'timeout' in low:
+            return "Timeout podczas pobierania playlisty. Serwer odpowiada za wolno albo lista jest bardzo duża."
+        if 'remote' in low or 'connection aborted' in low or 'connection reset' in low or 'net-aborted' in low:
+            return "Serwer zamknął połączenie podczas pobierania playlisty. Możliwa blokada, przeciążony panel albo limit połączeń."
+        if '401' in low or '403' in low:
+            return "Serwer odrzucił autoryzację playlisty (401/403). Sprawdź login/hasło, ważność konta i blokadę IP."
+        if '404' in low:
+            return "Nie znaleziono playlisty (404). Link M3U jest błędny albo zmieniony przez dostawcę."
+        return s[:240]
 
-    def _looks_like_wrong_m3u_response(self, data):
-        """Detect common HTML/portal/error responses saved under a M3U URL."""
-        try:
-            if data is None:
-                return False
-            sample = data[:4096] if isinstance(data, (bytes, bytearray)) else str(data)[:4096]
-            if not isinstance(sample, str):
-                sample = sample.decode('utf-8', 'ignore')
-            t = sample.lstrip().lower()
-            if not t:
-                return False
-            if '#extinf' in t or '#extm3u' in t:
-                return False
-            bad_markers = ('<html', '<!doctype html', '<body', 'cloudflare', 'access denied', 'forbidden', 'login', 'captcha')
-            return any(x in t for x in bad_markers)
-        except Exception:
-            return False
+    def _header_variants(self, headers=None, url=''):
+        variants = []
+        base = dict(headers or {})
+        if base:
+            variants.append(base)
+        # desktop/browser style
+        variants.append({'User-Agent': UA_DESKTOP, 'Accept': '*/*', 'Connection': 'close'})
+        # MAG/eStalker style, useful for providers reusing MAG guards for M3U too
+        variants.append({'User-Agent': UA_MAG, 'Accept': '*/*', 'Connection': 'close'})
+        # VLC style; many providers allow this when browsers are blocked
+        variants.append({'User-Agent': UA_VLC, 'Accept': '*/*', 'Connection': 'close'})
+        variants.append({'User-Agent': UA_IPTV, 'Accept': '*/*', 'Connection': 'close'})
+        # Preserve Referer/Origin supplied by the user for every variant.
+        out, seen = [], set()
+        for h in variants:
+            nh = dict(h)
+            try:
+                for k in ('Referer', 'Origin'):
+                    if (headers or {}).get(k) and not nh.get(k):
+                        nh[k] = headers.get(k)
+            except Exception:
+                pass
+            sig = json.dumps(nh, sort_keys=True)
+            if sig not in seen:
+                seen.add(sig)
+                out.append(nh)
+        return out[:4]
 
-
+    # ---------- download ----------
     def load_m3u_url(self, url, progress_callback=None, headers=None):
-        """Streaming M3U download with cache, conditional GET, timeouts and retries."""
-        cache_key = self.get_cache_key(self._cache_key_input(url, headers=headers))
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.m3u")
+        """Download M3U with compatibility fallbacks.
 
-        def _cb(pct, msg):
+        Returns raw bytes. The caller then parses them into channel dicts.
+        """
+        url = (url or '').strip()
+        if not url:
+            raise Exception('M3U load error: empty URL')
+        cache_key, cache_file, meta_file = self._paths(url, headers=headers)
+
+        def cb(pct, msg):
             try:
                 if progress_callback:
-                    reactor.callFromThread(progress_callback, pct, msg)
+                    if reactor:
+                        reactor.callFromThread(progress_callback, int(pct), msg)
+                    else:
+                        progress_callback(int(pct), msg)
             except Exception:
                 pass
 
-        # 1) If cache is valid, attempt conditional GET (ETag / Last-Modified)
-        meta = self._read_meta(cache_key)
-        cached_ok = self.is_cache_valid(cache_file, max_age=int(self.config.get("cache_max_age", 3600)))
-        if cached_ok:
-            cond_headers = {}
-            etag = meta.get("etag")
-            last_mod = meta.get("last_modified")
-            if etag:
-                cond_headers["If-None-Match"] = etag
-            if last_mod:
-                cond_headers["If-Modified-Since"] = last_mod
+        cached_fresh = self._read_cache(cache_file, max_age=int(self.config.get('cache_max_age', 3600)))
+        cached_any = self._read_cache(cache_file, max_age=None)
+        meta = self._read_meta_file(meta_file)
+        last_exc = None
+        last_resp = None
 
-            if cond_headers:
-                try:
-                    _cb(5, "Checking updates..." if self.config.get("language") == "en" else "Sprawdzanie zmian...")
-                    r = http_get(
-                        url,
-                        session=self.session,
-                        headers=dict((headers or {}), **cond_headers) if headers else cond_headers,
-                        stream=False,
-                        verify=self.ssl_verify,
-                        timeout=self.net_timeout,
-                        retries=self.net_retries,
-                        backoff=self.net_backoff,
-                        debug=bool(self.config.get("debug", False)),
-                        log_file=self.config.get("log_file", "/tmp/iptvdream.log"),
-                    )
-                    if getattr(r, "status_code", 200) == 304:
-                        _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
-                        with open(cache_file, 'rb') as f:
-                            return f.read()
-                except Exception as e:
-                    # On network issues, fall back to cache
-                    self.log.debug("Conditional GET failed, using cache: %s", mask_sensitive(e))
-                    _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
+        header_variants = self._header_variants(headers=headers, url=url)
+        for idx, h in enumerate(header_variants):
+            try:
+                pct = 5 + idx * 15
+                cb(pct, 'Pobieranie M3U (%d/%d)' % (idx + 1, len(header_variants)))
+                req_headers = dict(h)
+                if cached_fresh:
                     try:
-                        with open(cache_file, 'rb') as f:
-                            return f.read()
+                        if meta.get('etag'):
+                            req_headers['If-None-Match'] = meta.get('etag')
+                        if meta.get('last_modified'):
+                            req_headers['If-Modified-Since'] = meta.get('last_modified')
                     except Exception:
                         pass
 
-        # 2) No valid cache or cache disabled -> full download (stream)
-        try:
-            _cb(1, "Downloading..." if self.config.get("language") == "en" else "Pobieranie...")
-            try:
-                r = http_get(
+                resp = http_get(
                     url,
                     session=self.session,
-                    headers=headers,
-                    stream=True,
+                    headers=req_headers,
+                    stream=False,
                     verify=self.ssl_verify,
                     timeout=self.net_timeout,
                     retries=self.net_retries,
                     backoff=self.net_backoff,
-                    debug=bool(self.config.get("debug", False)),
-                    log_file=self.config.get("log_file", "/tmp/iptvdream.log"),
+                    debug=self.debug,
+                    log_file=self.log_file,
+                    allow_statuses=[304, 400, 401, 403, 404, 429, 500, 502, 503, 504, 884],
+                    raise_for_status=False,
                 )
+                last_resp = resp
+                status = int(getattr(resp, 'status_code', 0) or 0)
+                if status == 304 and cached_fresh:
+                    cb(100, 'Z cache')
+                    return cached_fresh
+
+                content = self._maybe_decompress(resp.content or b'')
+                if self._is_m3u_bytes(content):
+                    self.cache_content(url, content, meta={
+                        'url': url,
+                        'saved_at': time.time(),
+                        'size': len(content),
+                        'etag': resp.headers.get('ETag', ''),
+                        'last_modified': resp.headers.get('Last-Modified', ''),
+                        'status_code': status,
+                        'content_type': resp.headers.get('content-type', ''),
+                    }, headers=headers)
+                    cb(100, 'Gotowe')
+                    return content
+
+                # A wrong body is not immediately fatal: try next header variant.
+                if status >= 400 or self._is_html_bytes(content):
+                    last_exc = Exception(self._friendly_m3u_error('bad response', last_response=resp))
+                    self.log.warning('M3U variant rejected: %s', mask_sensitive(last_exc))
+                    continue
+
+                # Unknown content. Some panels return plain text without #EXTM3U.
+                text_probe = self._decode_for_probe(content, limit=2048).strip()
+                if text_probe and ('://' in text_probe) and not self._is_html_bytes(content):
+                    self.cache_content(url, content, headers=headers)
+                    cb(100, 'Gotowe')
+                    return content
+
+                last_exc = Exception(self._friendly_m3u_error('empty or unsupported response', last_response=resp))
             except Exception as e:
-                cached = self._read_cache_file_any_age(cache_file)
-                if cached:
-                    self.log.warning("M3U download failed, using stale cache: %s", mask_sensitive(e))
-                    _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
-                    return cached
-                raise Exception(self._friendly_m3u_error(e))
+                last_exc = e
+                self.log.warning('M3U load attempt failed: %s', mask_sensitive(e))
+                continue
 
-            total_size = int(r.headers.get('content-length', 0) or 0)
-            content = io.BytesIO()
-            chunk_size = 8192
-            downloaded = 0
-
-            try:
-                for chunk in r.iter_content(chunk_size=chunk_size):
-                    if not chunk:
-                        continue
-                    content.write(chunk)
-                    downloaded += len(chunk)
-                    if progress_callback:
-                        if total_size > 0:
-                            progress = min(99, (downloaded / float(total_size)) * 100.0)
-                            _cb(progress, "Downloaded: %.1f KB" % (downloaded/1024.0) if self.config.get("language") == "en" else "Pobrano: %.1f KB" % (downloaded/1024.0))
-                        else:
-                            # chunked/unknown size: show activity every ~512KB
-                            if downloaded % (512 * 1024) < chunk_size:
-                                _cb(20, "Downloaded: %.1f MB" % (downloaded/1024.0/1024.0) if self.config.get("language") == "en" else "Pobrano: %.1f MB" % (downloaded/1024.0/1024.0))
-            except Exception as e:
-                # If the provider breaks the stream mid-download, fall back to any existing cache.
-                cached = self._read_cache_file_any_age(cache_file)
-                if cached:
-                    self.log.warning("M3U stream failed, using stale cache: %s", mask_sensitive(e))
-                    _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
-                    return cached
-                raise Exception(self._friendly_m3u_error(e))
-
-            content_data = content.getvalue()
-            if self._looks_like_wrong_m3u_response(content_data):
-                cached = self._read_cache_file_any_age(cache_file)
-                if cached:
-                    self.log.warning("Server returned HTML/not-M3U, using stale cache")
-                    _cb(100, "Loaded from cache" if self.config.get("language") == "en" else "Ładowanie z cache...")
-                    return cached
-                raise Exception("Serwer zwrócił HTML/stronę błędu zamiast playlisty M3U. Sprawdź, czy URL jest bezpośrednim linkiem do playlisty, a nie stroną logowania/panelem.")
-
-            # Save cache + metadata
-            try:
-                self.cache_content(url, content_data, headers=headers)
-                meta = {
-                    "url": url,
-                    "saved_at": time.time(),
-                    "size": len(content_data),
-                    "etag": r.headers.get("ETag", ""),
-                    "last_modified": r.headers.get("Last-Modified", ""),
-                }
-                self._write_meta(cache_key, meta)
-            except Exception:
-                pass
-
-            _cb(100, "Done" if self.config.get("language") == "en" else "Gotowe")
-            return content_data
-
-        except Exception as e:
-            raise Exception("M3U load error: %s" % self._friendly_m3u_error(e))
+        if cached_any:
+            self.log.warning('M3U all attempts failed, using stale cache: %s', mask_sensitive(last_exc))
+            cb(100, 'Stary cache')
+            return cached_any
+        raise Exception('M3U load error: %s' % self._friendly_m3u_error(last_exc, last_response=last_resp))
 
     def load_m3u_file(self, file_path):
-        """Ładuje M3U z pliku."""
         try:
             with open(file_path, 'rb') as f:
-                return f.read()
+                data = f.read()
+            return self._maybe_decompress(data)
         except Exception as e:
-            raise Exception(f"Błąd odczytu pliku: {e}")
+            raise Exception('Błąd odczytu pliku: %s' % e)
 
-    def parse_m3u_content(self, content, progress_callback=None):
-        """
-        NOWE: Streamingowe parsowanie M3U!
-        Przetwarza zawartość w czasie rzeczywistym.
-        """
+    # ---------- parser ----------
+    def _split_extinf(self, line):
+        s = (line or '').strip()
+        if not s.upper().startswith('#EXTINF:'):
+            return '', ''
+        s = s[len('#EXTINF:'):]
+        in_q = False
+        esc = False
+        for i, ch in enumerate(s):
+            if esc:
+                esc = False
+                continue
+            if ch == '\\':
+                esc = True
+                continue
+            if ch == '"':
+                in_q = not in_q
+            elif ch == ',' and not in_q:
+                return s[:i], s[i + 1:]
+        return s, ''
+
+    def _parse_attrs(self, attrs):
+        out = {}
+        try:
+            for m in re.finditer(r'([A-Za-z0-9_][A-Za-z0-9_\-]*)\s*=\s*"([^"]*)"', attrs or ''):
+                out[(m.group(1) or '').strip().lower()] = (m.group(2) or '').strip()
+            for m in re.finditer(r'([A-Za-z0-9_][A-Za-z0-9_\-]*)\s*=\s*([^\s,]+)', attrs or ''):
+                k = (m.group(1) or '').strip().lower()
+                if k not in out:
+                    out[k] = (m.group(2) or '').strip().strip('"')
+        except Exception:
+            pass
+        return out
+
+    def _clean_title(self, value):
+        v = (value or '').replace('\r', ' ').replace('\n', ' ').strip()
+        v = re.sub(r'\s+', ' ', v)
+        return v or 'No Name'
+
+    def _kind_flags(self, title, group, url):
+        text = ('%s %s %s' % (title or '', group or '', url or '')).lower()
+        is_adult = bool(re.search(r'(^|[\s_\-\|/])(xxx|adult|porno|porn|erotic|sex|18\+|\+18)([\s_\-\|/]|$)', text))
+        is_vod = ('/movie/' in text or '/series/' in text or bool(re.search(r'(^|[\s_\-\|/])(vod|movie|movies|film|films|serial|series)([\s_\-\|/]|$)', text)) or bool(re.search(r'\.(mp4|mkv|avi|mov|wmv|flv|m4v)(\?|$)', text)))
+        return is_adult, is_vod
+
+    def parse_m3u_content(self, content, progress_callback=None, content_filter=None):
         channels = []
-        
         try:
-            # Dekodowanie z obsługą błędów
-            try:
-                text = content.decode("utf-8", "ignore")
-            except:
-                text = str(content)
-            
-            # Regexy - skompilowane dla lepszej wydajności
-            extinf_pattern = re.compile(r'#EXTINF:([^,]*),(.*)', re.IGNORECASE)
-            attr_pattern = re.compile(r'([a-zA-Z0-9_-]+)\s*=\s*("[^"]*"|[^,;\s]+)')
-            # Uwaga: group_pattern jest też używany w _parse_extinf().
-            # Przekazujemy go jawnie, żeby uniknąć NameError "group_pattern is not defined".
-            group_pattern = re.compile(r'^\[([^\]]+)\]')
-            adult_pattern = re.compile(r'(xxx|adult|porn|sex|erotic|18\+|mature)', re.IGNORECASE)
-            vod_pattern = re.compile(r'(vod|movie|film|video|series|serial)', re.IGNORECASE)
-            
-            lines = text.splitlines()
-            current_entry = {}
-            total_lines = len(lines)
-            processed = 0
-            
-            for line in lines:
-                processed += 1
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # #EXTINF
-                if line.startswith("#EXTINF"):
-                    current_entry = self._parse_extinf(line, extinf_pattern, attr_pattern, group_pattern)
-                    
-                # #EXTGRP
-                elif line.startswith("#EXTGRP:"):
-                    grp_name = line.split(":", 1)[1].strip()
-                    if grp_name:
-                        current_entry["group"] = grp_name
-                        
-                # URL
-                elif "://" in line and not line.startswith("#"):
-                    url = line.strip()
-                    
-                    if not current_entry:
-                        name = url.split('/')[-1]
-                        name = re.sub(r'\.(ts|m3u8|mp4|mkv)$', '', name, flags=re.IGNORECASE)
-                        current_entry = {"title": name}
-                    
-                    # Określenie grupy
-                    if "group" not in current_entry or not current_entry["group"]:
-                        title_lower = current_entry.get("title", "").lower()
-                        
-                        if adult_pattern.search(title_lower):
-                            current_entry["group"] = "XXX"
-                        elif vod_pattern.search(title_lower):
-                            current_entry["group"] = "VOD"
-                        elif '/movie/' in url.lower() or '/series/' in url.lower():
-                            current_entry["group"] = "VOD"
-                        else:
-                            current_entry["group"] = "Inne"
-                    
-                    # Tworzenie kanału
-                    channel = {
-                        "title": current_entry.get("title", "No Name"),
-                        "url": url,
-                        "group": current_entry.get("group", "Inne"),
-                        "logo": current_entry.get("logo", ""),
-                        "epg_id": current_entry.get("epg_id", "")
-                    }
-                    
-                    channels.append(channel)
-                    current_entry = {}
-                    
-                    # Aktualizuj progress co 100 kanałów
-                    if progress_callback and len(channels) % 100 == 0:
-                        progress = min(100, (processed / total_lines) * 100)
-                        reactor.callFromThread(progress_callback, progress, 
-                                             f"Przetwarzanie: {len(channels)} kanałów")
-            
-            return channels
-            
-        except Exception as e:
-            raise Exception(f"Błąd parsowania M3U: {e}")
+            if isinstance(content, (bytes, bytearray)):
+                text = self._maybe_decompress(content).decode('utf-8-sig', 'ignore')
+            else:
+                text = str(content or '')
+        except Exception:
+            text = str(content or '')
 
-    def _parse_extinf(self, line, extinf_pattern, attr_pattern, group_pattern=None):
-        """Parsuje linię EXTINF."""
-        entry = {}
-        
-        # Podział na metadane i tytuł
-        if ',' in line:
-            parts = line.split(',', 1)
-            meta_part = parts[0]
-            entry["title"] = parts[1].strip() if len(parts) > 1 else "No Name"
-        else:
-            meta_part = line
-            entry["title"] = "No Name"
+        current = {}
+        pending_group = ''
+        lines = text.splitlines()
+        total = len(lines) or 1
+        next_progress = 0
 
-        # Szukanie atrybutów
-        attrs = attr_pattern.findall(meta_part)
-        for key, val in attrs:
-            clean_val = val.replace('"', '').strip()
-            key_lower = key.lower()
-            
-            if key_lower in ["group-title", "group", "category", "cat"]:
-                entry["group"] = clean_val
-            elif key_lower in ["tvg-logo", "logo"]:
-                entry["logo"] = clean_val
-            elif key_lower in ["tvg-id", "epg-id", "id"]:
-                entry["epg_id"] = clean_val
-        
-        # Jeśli brak grupy, szukaj w tytule
-        if "group" not in entry and group_pattern is not None:
-            try:
-                group_match = group_pattern.match(entry.get("title", ""))
-                if group_match:
-                    entry["group"] = group_match.group(1).strip()
-            except Exception:
-                pass
-        
-        return entry
+        def emit_progress(i):
+            nonlocal next_progress
+            if not progress_callback:
+                return
+            pct = int((float(i) / float(total)) * 100.0)
+            if pct >= next_progress:
+                next_progress += 10
+                try:
+                    if reactor:
+                        reactor.callFromThread(progress_callback, min(99, pct), 'Parsowanie %d%%' % pct)
+                    else:
+                        progress_callback(min(99, pct), 'Parsowanie %d%%' % pct)
+                except Exception:
+                    pass
 
-    def load_with_progress(self, url, progress_callback):
-        """
-        Główna funkcja ładująca z progress barem.
-        Zwraca listę kanałów.
-        """
+        for idx, raw in enumerate(lines):
+            line = (raw or '').strip()
+            if not line:
+                continue
+            if idx % 250 == 0:
+                emit_progress(idx)
+            low = line.lower()
+            if low.startswith('#extinf'):
+                attrs_raw, name_part = self._split_extinf(line)
+                attrs = self._parse_attrs(attrs_raw)
+                title = attrs.get('tvg-name') or attrs.get('name') or name_part or 'No Name'
+                group = attrs.get('group-title') or attrs.get('group') or pending_group or 'Inne'
+                logo = attrs.get('tvg-logo') or attrs.get('logo') or ''
+                epg_id = attrs.get('tvg-id') or attrs.get('epg-id') or attrs.get('channel-id') or ''
+                current = {
+                    'title': self._clean_title(title),
+                    'name': self._clean_title(title),
+                    'group': self._clean_title(group),
+                    'logo': logo,
+                    'tvg-logo': logo,
+                    'epg_id': epg_id,
+                    'tvg-id': epg_id,
+                    'tvg-name': attrs.get('tvg-name') or '',
+                    'catchup': attrs.get('catchup') or '',
+                    'catchup-source': attrs.get('catchup-source') or '',
+                    'timeshift': attrs.get('timeshift') or '',
+                }
+            elif low.startswith('#extgrp:'):
+                pending_group = self._clean_title(line.split(':', 1)[1])
+                if current:
+                    current['group'] = pending_group
+            elif line.startswith('#'):
+                continue
+            elif '://' in line:
+                url = line.strip()
+                if not current:
+                    current = {'title': 'Stream', 'name': 'Stream', 'group': pending_group or 'Inne', 'logo': '', 'tvg-logo': '', 'epg_id': '', 'tvg-id': ''}
+                title = current.get('title') or current.get('name') or 'No Name'
+                group = current.get('group') or 'Inne'
+                is_adult, is_vod = self._kind_flags(title, group, url)
+                kind = 'adult' if is_adult else ('vod' if is_vod else 'live')
+                if content_filter and content_filter not in ('all', kind):
+                    if not (content_filter == 'live' and kind == 'live'):
+                        current = {}
+                        continue
+                ch = dict(current)
+                ch['url'] = url
+                ch['title'] = self._clean_title(title)
+                ch['name'] = ch['title']
+                ch['group'] = self._clean_title(group)
+                ch['is_adult'] = is_adult
+                ch['is_vod'] = is_vod
+                if kind == 'vod':
+                    ch['type'] = 'vod'
+                channels.append(ch)
+                current = {}
+
         try:
-            # 1. Załaduj zawartość
-            content = self.load_m3u_url(url, progress_callback)
-            
-            # 2. Parsuj z progress barem
-            channels = self.parse_m3u_content(content, progress_callback)
-            
-            return channels
-            
-        except Exception as e:
-            raise e
+            if progress_callback:
+                if reactor:
+                    reactor.callFromThread(progress_callback, 100, 'Gotowe')
+                else:
+                    progress_callback(100, 'Gotowe')
+        except Exception:
+            pass
+        return channels
 
-    def get_playlist_info(self, url):
-        """Pobiera informacje o playlistie bez pełnego ładowania."""
-        try:
-            response = self.session.head(url, timeout=10)
-            info = {
-                "url": url,
-                "status_code": response.status_code,
-                "content_type": response.headers.get('content-type', 'unknown'),
-                "content_length": int(response.headers.get('content-length', 0)),
-                "last_modified": response.headers.get('last-modified', 'unknown')
-            }
-            return info
-        except:
-            return {"url": url, "status_code": 0, "error": "Nieznany"}
+    def load_with_progress(self, source_type, source_data, progress_callback=None):
+        if source_type == 'url':
+            data = self.load_m3u_url(source_data, progress_callback=progress_callback)
+            return self.parse_m3u_content(data, progress_callback=progress_callback)
+        if source_type == 'file':
+            data = self.load_m3u_file(source_data)
+            return self.parse_m3u_content(data, progress_callback=progress_callback)
+        raise Exception('Unsupported source type: %s' % source_type)
+
+    def get_playlist_info(self, playlist):
+        groups = {}
+        adult = 0
+        vod = 0
+        for ch in playlist or []:
+            g = ch.get('group') or 'Inne'
+            groups[g] = groups.get(g, 0) + 1
+            if ch.get('is_adult'):
+                adult += 1
+            if ch.get('is_vod'):
+                vod += 1
+        return {'total': len(playlist or []), 'groups': groups, 'adult': adult, 'vod': vod}
 
     def cleanup_cache(self, max_age=86400):
-        """Czyści przeterminowane pliki cache."""
+        removed = 0
         try:
-            if os.path.exists(self.cache_dir):
-                for filename in os.listdir(self.cache_dir):
-                    filepath = os.path.join(self.cache_dir, filename)
-                    if os.path.isfile(filepath):
-                        file_age = time.time() - os.path.getmtime(filepath)
-                        if file_age > max_age:
-                            os.remove(filepath)
-        except:
+            now = time.time()
+            for fn in os.listdir(self.cache_dir):
+                path = os.path.join(self.cache_dir, fn)
+                if os.path.isfile(path) and now - os.path.getmtime(path) > int(max_age):
+                    try:
+                        os.remove(path); removed += 1
+                    except Exception:
+                        pass
+        except Exception:
             pass
+        return removed
 
     def get_performance_stats(self):
-        """Zwraca statystyki wydajności."""
-        cache_files = len([f for f in os.listdir(self.cache_dir) if os.path.isfile(os.path.join(self.cache_dir, f))])
-        
-        return {
-            "Cache size": f"{cache_files} plików",
-            "Cache directory": self.cache_dir,
-            "Session active": "Tak" if self.session else "Nie",
-            "Last cleanup": "Automatyczna"
-        }
+        return {'cache_dir': self.cache_dir, 'timeout': self.net_timeout, 'retries': self.net_retries}
 
-# NOWE: Klasa pomocnicza do obsługi playlist
-class PlaylistCache:
-    """Zaawansowany cache dla playlist."""
-    
-    def __init__(self, cache_dir):
+
+class PlaylistCache(object):
+    def __init__(self, cache_dir=CACHE_DIR):
         self.cache_dir = cache_dir
-        self.cache_index = os.path.join(cache_dir, "index.json")
-        self.load_index()
-    
-    def load_index(self):
-        """Wczytuje indeks cache."""
+        self.index_file = os.path.join(cache_dir, 'index.json')
         try:
-            if os.path.exists(self.cache_index):
-                with open(self.cache_index, 'r') as f:
-                    self.index = json.load(f)
-            else:
-                self.index = {}
-        except:
-            self.index = {}
-    
-    def save_index(self):
-        """Zapisuje indeks cache."""
-        try:
-            with open(self.cache_index, 'w') as f:
-                json.dump(self.index, f, indent=2)
-        except:
+            os.makedirs(cache_dir, exist_ok=True)
+        except Exception:
             pass
-    
-    def add_to_cache(self, url, metadata):
-        """Dodaje wpis do cache."""
-        cache_key = hashlib.md5(url.encode('utf-8')).hexdigest()
-        self.index[cache_key] = {
-            "url": url,
-            "metadata": metadata,
-            "timestamp": time.time()
-        }
-        self.save_index()
-    
-    def get_from_cache(self, url):
-        """Pobiera z cache."""
-        cache_key = hashlib.md5(url.encode('utf-8')).hexdigest()
-        if cache_key in self.index:
-            entry = self.index[cache_key]
-            # Sprawdź ważność (1 godzina)
-            if time.time() - entry.get("timestamp", 0) < 3600:
-                return entry.get("metadata")
+
+    def load_index(self):
+        try:
+            with open(self.index_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def save_index(self, index):
+        try:
+            with open(self.index_file, 'w', encoding='utf-8') as f:
+                json.dump(index or {}, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception:
+            return False
+
+    def add_to_cache(self, key, data):
+        try:
+            path = os.path.join(self.cache_dir, hashlib.md5(key.encode('utf-8', 'ignore')).hexdigest() + '.bin')
+            with open(path, 'wb') as f:
+                f.write(data if isinstance(data, (bytes, bytearray)) else str(data).encode('utf-8'))
+            idx = self.load_index(); idx[key] = {'path': path, 'time': time.time()}; self.save_index(idx)
+            return path
+        except Exception:
+            return None
+
+    def get_from_cache(self, key, max_age=3600):
+        idx = self.load_index()
+        item = idx.get(key) or {}
+        path = item.get('path')
+        try:
+            if path and os.path.exists(path) and time.time() - float(item.get('time', 0)) <= max_age:
+                with open(path, 'rb') as f:
+                    return f.read()
+        except Exception:
+            pass
         return None
 
-# NOWE: Monitor wydajności
-class PerformanceMonitor:
-    """Monitoruje wydajność wtyczki."""
-    
-    def __init__(self, log_file):
-        self.log_file = log_file
-        self.stats = {
-            "total_loads": 0,
-            "total_channels": 0,
-            "total_time": 0,
-            "errors": 0
-        }
-        self.load_stats()
-    
+
+class PerformanceMonitor(object):
+    def __init__(self, stats_file='/tmp/iptvdream_stats.json'):
+        self.stats_file = stats_file
+
     def load_stats(self):
-        """Wczytuje statystyki."""
         try:
-            if os.path.exists(self.log_file):
-                with open(self.log_file, 'r') as f:
-                    self.stats = json.load(f)
-        except:
-            pass
-    
-    def save_stats(self):
-        """Zapisuje statystyki."""
+            with open(self.stats_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {'loads': []}
+
+    def save_stats(self, stats):
         try:
-            with open(self.log_file, 'w') as f:
-                json.dump(self.stats, f, indent=2)
-        except:
+            with open(self.stats_file, 'w', encoding='utf-8') as f:
+                json.dump(stats or {}, f, indent=2, ensure_ascii=False)
+        except Exception:
             pass
-    
-    def record_load(self, channel_count, load_time, error=False):
-        """Rejestruje ładowanie."""
-        self.stats["total_loads"] += 1
-        self.stats["total_channels"] += channel_count
-        self.stats["total_time"] += load_time
-        if error:
-            self.stats["errors"] += 1
-        self.save_stats()
-    
+
+    def record_load(self, source, count, seconds):
+        s = self.load_stats()
+        s.setdefault('loads', []).append({'source': source, 'count': count, 'seconds': seconds, 'time': time.time()})
+        s['loads'] = s.get('loads', [])[-50:]
+        self.save_stats(s)
+
     def get_stats(self):
-        """Zwraca statystyki."""
-        avg_time = self.stats["total_time"] / self.stats["total_loads"] if self.stats["total_loads"] > 0 else 0
-        avg_channels = self.stats["total_channels"] / self.stats["total_loads"] if self.stats["total_loads"] > 0 else 0
-        
-        return {
-            "Załadowane playlisty": self.stats["total_loads"],
-            "Kanały łącznie": self.stats["total_channels"],
-            "Błędy": self.stats["errors"],
-            "Średni czas": f"{avg_time:.1f}s",
-            "Średnio kanałów": f"{avg_channels:.0f}",
-            "Wydajność": f"{avg_channels/avg_time:.0f} kan/s" if avg_time > 0 else "N/A"
-        }
+        return self.load_stats()

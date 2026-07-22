@@ -72,15 +72,15 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "6.6.7"
+    return "7.0.0"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
 CACHE_DIR = "/tmp/iptvdream_v6_cache"
 
 DL_TIMEOUT = 90
-LOAD_TIMEOUT_DEFAULT_MS = 300000  # 5 minut (domyślnie)
-MAC_VODSERIES_TIMEOUT_MS = 14400000  # 4 godziny (VOD/Seriale z MAC; duże biblioteki)
+LOAD_TIMEOUT_DEFAULT_MS = 180000  # 3 minuty (domyślnie)
+MAC_VODSERIES_TIMEOUT_MS = 600000  # 10 minut: duże MAC VOD/Seriale, ale bez wiszenia godzinami
 LOAD_TIMEOUT_MS = LOAD_TIMEOUT_DEFAULT_MS
 WEBIF_PORT = 9999
 
@@ -136,7 +136,7 @@ def get_lan_ip():
 
 class IPTVDreamV6(Screen):
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v6.6.7">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v7.0.0">
         <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
         <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
 
@@ -1751,7 +1751,7 @@ class IPTVDreamV6(Screen):
             self.session.open(MessageBox, _("Nie wybrano kanałów do eksportu.", self.lang), MessageBox.TYPE_INFO, timeout=3)
             return
 
-        # v6.6.7: szybki eksport jak wcześniej — bez ciężkiego paska 0%, bez EPG/Picon w tej samej operacji.
+        # v7.0.0: szybki eksport jak wcześniej — bez ciężkiego paska 0%, bez EPG/Picon w tej samej operacji.
         try:
             self["progress_bar"].hide()
             self["progress_text"].hide()
