@@ -10,7 +10,37 @@ import time
 from datetime import datetime, timedelta
 
 class StatisticsManager:
-    """Menadżer statystyk oglądania"""
+    """Menadżer statystyk oglądania i wydajności ładowania."""
+
+    @staticmethod
+    def _defaults():
+        now = datetime.now().isoformat()
+        return {
+            "total_viewing_time": 0,
+            "total_channels": 0,
+            "most_watched_channels": {},
+            "daily_stats": {},
+            "hourly_stats": [0] * 24,
+            "category_stats": {},
+            "monthly_stats": {},
+            "first_use": now,
+            "last_use": now,
+            "playlist_loads": 0,
+            "playlist_channels": 0,
+            "playlist_load_time": 0.0
+        }
+
+    @classmethod
+    def _normalize(cls, data):
+        base = cls._defaults()
+        if isinstance(data, dict):
+            base.update(data)
+        if not isinstance(base.get("hourly_stats"), list) or len(base.get("hourly_stats")) != 24:
+            base["hourly_stats"] = [0] * 24
+        for key in ("most_watched_channels", "daily_stats", "category_stats", "monthly_stats"):
+            if not isinstance(base.get(key), dict):
+                base[key] = {}
+        return base
     
     def __init__(self, config_file="/etc/enigma2/iptv_dream_stats.json"):
         self.config_file = config_file
@@ -22,31 +52,42 @@ class StatisticsManager:
         }
         
     def _load_stats(self):
-        """Wczytuje statystyki z pliku"""
+        """Wczytuje i normalizuje statystyki z pliku."""
+        data = {}
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
-                    return json.load(f)
-            except:
-                pass
-        return {
-            "total_viewing_time": 0,
-            "total_channels": 0,
-            "most_watched_channels": {},
-            "daily_stats": {},
-            "hourly_stats": [0] * 24,
-            "category_stats": {},
-            "monthly_stats": {},
-            "first_use": datetime.now().isoformat(),
-            "last_use": datetime.now().isoformat()
-        }
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        return self._normalize(data)
         
     def _save_stats(self):
-        """Zapisuje statystyki do pliku"""
+        """Zapisuje statystyki atomowo."""
+        tmp = self.config_file + '.tmp'
         try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.stats, f, indent=2)
-        except:
+            parent = os.path.dirname(self.config_file)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(self.stats, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, self.config_file)
+        except Exception:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+
+    def update_stats(self, channel_count, load_time):
+        """Rejestruje udane ładowanie playlisty (API używane przez dream_v6)."""
+        try:
+            self.stats["playlist_loads"] = int(self.stats.get("playlist_loads", 0)) + 1
+            self.stats["playlist_channels"] = int(self.stats.get("playlist_channels", 0)) + int(channel_count or 0)
+            self.stats["playlist_load_time"] = float(self.stats.get("playlist_load_time", 0.0)) + float(load_time or 0.0)
+            self.stats["last_use"] = datetime.now().isoformat()
+            self._save_stats()
+        except Exception:
             pass
             
     def start_watching(self, channel):
@@ -175,7 +216,16 @@ class StatisticsManager:
         top_categories_fmt = [(norm_group(name), data) for name, data in top_categories[:5]]
         peak_hours_fmt = peak_hours[:3]
         monthly_fmt = sorted(self.stats['monthly_stats'].items(), reverse=True)[:3]
+        load_count = int(self.stats.get('playlist_loads', 0) or 0)
+        load_channels = int(self.stats.get('playlist_channels', 0) or 0)
+        load_seconds = float(self.stats.get('playlist_load_time', 0.0) or 0.0)
+        avg_load = (load_seconds / load_count) if load_count else 0.0
         return [
+            (t('📥 Ładowanie playlist', '📥 Playlist loading'), ''),
+            (t('Udane ładowania', 'Successful loads'), load_count),
+            (t('Kanały łącznie', 'Channels total'), load_channels),
+            (t('Średni czas ładowania', 'Average load time'), f"{avg_load:.1f}s"),
+            ('', ''),
             (t('📊 Podsumowanie', '📊 Summary'), ''),
             (t('Całkowity czas', 'Total time'), f"{self.stats['total_viewing_time'] / 3600:.1f} {hours_word}"),
             (t('Średnio dziennie', 'Average per day'), f"{avg_daily / 3600:.1f} {hours_word}"),
@@ -219,17 +269,7 @@ class StatisticsManager:
         
     def reset_stats(self):
         """Resetuje wszystkie statystyki"""
-        self.stats = {
-            "total_viewing_time": 0,
-            "total_channels": 0,
-            "most_watched_channels": {},
-            "daily_stats": {},
-            "hourly_stats": [0] * 24,
-            "category_stats": {},
-            "monthly_stats": {},
-            "first_use": datetime.now().isoformat(),
-            "last_use": datetime.now().isoformat()
-        }
+        self.stats = self._defaults()
         self._save_stats()
         
     def export_stats(self, format="json"):

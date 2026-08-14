@@ -1,26 +1,11 @@
 # -*- coding: utf-8 -*-
+"""Lightweight tools package for IPTV Dream.
+
+Do not eagerly import optional/runtime modules here. Importing IPTVDream.tools.net
+must not initialize Xtream/WebIF/EPG screens or fail because an unrelated module
+is unavailable on a particular Enigma2 image.
 """
-Moduł narzędzi dla wtyczki IPTV Dream v7.0.0
-"""
 
-from . import lang
-from . import mac_portal
-from . import updater
-from . import xtream_one_window
-from . import bouquet_picker
-from . import epg_picon
-from . import webif
+TOOLS_VERSION = "8.0.0"
 
-# Wersja modułu narzędzi
-TOOLS_VERSION = "7.0.0"
-
-__all__ = [
-    'lang',
-    'mac_portal', 
-    'updater',
-    'xtream_one_window',
-    'bouquet_picker',
-    'epg_picon',
-    'webif',
-    'TOOLS_VERSION'
-]
+__all__ = ['TOOLS_VERSION']

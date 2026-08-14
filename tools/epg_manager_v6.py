@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v7.0.0 - MENADŻER EPG
+IPTV Dream v8.0.0 - MENADŻER EPG
 - Rozszerzone źródła EPG (20+ źródeł)
 - Inteligentne mapowanie do kanałów satelitarnych
 - Automatyczna instalacja EPG
@@ -26,25 +26,28 @@ class EPGManager:
         self.channels_file = "/etc/epgimport/iptvdream.channels.xml"
         self.cache_dir = "/tmp/iptvdream_epg_cache"
         
-        # Upewnij się, że katalog istnieje
-        os.makedirs(self.epg_dir, exist_ok=True)
-        os.makedirs(self.cache_dir, exist_ok=True)
+        # Brak EPGImport lub read-only /etc nie może wywołać GSOD przy starcie.
+        try:
+            os.makedirs(self.epg_dir, exist_ok=True)
+        except Exception:
+            pass
+        try:
+            os.makedirs(self.cache_dir, exist_ok=True)
+        except Exception:
+            pass
         
         # Rozszerzone źródła EPG - 20+ różnych źródeł!
         self.epg_sources = [
             # POLSKA (3 źródła)
-            {"url": "http://epg.ovh/pl.xml.gz", "name": "OVH Polska", "country": "pl", "priority": 1},
+            {"url": "https://epg.ovh/pl.gz", "name": "OVH Polska", "country": "pl", "priority": 1},
             {"url": "https://iptv-epg.org/files/epg-pl.xml.gz", "name": "IPTV-EPG Polska", "country": "pl", "priority": 2},
-            {"url": "https://www.tvepg.eu/epg_data/pl.xml.gz", "name": "TV EPG Polska", "country": "pl", "priority": 3},
             
             # UK (3 źródła)
             {"url": "https://iptv-epg.org/files/epg-gb.xml.gz", "name": "IPTV-EPG UK", "country": "gb", "priority": 1},
-            {"url": "https://www.tvepg.eu/epg_data/uk.xml.gz", "name": "TV EPG UK", "country": "gb", "priority": 2},
             {"url": "https://epg.ovh/uk.xml.gz", "name": "OVH UK", "country": "gb", "priority": 3},
             
             # USA (3 źródła)
             {"url": "https://iptv-epg.org/files/epg-us.xml.gz", "name": "IPTV-EPG USA", "country": "us", "priority": 1},
-            {"url": "https://www.tvepg.eu/epg_data/us.xml.gz", "name": "TV EPG USA", "country": "us", "priority": 2},
             {"url": "https://epg.ovh/us.xml.gz", "name": "OVH USA", "country": "us", "priority": 3},
             
             # AFRYKA
@@ -57,7 +60,6 @@ class EPGManager:
             {"url": "https://iptv-epg.org/files/epg-fr.xml.gz", "name": "IPTV-EPG France", "country": "fr", "priority": 1},
             {"url": "https://iptv-epg.org/files/epg-it.xml.gz", "name": "IPTV-EPG Italy", "country": "it", "priority": 1},
             {"url": "https://iptv-epg.org/files/epg-es.xml.gz", "name": "IPTV-EPG Spain", "country": "es", "priority": 1},
-            {"url": "https://iptv-epg.org/files/epg-es.xml.gz", "name": "IPTV-EPG Spain mirror", "country": "es", "priority": 2},
             {"url": "https://iptv-epg.org/files/epg-sa.xml.gz", "name": "IPTV-EPG Saudi Arabia", "country": "ar", "priority": 1},
             {"url": "https://iptv-epg.org/files/epg-ae.xml.gz", "name": "IPTV-EPG UAE", "country": "ar", "priority": 2},
             {"url": "https://iptv-epg.org/files/epg-qa.xml.gz", "name": "IPTV-EPG Qatar", "country": "ar", "priority": 3},
@@ -66,9 +68,6 @@ class EPGManager:
             {"url": "https://iptv-epg.org/files/epg-ru.xml.gz", "name": "IPTV-EPG Russia", "country": "ru", "priority": 1},
             
             # ŚWIAT
-            {"url": "http://epg.bevy.be/bevy.xml.gz", "name": "Bevy World Mix", "country": "world", "priority": 1},
-            {"url": "https://iptvx.one/epg/epg.xml.gz", "name": "IPTVX World", "country": "world", "priority": 2},
-            {"url": "https://epg.ovh/world.xml.gz", "name": "OVH World", "country": "world", "priority": 3}
         ]
         
         # Mapowanie kanałów satelitarnych
@@ -103,7 +102,7 @@ class EPGManager:
         try:
             # Tworzenie pliku sources.xml
             content = '<?xml version="1.0" encoding="utf-8"?>\n<sources>\n'
-            content += '    <sourcecat sourcecatname="IPTV Dream v7.0.0 EPG Sources">\n'
+            content += '    <sourcecat sourcecatname="IPTV Dream v8.0.0 EPG Sources">\n'
             
             # Dodaj wszystkie źródła
             for source in self.epg_sources:

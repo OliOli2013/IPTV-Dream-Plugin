@@ -1,0 +1,43 @@
+IPTV Dream 8.0.0 - PLIKI ZMIENIONE WZGLĘDEM 7.0.1
+=================================================
+
+ZMIENIONE / PODMIANA:
+- VERSION
+- __init__.py
+- dream_v6.py
+- export_v2.py
+- core/config_manager.py
+- core/playlist_loader.py
+- tools/__init__.py
+- tools/channel_name_utils.py
+- tools/epg_manager_v6.py
+- tools/lang.py
+- tools/mac_portal.py
+- tools/net.py
+- tools/updater.py
+- tools/webif.py
+- installer.sh
+- setup.xml
+- README.md
+- CHANGELOG.txt
+- icon.png
+- plugin.png
+- pic/qrcode.png
+
+NOWE:
+- pic/iptvdream_v8_brand.png
+- enigma2-plugin-extensions-iptvdream_8.0.0_all.ipk
+- RELEASE_BODY_EN.md
+- GITHUB_REPLACE_INSTRUCTIONS.txt
+- FILES_TO_DELETE_GITHUB.txt
+- CHANGED_FILES_8.0.0.txt
+- .gitignore
+
+USUNIĘTE Z RUNTIME WZGLĘDEM 7.0.1:
+- pic/pawel_logo.png
+- pic/plugin.png
+
+WAŻNE:
+Najistotniejsze poprawki funkcjonalne są rozdzielone pomiędzy dream_v6.py, export_v2.py,
+core/playlist_loader.py, tools/channel_name_utils.py i tools/mac_portal.py. Podmiana tylko jednego
+z tych plików nie daje kompletnej wersji 8.0.0.

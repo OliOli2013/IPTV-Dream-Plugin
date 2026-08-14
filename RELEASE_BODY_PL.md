@@ -1,47 +1,42 @@
-# IPTV Dream v7.0.0 - pełna przebudowa stabilności
+# IPTV Dream v8.0.0
 
-Udostępniono nową wersję **IPTV Dream v7.0.0** dla Enigma2.
+Duża aktualizacja IPTV Dream dla Enigma2, łącząca poprawki stabilności z audytu 7.0.1 z przebudową nazw kanałów/bukietów i odświeżeniem interfejsu.
 
-Wersja 7.0.0 została przygotowana jako większa przebudowa po zgłoszeniach użytkowników dotyczących ładowania list M3U, problemów MAC/Stalker, eksportu bukietów oraz zgodności z różnymi panelami IPTV.
+## Najważniejsze zmiany
 
-## Główne zmiany
+- **Bukiety mają teraz czyste nazwy grup** — np. `MAGENTA HD`, bez nazwy playlisty, loginu czy portalu przed nazwą.
+- **Usuwane są techniczne prefiksy krajowe** z kanałów i grup, np.:
+  - `|DE| HOPE TV` → `HOPE TV`
+  - `[PL] TVP 1 HD` → `TVP 1 HD`
+  - `UK - BBC ONE FHD` → `BBC ONE FHD`
+- Czyste nazwy poprawiają dopasowanie **EPG i piconów**, a oryginalny `tvg-id` nadal ma pierwszeństwo.
+- Widoczne oznaczenia jakości `HD/FHD/UHD/4K` pozostają w nazwach kanałów i bukietów.
+- Poprawiono normalizację nazw m.in. dla **CANAL+**, **TV PULS**, **CHANNEL 4** i **KANAL D**.
+- Nowa szata graficzna w stylu **AIO Panel**: ciemny granat, cyan/green, nowe logo i czytelniejszy układ.
+- Po zaznaczeniu funkcji wtyczka od razu pokazuje **co dana opcja robi i co należy nacisnąć**.
+- Podpowiedzi dostępne są w **PL / EN / DE / ES / AR / RU**.
+- Ekran główny został uporządkowany: dodano **kod QR i stronę projektu** `https://olioli2013.github.io/aio-iptv-projekt/`.
+- Uproszczono pozycję WebIF w menu; pełny adres `IP:9999` jest pokazywany w panelu informacji.
+- Naprawiono dodatkowo nawigację w podglądzie grup playlisty.
 
-- ✅ **[PRZEBUDOWANO] Loader M3U**  
-  Nowy mechanizm pobierania list M3U jest bardziej tolerancyjny dla serwerów, które zwracają błędny `Content-Type`, np. `text/html`, mimo że treść zawiera poprawną playlistę.
+## Zachowane poprawki audytowe
 
-- ✅ **[POPRAWIONO] HTTP 884 / text/html**  
-  Wtyczka nie odrzuca już automatycznie odpowiedzi tylko dlatego, że serwer podał zły typ danych. Najpierw sprawdzana jest realna zawartość odpowiedzi.
-
-- ✅ **[DODANO] Tryb zgodności z różnymi panelami IPTV**  
-  Dodano kontrolowane warianty nagłówków `User-Agent`, podobnie jak robią to inne wtyczki IPTV, aby poprawić zgodność z dostawcami działającymi np. w XStreamity lub eStalker.
-
-- ✅ **[POPRAWIONO] Parser M3U**  
-  Poprawiona obsługa `group-title`, `tvg-logo`, `tvg-id`, `EXTGRP`, przecinków w nazwach oraz błędnie sformatowanych list.
-
-- ✅ **[POPRAWIONO] MAC / Stalker / MAG / eStalker**  
-  Ograniczono zbyt długie ładowanie i ustawiono bezpieczniejsze limity stron oraz timeoutów.
-
-- ✅ **[POPRAWIONO] Eksport bukietów**  
-  Eksport pozostaje szybki i nie wykonuje ciężkich operacji EPG/Picon w tym samym kroku. Poprawiono też stabilność referencji usług IPTV.
-
-- ✅ **[POPRAWIONO] Bezpieczny zapis plików**  
-  Pliki bukietów oraz `bouquets.tv` są zapisywane bezpieczniej, z użyciem plików tymczasowych.
-
-- ✅ **[ZACHOWANO] Funkcje wtyczki**  
-  M3U URL, M3U z pliku, Xtream Codes, MAC Portal, ulubione, WebIF, EPG, pikony, statystyki, aktualizacje i eksport bukietów.
+Wersja 8.0.0 zawiera również poprawki stabilności przygotowane wcześniej: parser M3U, bezpieczne retry i timeouty, właściwy cache, eksport 4097/5002, poprawne kodowanie URL w referencji Enigma2, atomowe zapisy, poprawki WebIF/EPG/statystyk oraz updater z walidacją i rollbackiem.
 
 ## Instalacja
 
 ```sh
-opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_7.0.0_all.ipk
+opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_8.0.0_all.ipk
 init 4
 sleep 2
 init 3
 ```
 
-## Ważne
+Lub bezpośrednio z GitHuba:
 
-Aktualizacja poprawia stabilność i zgodność wtyczki, ale nie naprawi martwych linków, wygasłych kont, błędnych danych logowania ani serwerów zablokowanych po stronie dostawcy.
+```sh
+wget -qO - https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh | /bin/sh
+```
 
-**IPTV Dream v7.0.0**  
-**by Paweł Pawełek**
+**Autor:** Paweł Pawełek  
+**Strona projektu:** `https://olioli2013.github.io/aio-iptv-projekt/`

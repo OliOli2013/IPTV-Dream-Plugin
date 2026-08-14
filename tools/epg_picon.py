@@ -9,6 +9,7 @@ import json
 import requests
 import re
 from datetime import datetime, timedelta
+from xml.sax.saxutils import escape
 from ..tools.lang import _
 from Components.Language import language
 
@@ -18,7 +19,7 @@ EPG_URL_KEY = "custom_epg_url"
 # Źródła EPG
 EPG_SOURCES = [
     # POLSKA
-    {"url": "http://epg.ovh/pl.xml.gz", "description": "IPTV Dream - Polska (OVH)"},
+    {"url": "https://epg.ovh/pl.gz", "description": "IPTV Dream - Polska (OVH)"},
     {"url": "https://iptv-epg.org/files/epg-pl.xml.gz", "description": "IPTV Dream - Polska (iptv-epg)"},
     # UK (GB)
     {"url": "https://iptv-epg.org/files/epg-gb.xml.gz", "description": "IPTV Dream - UK (Great Britain)"},
@@ -35,7 +36,6 @@ EPG_SOURCES = [
     {"url": "https://iptv-epg.org/files/epg-ae.xml.gz", "description": "IPTV Dream - Arabic / UAE"},
     {"url": "https://iptv-epg.org/files/epg-fr.xml.gz", "description": "IPTV Dream - France"},
     # ŚWIAT
-    {"url": "http://epg.bevy.be/bevy.xml.gz", "description": "IPTV Dream - World Mix (Bevy)"}
 ]
 
 # Katalogi i pliki
@@ -109,7 +109,7 @@ class EPGManager:
                 os.makedirs(EPG_DIR)
             
             content = '<?xml version="1.0" encoding="utf-8"?>\n<sources>\n'
-            content += f'    <sourcecat sourcecatname="{_("epg_dream_sources", self.lang)}">\n'
+            content += '    <sourcecat sourcecatname="%s">\n' % escape(str(_("epg_dream_sources", self.lang)))
             
             # 1. Dodajemy wszystkie źródła domyślne
             for source in EPG_SOURCES:
@@ -127,13 +127,17 @@ class EPGManager:
 
             content += '    </sourcecat>\n</sources>\n'
             
-            with open(SOURCE_FILE, "w") as f: 
+            tmp_source = SOURCE_FILE + ".tmp"
+            with open(tmp_source, "w", encoding="utf-8") as f:
                 f.write(content)
+            os.replace(tmp_source, SOURCE_FILE)
             
             # Upewniamy się, że plik mapowania istnieje
             if not os.path.exists(CHANNEL_FILE):
-                with open(CHANNEL_FILE, "w") as f: 
+                tmp_channels = CHANNEL_FILE + ".tmp"
+                with open(tmp_channels, "w", encoding="utf-8") as f:
                     f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n</channels>')
+                os.replace(tmp_channels, CHANNEL_FILE)
                 
             return True, _("epg_updated", self.lang)
         except Exception as e:

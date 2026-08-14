@@ -1,0 +1,13 @@
+IPTV Dream 8.0.0 - finalna korekta interfejsu
+
+Najważniejsze zmiany:
+1. dream_v6.py - rzeczywista przebudowa skina Enigma2.
+2. pic/qrcode.png - nowy QR 656x656, URL:
+   https://olioli2013.github.io/aio-iptv-projekt/
+3. QR na ekranie głównym ma scale="1" - nie jest już przycinany.
+4. Klawisz 0 i pozycja „Strona projektu / QR” otwierają osobny ekran z QR 400x400.
+5. Usunięto z nagłówka e-mail i zbędny mały logotyp.
+6. Menu/pomoc/QR/przyciski zostały ułożone w spójnym, ciemnogranatowym stylu AIO.
+7. Główne funkcje mają jednocześnie skrócone objaśnienia PL/EN/DE; pełne tłumaczenia w pozostałych obsługiwanych językach zostały zachowane.
+
+Wersja pozostaje 8.0.0 - jest to poprawiony finalny build przed publikacją.

@@ -1,7 +1,19 @@
 # -*- coding: utf-8 -*-
-from twisted.web.server import Site
-from twisted.web.resource import Resource
-from twisted.internet import reactor
+try:
+    from twisted.web.server import Site
+    from twisted.web.resource import Resource
+    from twisted.internet import reactor
+    WEBIF_AVAILABLE = True
+except Exception:
+    Site = None
+    reactor = None
+    WEBIF_AVAILABLE = False
+    class Resource(object):
+        isLeaf = False
+        def __init__(self, *args, **kwargs):
+            pass
+        def putChild(self, *args, **kwargs):
+            pass
 from .lang import _, normalize_lang, SUPPORTED_LANGS, LANGUAGE_NAMES
 import os
 import base64
@@ -10,6 +22,7 @@ import json
 
 # Shared plugin config (v6)
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
+PROJECT_URL = "https://olioli2013.github.io/aio-iptv-projekt/"
 
 _server_port = None
 _on_data_ready_callback = None
@@ -48,7 +61,7 @@ def get_qr_base64():
 
 
 def get_logo_base64():
-    return _img_base64("pic/pawel_logo.png")
+    return _img_base64("pic/iptvdream_v8_brand.png")
 
 
 def _read_plugin_version():
@@ -58,10 +71,10 @@ def _read_plugin_version():
         if os.path.exists(ver_path):
             with open(ver_path, "r", encoding="utf-8") as f:
                 v = (f.read() or "").strip()
-                return v or "7.0.0"
+                return v or "8.0.0"
     except Exception:
         pass
-    return "7.0.0"
+    return "8.0.0"
 
 
 def _detect_lang_from_system():
@@ -111,12 +124,15 @@ def get_html_page(lang):
     qr_b64 = get_qr_base64()
     logo_b64 = get_logo_base64()
     qr_html = '<img src="data:image/png;base64,%s" alt="QR" class="qr">' % qr_b64 if qr_b64 else ""
-    logo_html = '<img src="data:image/png;base64,%s" alt="Paweł Pawełek" class="logo">' % logo_b64 if logo_b64 else ""
+    logo_html = '<img src="data:image/png;base64,%s" alt="IPTV Dream" class="logo">' % logo_b64 if logo_b64 else ""
 
-    try:
-        support_txt = _html_escape(_("support_text_long", lang)).replace('\n', '<br>')
-    except Exception:
-        support_txt = "Support me!"
+    project_labels = {
+        "pl": "Strona projektu", "en": "Project website", "de": "Projekt-Webseite",
+        "es": "Web del proyecto", "ar": "موقع المشروع", "ru": "Сайт проекта"
+    }
+    support_txt = '<a href="%s" style="color:#22d3ee;text-decoration:none">%s: %s</a>' % (
+        PROJECT_URL, _html_escape(project_labels.get(lang, project_labels["en"])), _html_escape(PROJECT_URL)
+    )
 
     ph_m3u = _html_escape(_('webif_ph_m3u', lang))
     ph_xt_host = _html_escape(_('webif_ph_xt_host', lang))
@@ -133,22 +149,22 @@ def get_html_page(lang):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IPTV Dream v{version} WebIF</title>
 <style>
-    body {{ font-family: Arial, sans-serif; background:#111827; color:#e5e7eb; text-align:center; padding:20px; }}
-    .container {{ max-width:680px; margin:0 auto; background:#1f2937; padding:22px; border-radius:18px; box-shadow:0 0 28px rgba(0,0,0,.35); }}
+    body {{ font-family: Arial, sans-serif; background:#06111d; color:#e5f4fb; text-align:center; padding:20px; }}
+    .container {{ max-width:680px; margin:0 auto; background:#0b1b2c; padding:22px; border-radius:18px; box-shadow:0 0 28px rgba(0,0,0,.35); }}
     .logo {{ width:118px; max-width:35%; border-radius:10px; margin-bottom:10px; }}
     .qr {{ width:96px; border-radius:8px; margin-top:8px; }}
     input[type=text], input[type=password], select {{ box-sizing:border-box; width:100%; padding:11px; margin:10px 0; border-radius:8px; border:1px solid #4b5563; background:#111827; color:white; }}
-    input[type=submit] {{ width:100%; padding:13px; background:#2563eb; color:white; border:0; border-radius:8px; cursor:pointer; font-weight:bold; }}
-    input[type=submit]:hover {{ background:#1d4ed8; }}
+    input[type=submit] {{ width:100%; padding:13px; background:#1552a0; color:white; border:0; border-radius:8px; cursor:pointer; font-weight:bold; }}
+    input[type=submit]:hover {{ background:#0f6d8b; }}
     .tab {{ padding:10px 12px; cursor:pointer; display:inline-block; margin:5px; border-bottom:2px solid transparent; font-weight:bold; }}
-    .tab.active {{ border-color:#60a5fa; color:#60a5fa; }}
+    .tab.active {{ border-color:#20d8ff; color:#20d8ff; }}
     .form-section {{ display:none; }} .form-section.active {{ display:block; }}
     .support {{ margin-top:20px; color:#9ca3af; }}
     .warning {{ color:#facc15; font-weight:bold; margin:14px 0; }}
-    h1 {{ color:#facc15; margin:4px 0 16px; }}
+    h1 {{ color:#20d8ff; margin:4px 0 16px; }}
     .langs {{ margin:8px 0 14px; }}
     .lang {{ display:inline-block; margin:3px; padding:6px 9px; border-radius:999px; text-decoration:none; color:#d1d5db; background:#374151; font-size:13px; }}
-    .lang.active {{ color:#111827; background:#facc15; }}
+    .lang.active {{ color:#111827; background:#20d8ff; }}
 </style>
 <script>
     function showTab(id, ev) {{
@@ -282,25 +298,34 @@ class IPTVDreamWebIf(Resource):
 
 
 def start_web_server(port, on_data_ready):
-    """Start WebIF server."""
+    """Start WebIF server and report whether it is actually listening."""
     global _server_port
     if _server_port:
-        return
+        return True
+    if not WEBIF_AVAILABLE or reactor is None or Site is None:
+        print("[IPTVDream] WebIF unavailable: python3-twisted-web is not installed")
+        return False
     try:
         root = IPTVDreamWebIf(on_data_ready)
-        _server_port = reactor.listenTCP(port, Site(root))
+        _server_port = reactor.listenTCP(int(port), Site(root))
         print("[IPTVDream] Web interface started on port %s" % port)
+        return True
     except Exception as e:
+        _server_port = None
         print("[IPTVDream] Failed to start web server: %s" % e)
+        return False
 
 
 def stop_web_server():
-    """Stop WebIF server."""
+    """Stop WebIF server and report success."""
     global _server_port
-    if _server_port:
-        try:
-            _server_port.stopListening()
-            _server_port = None
-            print("[IPTVDream] Web interface stopped")
-        except Exception as e:
-            print("[IPTVDream] Failed to stop web server: %s" % e)
+    if not _server_port:
+        return True
+    try:
+        _server_port.stopListening()
+        _server_port = None
+        print("[IPTVDream] Web interface stopped")
+        return True
+    except Exception as e:
+        print("[IPTVDream] Failed to stop web server: %s" % e)
+        return False

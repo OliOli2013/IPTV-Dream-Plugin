@@ -110,22 +110,57 @@ def _find_extracted_plugin_dir(root_dir):
 
 
 def _cleanup_package_artifacts(root_dir):
+    root_junk = {
+        "dream.py", "dream_v2.py", "export.py", "test_plugin.py",
+        "BUG_FIXES_v6.0.md", "CHANGELOG_v5.1.md", "COMPLETE_INSTALLATION_v6.0.md",
+        "EPG_PICON_IMPROVEMENTS_v5.1.md", "FEATURE_COMPARISON_v6.0.md",
+        "FINAL_INSTALLATION_GUIDE.md", "PLIKI_DO_PODMIANY.txt", "QUICK_REFERENCE_v6.0.md",
+        "README_v5.1.md", "README_v6.0.md", "TOOLS_IMPROVEMENTS_v5.1.md",
+        "V6_INSTALLATION_FIX.md", "XTREAM_WINDOW_FIX.md",
+        "GITHUB_REPLACE_INSTRUCTIONS.txt", "FILES_TO_DELETE_GITHUB.txt",
+        "CHANGED_FILES_8.0.0.txt", "RELEASE_TITLE.txt", "RELEASE_BODY_PL.md",
+        "RELEASE_BODY_EN.md", "SHA256SUMS.txt", ".gitignore"
+    }
     for current, dirs, files in os.walk(root_dir):
         for d in list(dirs):
-            if d == "__pycache__":
+            if d in ("__pycache__", ".github", "screenshots", "release", "docs"):
                 shutil.rmtree(os.path.join(current, d), ignore_errors=True)
+                try:
+                    dirs.remove(d)
+                except Exception:
+                    pass
         for fname in files:
             full = os.path.join(current, fname)
-            if fname.endswith((".pyc", ".pyo")):
+            remove = fname.endswith((".pyc", ".pyo", ".ipk", ".deb", ".patch"))
+            if current == root_dir and (fname in root_junk or fname.startswith("IPTVDream-8.0.0-")):
+                remove = True
+            if remove:
                 try:
                     os.remove(full)
                 except Exception:
                     pass
-            elif fname in ("test_plugin.py",):
-                try:
-                    os.remove(full)
-                except Exception:
-                    pass
+
+
+def _validate_runtime_tree(root_dir):
+    required = (
+        "plugin.py", "dream_v6.py", "export_v2.py", "VERSION",
+        os.path.join("core", "playlist_loader.py"),
+        os.path.join("tools", "net.py"),
+        os.path.join("tools", "lang.py")
+    )
+    missing = [rel for rel in required if not os.path.isfile(os.path.join(root_dir, rel))]
+    if missing:
+        raise Exception("Błąd pakietu aktualizacji: brak %s" % ", ".join(missing))
+    # Syntax validation before replacing the installed plugin.
+    for current, _dirs, files in os.walk(root_dir):
+        for fname in files:
+            if not fname.endswith('.py'):
+                continue
+            path = os.path.join(current, fname)
+            with open(path, 'rb') as f:
+                source = f.read()
+            compile(source, path, 'exec')
+    return True
 
 
 def _apply_permissions(root_dir):
@@ -165,6 +200,7 @@ def do_update():
         shutil.unpack_archive(zip_path, tmp)
         extracted_folder = _find_extracted_plugin_dir(tmp)
         _cleanup_package_artifacts(extracted_folder)
+        _validate_runtime_tree(extracted_folder)
 
         if os.path.exists(SAFE_BAK_DIR):
             shutil.rmtree(SAFE_BAK_DIR)
@@ -184,8 +220,10 @@ def do_update():
             LOG_UPD.error("update failed: %s", mask_sensitive(e))
         except Exception:
             pass
-        if os.path.exists(SAFE_BAK_DIR) and not os.path.exists(PLUGIN_DIR):
+        if os.path.exists(SAFE_BAK_DIR):
             try:
+                if os.path.exists(PLUGIN_DIR):
+                    shutil.rmtree(PLUGIN_DIR, ignore_errors=True)
                 shutil.move(SAFE_BAK_DIR, PLUGIN_DIR)
             except Exception:
                 pass

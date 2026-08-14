@@ -21,14 +21,15 @@ class ConfigManager:
     def ensure_defaults(self):
         """Upewnia się, że istnieją wszystkie domyślne ustawienia."""
         defaults = {
-            "version": "7.0.0",
-            "language": "pl",
+            "version": "8.0.0",
+            "language": "auto",
             "debug": False,
             "log_file": "/tmp/iptvdream.log",
             "ssl_verify": False,
             "net_timeout_connect": 7,
             "net_timeout_read": 30,
-            "net_retries": 2,
+            "net_retries": 1,
+            "m3u_variant_retries": 0,
             "net_backoff": 0.8,
             "service_type": "4097",
             "auto_update": True,
@@ -96,8 +97,10 @@ class ConfigManager:
             if config_dir:
                 os.makedirs(config_dir, exist_ok=True)
             
-            with open(self.config_file, 'w', encoding='utf-8') as f:
+            tmp = self.config_file + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, self.config_file)
         except Exception as e:
             print(f"[IPTVDreamV6] Błąd zapisywania konfiguracji: {e}")
     

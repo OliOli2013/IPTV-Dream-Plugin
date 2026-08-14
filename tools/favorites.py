@@ -19,18 +19,31 @@ class FavoritesManager:
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        data.setdefault("groups", {})
+                        data.setdefault("channels", {})
+                        return data
             except:
                 pass
         return {"groups": {}, "channels": {}}
         
     def _save_favorites(self):
         """Zapisuje ulubione do pliku"""
+        tmp = self.config_file + '.tmp'
         try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.favorites, f, indent=2)
-        except:
-            pass
+            parent = os.path.dirname(self.config_file)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(self.favorites, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, self.config_file)
+        except Exception:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
             
     def add_to_favorites(self, channel, group_name="Ulubione"):
         """

@@ -1,0 +1,25 @@
+IPTV Dream 8.0.0 - finalna korekta UI
+
+PLIKI ZMIENIONE:
+- dream_v6.py
+  * nowy natywny skin ekranu głównego
+  * wyśrodkowany nagłówek
+  * usunięty e-mail i mini-logotyp z nagłówka
+  * uporządkowane sekcje menu/pomoc/strona projektu/klawisze
+  * pomoc PL/EN/DE dla głównych funkcji
+  * pozycja 0 - Strona projektu / QR
+  * osobny ekran ProjectQRCodeScreen z QR 400x400
+  * scale="1" dla QR na ekranie głównym i dużym ekranie
+- pic/qrcode.png
+  * nowy QR 656x656
+  * prowadzi dokładnie do https://olioli2013.github.io/aio-iptv-projekt/
+- CHANGELOG.txt
+- README.md
+- UI_REBUILD_8.0.0.txt
+- enigma2-plugin-extensions-iptvdream_8.0.0_all.ipk
+
+POZOSTAŁE PLIKI:
+- zachowane z wcześniejszej poprawionej wersji 8.0.0, wraz z naprawami eksportu bukietów,
+  nazw kanałów, EPG/piconów, M3U, Xtream, MAC, WebIF i aktualizatora.
+- pic/iptvdream_mark.png
+  * usunięty jako nieużywany po przebudowie nagłówka.

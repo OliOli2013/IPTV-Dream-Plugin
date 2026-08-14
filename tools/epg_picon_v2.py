@@ -17,17 +17,14 @@ EPG_URL_KEY = "custom_epg_url"
 # ROZSZERZONE ŹRÓDŁA EPG - dodano więcej źródeł dla lepszego dopasowania
 EPG_SOURCES = [
     # POLSKA
-    {"url": "http://epg.ovh/pl.xml.gz", "description": "IPTV Dream - Polska (OVH)", "country": "pl"},
+    {"url": "https://epg.ovh/pl.gz", "description": "IPTV Dream - Polska (OVH)", "country": "pl"},
     {"url": "https://iptv-epg.org/files/epg-pl.xml.gz", "description": "IPTV Dream - Polska (iptv-epg)", "country": "pl"},
-    {"url": "https://www.tvepg.eu/epg_data/pl.xml.gz", "description": "TV EPG - Polska", "country": "pl"},
     
     # UK (GB)
     {"url": "https://iptv-epg.org/files/epg-gb.xml.gz", "description": "IPTV Dream - UK (Great Britain)", "country": "gb"},
-    {"url": "https://www.tvepg.eu/epg_data/uk.xml.gz", "description": "TV EPG - UK", "country": "gb"},
     
     # USA
     {"url": "https://iptv-epg.org/files/epg-us.xml.gz", "description": "IPTV Dream - USA", "country": "us"},
-    {"url": "https://www.tvepg.eu/epg_data/us.xml.gz", "description": "TV EPG - USA", "country": "us"},
     
     # AFRYKA
     {"url": "https://iptv-epg.org/files/epg-ug.xml.gz", "description": "IPTV Dream - Uganda", "country": "ug"},

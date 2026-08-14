@@ -31,10 +31,10 @@ class XtreamOneWindow(Screen):
 
         <widget name="hlight" position="225,15" size="360,45" zPosition="-1"
                 font="Regular;1" halign="center" valign="center"
-                backgroundColor="#1f771f" cornerRadius="8"/>
+                backgroundColor="#1f771f"/>
 
-        <ePixmap pixmap="buttons/red.png"   position="20,320" size="140,40" alphatest="on"/>
-        <ePixmap pixmap="buttons/green.png" position="440,320" size="140,40" alphatest="on"/>
+        <eLabel position="20,320" size="140,40" backgroundColor="#9f1313" zPosition="0"/>
+        <eLabel position="440,320" size="140,40" backgroundColor="#1f771f" zPosition="0"/>
         <widget source="key_red"   render="Label" position="20,320"  size="140,40" zPosition="1"
                 font="Regular;20" halign="center" valign="center" backgroundColor="#9f1313" transparent="1"/>
         <widget source="key_green" render="Label" position="440,320" size="140,40" zPosition="1"
@@ -60,7 +60,7 @@ class XtreamOneWindow(Screen):
         self["lbl_pass"] = Label("Hasło:" if self.lang == "pl" else "Password:")
 
         # 3 pola wejściowe
-        self["host"] = Input("http://example.com:8080")
+        self["host"] = Input("http://")
         self["user"] = Input("")
         self["pass"] = Input("")
 

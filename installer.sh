@@ -39,6 +39,11 @@ log() { echo ">>> $*"; }
 
 die() {
   echo "BŁĄD: $*"
+  if [ -n "$BACKUP" ] && [ -d "$BACKUP" ]; then
+    echo ">>> Przywracanie poprzedniej wersji..."
+    rm -rf "$PLUGIN_DST" 2>/dev/null
+    cp -a "$BACKUP" "$PLUGIN_DST" 2>/dev/null || true
+  fi
   rm -rf "$TMP_BASE" 2>/dev/null
   exit 1
 }
@@ -86,7 +91,10 @@ need_cmd head
 need_cmd date
 need_cmd sync
 need_cmd sleep
-need_cmd init
+need_cmd python3
+if [ "$RESTART_GUI" -eq 1 ]; then
+  need_cmd init
+fi
 
 mkdir -p "$TMP_BASE" || die "Nie mogę utworzyć katalogu tymczasowego: $TMP_BASE"
 
@@ -129,6 +137,14 @@ else
   fi
 fi
 
+# Validate downloaded source before touching the installed version.
+for REQUIRED in plugin.py dream_v6.py export_v2.py core/playlist_loader.py tools/net.py tools/lang.py; do
+  [ -f "$SRC_DIR/$REQUIRED" ] || die "Niepełne źródła aktualizacji: brak $REQUIRED."
+done
+python3 -m compileall -q "$SRC_DIR" || die "Pobrane źródła mają błąd składni Python. Stara wersja nie została zmieniona."
+find "$SRC_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} \; 2>/dev/null
+
+BACKUP=""
 log "Backup poprzedniej wersji (jeśli istnieje)..."
 if [ -d "$PLUGIN_DST" ]; then
   BACKUP="/tmp/IPTVDream_backup_$(date +%Y%m%d_%H%M%S)"
@@ -146,8 +162,28 @@ mkdir -p "$PLUGIN_DST" || die "Nie mogę utworzyć katalogu docelowego."
 # W repo "płaskim" pominie to śmieci typu .github (jeśli byłyby w ZIP), ale GitHub ZIP i tak ich nie daje zwykle.
 cp -a "$SRC_DIR"/* "$PLUGIN_DST"/ || die "Błąd kopiowania plików wtyczki."
 
-# Walidacja: plugin.py musi istnieć
+# Usuń artefakty repozytorium i historyczne duplikaty, których runtime nie używa.
+rm -f \
+  "$PLUGIN_DST/dream.py" "$PLUGIN_DST/dream_v2.py" "$PLUGIN_DST/export.py" \
+  "$PLUGIN_DST/test_plugin.py" "$PLUGIN_DST"/*.ipk "$PLUGIN_DST"/*.deb 2>/dev/null
+rm -f \
+  "$PLUGIN_DST/tools/epg_picon_fixed.py" "$PLUGIN_DST/tools/mac_portal_v6.py" \
+  "$PLUGIN_DST/tools/picon_manager.py" "$PLUGIN_DST/tools/xtream_one_window.py" \
+  "$PLUGIN_DST/tools/vkb_input.py" "$PLUGIN_DST/pic/iptvdream_mark.png" 2>/dev/null
+
+# Pliki potrzebne tylko na GitHubie / w release nie powinny trafiać do runtime tunera.
+rm -f \
+  "$PLUGIN_DST/GITHUB_REPLACE_INSTRUCTIONS.txt" "$PLUGIN_DST/FILES_TO_DELETE_GITHUB.txt" \
+  "$PLUGIN_DST/CHANGED_FILES_8.0.0.txt" "$PLUGIN_DST/RELEASE_TITLE.txt" \
+  "$PLUGIN_DST/RELEASE_BODY_PL.md" "$PLUGIN_DST/RELEASE_BODY_EN.md" \
+  "$PLUGIN_DST/SHA256SUMS.txt" "$PLUGIN_DST"/*.patch 2>/dev/null
+rm -rf "$PLUGIN_DST/.github" "$PLUGIN_DST/screenshots" "$PLUGIN_DST/release" "$PLUGIN_DST/docs" 2>/dev/null
+
+# Walidacja: wymagane pliki + składnia Pythona przed restartem GUI.
 [ -f "$PLUGIN_DST/plugin.py" ] || die "Po instalacji brakuje $PLUGIN_DST/plugin.py (błędne źródła lub struktura)."
+[ -f "$PLUGIN_DST/dream_v6.py" ] || die "Po instalacji brakuje dream_v6.py."
+[ -f "$PLUGIN_DST/core/playlist_loader.py" ] || die "Po instalacji brakuje core/playlist_loader.py."
+python3 -m compileall -q "$PLUGIN_DST" || die "Walidacja składni Python nie powiodła się."
 
 log "Czyszczenie cache Pythona..."
 rm -rf \
@@ -163,6 +199,9 @@ find "$PLUGIN_DST" -type f \( -name "*.txt" -o -name "*.md" -o -name "VERSION" \
 
 log "Sprzątanie plików tymczasowych..."
 rm -rf "$TMP_BASE" 2>/dev/null
+if [ -n "$BACKUP" ] && [ -d "$BACKUP" ]; then
+  rm -rf "$BACKUP" 2>/dev/null
+fi
 sync
 
 echo "=================================================="

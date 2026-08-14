@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v7.0.0 - robust playlist loader.
+"""IPTV Dream v8.0.0 - robust playlist loader.
 
 Rebuilt for provider compatibility:
 - accepts valid M3U even when server sends wrong Content-Type (text/html),
@@ -26,6 +26,7 @@ except Exception:
 from .config_manager import ConfigManager
 from ..tools.net import http_get, NetError, response_info, DEFAULT_HEADERS
 from ..tools.logger import get_logger, mask_sensitive
+from ..tools.channel_name_utils import clean_display_channel_name, clean_bouquet_name
 
 CACHE_DIR = "/tmp/iptvdream_cache"
 DEFAULT_CONFIG = "/etc/enigma2/iptvdream_v6_config.json"
@@ -33,7 +34,7 @@ DEFAULT_CONFIG = "/etc/enigma2/iptvdream_v6_config.json"
 UA_DESKTOP = DEFAULT_HEADERS.get('User-Agent')
 UA_MAG = 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 4 rev: 1812 Mobile Safari/533.3'
 UA_VLC = 'VLC/3.0.20 LibVLC/3.0.20'
-UA_IPTV = 'Mozilla/5.0 IPTV-Dream/7.0.0 Enigma2'
+UA_IPTV = 'Mozilla/5.0 IPTV-Dream/8.0.0 Enigma2'
 
 HTML_MARKERS = (
     '<html', '<!doctype html', '<body', '<head', 'cloudflare', 'captcha',
@@ -67,6 +68,8 @@ class PlaylistLoader(object):
             rt = 90
         self.net_timeout = (max(3, ct), max(30, rt))
         self.net_retries = int(self.config.get('net_retries', 1))
+        # Header variants are already retries. Do not multiply them into 8-12 HTTP attempts.
+        self.m3u_variant_retries = max(0, int(self.config.get('m3u_variant_retries', 0)))
         self.net_backoff = float(self.config.get('net_backoff', 0.7))
         self.ssl_verify = bool(self.config.get('ssl_verify', False))
 
@@ -99,11 +102,17 @@ class PlaylistLoader(object):
         return {}
 
     def _write_meta_file(self, path, meta):
+        tmp = path + '.tmp'
         try:
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(meta or {}, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, path)
         except Exception:
-            pass
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
 
     def _read_cache(self, cache_file, max_age=None):
         try:
@@ -129,13 +138,19 @@ class PlaylistLoader(object):
 
     def cache_content(self, url, content, meta=None, headers=None):
         _key, cache_file, meta_file = self._paths(url, headers=headers)
+        tmp = cache_file + '.tmp'
         try:
-            with open(cache_file, 'wb') as f:
+            with open(tmp, 'wb') as f:
                 f.write(content or b'')
+            os.replace(tmp, cache_file)
             if meta:
                 self._write_meta_file(meta_file, meta)
         except Exception:
-            pass
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
 
     def _read_cache_file_any_age(self, cache_file):
         return self._read_cache(cache_file, max_age=None)
@@ -292,7 +307,7 @@ class PlaylistLoader(object):
                     stream=False,
                     verify=self.ssl_verify,
                     timeout=self.net_timeout,
-                    retries=self.net_retries,
+                    retries=self.m3u_variant_retries,
                     backoff=self.net_backoff,
                     debug=self.debug,
                     log_file=self.log_file,
@@ -442,10 +457,16 @@ class PlaylistLoader(object):
                 group = attrs.get('group-title') or attrs.get('group') or pending_group or 'Inne'
                 logo = attrs.get('tvg-logo') or attrs.get('logo') or ''
                 epg_id = attrs.get('tvg-id') or attrs.get('epg-id') or attrs.get('channel-id') or ''
+                raw_title = self._clean_title(title)
+                raw_group = self._clean_title(group)
+                display_title = clean_display_channel_name(raw_title)
+                display_group = clean_bouquet_name(raw_group)
                 current = {
-                    'title': self._clean_title(title),
-                    'name': self._clean_title(title),
-                    'group': self._clean_title(group),
+                    'title': display_title,
+                    'name': display_title,
+                    'group': display_group,
+                    'raw_title': raw_title,
+                    'raw_group': raw_group,
                     'logo': logo,
                     'tvg-logo': logo,
                     'epg_id': epg_id,
@@ -456,8 +477,10 @@ class PlaylistLoader(object):
                     'timeshift': attrs.get('timeshift') or '',
                 }
             elif low.startswith('#extgrp:'):
-                pending_group = self._clean_title(line.split(':', 1)[1])
+                raw_pending_group = self._clean_title(line.split(':', 1)[1])
+                pending_group = clean_bouquet_name(raw_pending_group)
                 if current:
+                    current['raw_group'] = raw_pending_group
                     current['group'] = pending_group
             elif line.startswith('#'):
                 continue
@@ -465,8 +488,15 @@ class PlaylistLoader(object):
                 url = line.strip()
                 if not current:
                     current = {'title': 'Stream', 'name': 'Stream', 'group': pending_group or 'Inne', 'logo': '', 'tvg-logo': '', 'epg_id': '', 'tvg-id': ''}
-                title = current.get('title') or current.get('name') or 'No Name'
-                group = current.get('group') or 'Inne'
+                raw_title = current.get('raw_title') or current.get('title') or current.get('name') or 'No Name'
+                raw_group = current.get('raw_group') or current.get('group') or 'Inne'
+                title = clean_display_channel_name(raw_title)
+                group = clean_bouquet_name(raw_group)
+                current['title'] = title
+                current['name'] = title
+                current['group'] = group
+                current.setdefault('raw_title', raw_title)
+                current.setdefault('raw_group', raw_group)
                 is_adult, is_vod = self._kind_flags(title, group, url)
                 kind = 'adult' if is_adult else ('vod' if is_vod else 'live')
                 if content_filter and content_filter not in ('all', kind):

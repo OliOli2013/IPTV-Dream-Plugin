@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <setupxml>
     <plugin
-        key="IPTVDreamV7"
-        name="IPTV Dream v7.0.0"
+        key="IPTVDreamV8"
+        name="IPTV Dream v8.0.0"
         description="Wtyczka IPTV dla Enigma2 - M3U / Xtream / MAC / EPG / Pikony / WebIF"
         author="Paweł Pawełek"
-        version="7.0.0"
+        version="8.0.0"
         icon="plugin.png"
         type="1"
-        namespace="iptv_dream_v7"
+        namespace="iptv_dream_v8"
     >
         <labels>
             <![CDATA[
-                IPTV Dream v7.0.0
+                IPTV Dream v8.0.0
 
                 Funkcje:
                 • M3U z URL i pliku
@@ -24,14 +24,14 @@
                 • WebIF na porcie 9999
                 • Języki: Polski, English, Deutsch, Español, العربية, Русский
 
-                Zmiany w 7.0.0:
-                • Przebudowany loader M3U
-                • Większa zgodność z serwerami, które zwracają błędny Content-Type
-                • Lepsza obsługa HTTP 884, RemoteDisconnected, timeoutów i HTML zamiast M3U
-                • Odświeżony parser M3U z obsługą EXTGRP, tvg-id, tvg-logo i group-title
-                • Szybki eksport bukietów bez ciężkich operacji EPG/Picon w tym samym kroku
-                • Stabilniejsze referencje usług IPTV dla EPG i picon
-                • Bezpieczniejszy zapis plików bukietów i bouquets.tv
+                Najważniejsze zmiany 8.0.0:
+                • czyste nazwy bukietów zgodne z nazwą grupy z playlisty
+                • usuwanie przedrostków krajowych typu |DE|, [PL], DE:, UK - z nazw kanałów i grup
+                • poprawione dopasowanie EPG i picon po oczyszczeniu nazw
+                • nowy interfejs inspirowany AIO Panel
+                • kontekstowe podpowiedzi po zaznaczeniu funkcji w 6 językach
+                • kod QR i adres strony projektu
+                • zachowane poprawki stabilności i bezpieczeństwa z audytu 7.0.1
             ]]>
         </labels>
         <prerequisites>
@@ -41,18 +41,21 @@
                 • Python 3
                 • python3-requests
                 • python3-twisted
-                • python3-twisted-web
                 • Połączenie internetowe
+
+                Opcjonalnie:
+                • python3-twisted-web - wymagane tylko dla WebIF, jeśli image rozdziela ten pakiet
             ]]>
         </prerequisites>
         <attributes>
-            <attribute name="version" value="7.0.0" />
+            <attribute name="version" value="8.0.0" />
             <attribute name="api_version" value="1.0" />
             <attribute name="plugin_type" value="iptv" />
             <attribute name="category" value="multimedia" />
             <attribute name="tags" value="iptv,m3u,xtream,mac,stalker,bouquet,streaming,epg,picon" />
-            <attribute name="license" value="GPLv2" />
-            <attribute name="homepage" value="https://github.com/OliOli2013/IPTV-Dream-Plugin" />
+            <attribute name="license" value="GPL-3.0" />
+            <attribute name="homepage" value="https://olioli2013.github.io/aio-iptv-projekt/" />
+            <attribute name="repository" value="https://github.com/OliOli2013/IPTV-Dream-Plugin" />
             <attribute name="support" value="aio-iptv@wp.pl" />
         </attributes>
     </plugin>

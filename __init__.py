@@ -17,11 +17,11 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "7.0.0"
+    return "8.0.0"
 
 __version__ = _read_version()
 __author__ = "IPTV Dream Team"
-__license__ = "GPLv2"
+__license__ = "GPL-3.0"
 __description__ = "Ultra-fast IPTV plugin for Enigma2 - stable rebuild"
 
 # Package metadata

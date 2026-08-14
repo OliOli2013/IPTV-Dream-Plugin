@@ -50,10 +50,17 @@ class PiconManager:
         self.temp_dir = "/tmp/iptvdream_temp"
         self.config_file = "/etc/enigma2/iptvdream_v6_picon_config.json"
         
-        # Upewnij się, że katalogi istnieją
-        os.makedirs(self.picon_dir, exist_ok=True)
-        os.makedirs(self.cache_dir, exist_ok=True)
-        os.makedirs(self.temp_dir, exist_ok=True)
+        # Katalog picon bywa niedostępny/read-only na części image'ów.
+        # Nie może to blokować uruchomienia całej wtyczki.
+        for path in (self.cache_dir, self.temp_dir):
+            try:
+                os.makedirs(path, exist_ok=True)
+            except Exception:
+                pass
+        try:
+            os.makedirs(self.picon_dir, exist_ok=True)
+        except Exception:
+            self.picon_dir = self.temp_dir
         
         # Konfiguracja
         self.config = self.load_config()

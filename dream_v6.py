@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v6.0
+"""IPTV Dream v8.0.0
 
 Cel tej wersji w repozytorium użytkownika:
 - Zachować funkcjonalność i optymalizacje v6 (szybsze ładowanie, cache, multi-thread),
@@ -17,6 +17,11 @@ import json
 import time
 import threading
 import socket
+
+try:
+    from urllib.parse import urlencode
+except Exception:
+    from urllib import urlencode
 
 import requests
 from twisted.internet import reactor
@@ -72,11 +77,12 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "7.0.0"
+    return "8.0.0"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
-CACHE_DIR = "/tmp/iptvdream_v6_cache"
+CACHE_DIR = "/tmp/iptvdream_cache"
+LEGACY_CACHE_DIR = "/tmp/iptvdream_v6_cache"
 
 DL_TIMEOUT = 90
 LOAD_TIMEOUT_DEFAULT_MS = 180000  # 3 minuty (domyślnie)
@@ -98,6 +104,246 @@ def _language_display_name(code):
     return LANGUAGE_NAMES.get(code, code.upper())
 
 EPG_URL_KEY = "epg_url"
+
+PROJECT_URL = "https://olioli2013.github.io/aio-iptv-projekt/"
+
+PROJECT_LABELS = {
+    "pl": ("Strona projektu", "Zeskanuj kod QR, aby odwiedzić stronę twórcy."),
+    "en": ("Project website", "Scan the QR code to visit the creator website."),
+    "de": ("Projekt-Webseite", "Scanne den QR-Code, um die Webseite des Autors zu öffnen."),
+    "es": ("Web del proyecto", "Escanea el código QR para visitar la web del creador."),
+    "ar": ("موقع المشروع", "امسح رمز QR لزيارة موقع المطور."),
+    "ru": ("Сайт проекта", "Отсканируйте QR-код, чтобы открыть сайт автора."),
+}
+
+# Context help is intentionally kept inside the main screen instead of opening
+# extra dialogs. Moving the selection immediately explains what the option does.
+ACTION_HELP = {
+    "pl": {
+        "m3u_url": ("M3U z URL", "Dodaje playlistę M3U/M3U8 z adresu internetowego. Wklej pełny URL listy; wtyczka pobierze i pogrupuje kanały.", "OK: wprowadź adres playlisty M3U."),
+        "m3u_file": ("M3U z pliku", "Otwiera lokalny plik M3U/M3U8 z pamięci tunera, /tmp lub nośnika USB.", "OK: wybierz plik M3U/M3U8."),
+        "xtream": ("Xtream Codes", "Łączy się z panelem Xtream przy użyciu hosta, użytkownika i hasła. Obsługuje LIVE, VOD i filtrowanie treści.", "OK: otwórz konfigurację Xtream Codes."),
+        "mac": ("MAC Portal", "Obsługa portali MAC / Stalker / MAG. Dodaj portal albo wybierz zapisany profil i rodzaj treści.", "OK: otwórz listę portali MAC."),
+        "favorites": ("Ulubione", "Otwiera zapisane grupy i kanały dodane do ulubionych w IPTV Dream.", "OK: pokaż ulubione."),
+        "manage": ("Zarządzanie", "Język, typ serwisu 4097/5002, EPG, logi, cache, historia oraz zarządzanie bukietami IPTV Dream.", "OK: otwórz ustawienia i narzędzia."),
+        "stats": ("Statystyki", "Pokazuje statystyki sesji, ładowania playlist oraz użycia wtyczki.", "OK: pokaż statystyki."),
+        "webif": ("Web Interfejs", "Włącza lub wyłącza WebIF IPTV Dream na porcie 9999 w sieci lokalnej.", "OK: przełącz WebIF."),
+        "update": ("Aktualizacje", "Sprawdza wersję w oficjalnym repozytorium i może bezpiecznie zainstalować nowsze wydanie.", "OK: sprawdź aktualizacje."),
+        "lang": ("Język", "Wybiera język interfejsu albo tryb automatyczny zgodny z językiem Enigma2.", "OK: wybierz język."),
+        "stype": ("Typ serwisu", "Przełącza referencje IPTV pomiędzy 4097 i 5002. Użyj typu najlepiej współpracującego z odtwarzaczem Twojego image.", "OK: przełącz 4097 / 5002."),
+        "epgurl": ("Własny URL EPG", "Pozwala zapisać własne źródło XMLTV/EPG używane przez narzędzia EPG.", "OK: wprowadź adres EPG."),
+        "debug_toggle": ("Tryb debug", "Włącza szczegółowy zapis diagnostyczny do /tmp/iptvdream.log. Używaj głównie podczas diagnozy błędów.", "OK: włącz lub wyłącz debug."),
+        "show_log": ("Pokaż log", "Wyświetla ostatnią część logu IPTV Dream z informacjami diagnostycznymi.", "OK: otwórz log."),
+        "clear_log": ("Wyczyść log", "Czyści plik diagnostyczny IPTV Dream bez zmiany ustawień i playlist.", "OK: wyczyść log."),
+        "clear_cache": ("Wyczyść cache", "Usuwa tymczasowy cache playlist. Przy następnym otwarciu lista zostanie pobrana ponownie.", "OK: usuń cache."),
+        "clear_history": ("Wyczyść historię", "Usuwa lokalną historię użycia i oglądanych pozycji IPTV Dream.", "OK: wyczyść historię."),
+        "delete_bouquets": ("Usuń bukiety IPTV Dream", "Pozwala usunąć bukiety utworzone przez IPTV Dream z listy kanałów Enigma2.", "OK: wybierz zestaw do usunięcia."),
+        "preview": ("Podgląd playlisty", "Pokazuje liczbę kanałów oraz grupy wykryte w aktualnie załadowanej playliście.", "OK: pokaż podsumowanie."),
+        "groups": ("Grupy / bukiety", "Otwiera grupy z playlisty. Przy eksporcie ich nazwy są używane jako czyste nazwy bukietów bez nazwy listy/portalu.", "OK: pokaż grupy."),
+        "fav_add_all": ("Dodaj do ulubionych", "Dodaje wszystkie kanały z aktualnej playlisty do wskazanej grupy ulubionych.", "OK: wybierz nazwę grupy ulubionych."),
+        "picons": ("Pikony", "Pobiera logotypy kanałów z adresów tvg-logo i zapisuje je w wybranym katalogu picon.", "OK: wybierz miejsce zapisu piconów."),
+        "epg_map": ("EPG + przypisanie", "Instaluje źródła EPG i przygotowuje mapowanie kanałów do EPGImport.", "OK: uruchom mapowanie EPG."),
+        "refresh": ("Odśwież źródło", "Ponownie pobiera ostatnio użyte źródło M3U, Xtream lub MAC i odświeża listę.", "OK: odśwież playlistę."),
+        "mac_add": ("Dodaj portal MAC", "Dodaje profil portalu MAC/Stalker/MAG na podstawie hosta i adresu MAC.", "OK: dodaj portal."),
+        "mac_delete": ("Usuń portal MAC", "Usuwa zapisany profil portalu MAC z konfiguracji IPTV Dream.", "OK: wybierz portal do usunięcia."),
+    },
+    "en": {
+        "m3u_url": ("M3U URL", "Adds an M3U/M3U8 playlist from an Internet address. Paste the full URL; IPTV Dream will download and group channels.", "OK: enter the M3U playlist URL."),
+        "m3u_file": ("M3U file", "Opens a local M3U/M3U8 file from receiver storage, /tmp or a USB device.", "OK: choose an M3U/M3U8 file."),
+        "xtream": ("Xtream Codes", "Connects to an Xtream panel using host, username and password. Supports LIVE, VOD and content filtering.", "OK: open Xtream Codes setup."),
+        "mac": ("MAC Portal", "Handles MAC / Stalker / MAG portals. Add a portal or select a saved profile and content type.", "OK: open MAC portals."),
+        "favorites": ("Favorites", "Opens saved favorite groups and channels stored by IPTV Dream.", "OK: show favorites."),
+        "manage": ("Management", "Language, 4097/5002 service type, EPG, logs, cache, history and IPTV Dream bouquet management.", "OK: open settings and tools."),
+        "stats": ("Statistics", "Shows session, playlist-loading and plugin usage statistics.", "OK: show statistics."),
+        "webif": ("Web Interface", "Enables or disables IPTV Dream WebIF on port 9999 in the local network.", "OK: toggle WebIF."),
+        "update": ("Updates", "Checks the official repository and can safely install a newer release.", "OK: check for updates."),
+        "lang": ("Language", "Selects the interface language or automatic mode following the Enigma2 system language.", "OK: choose language."),
+        "stype": ("Service type", "Switches IPTV service references between 4097 and 5002. Use the type that works best with your image/player.", "OK: switch 4097 / 5002."),
+        "epgurl": ("Custom EPG URL", "Stores a custom XMLTV/EPG source used by IPTV Dream EPG tools.", "OK: enter EPG URL."),
+        "debug_toggle": ("Debug mode", "Enables detailed diagnostics in /tmp/iptvdream.log. Mainly useful when troubleshooting.", "OK: toggle debug."),
+        "show_log": ("Show log", "Displays the latest IPTV Dream diagnostic log entries.", "OK: open log."),
+        "clear_log": ("Clear log", "Clears the IPTV Dream diagnostic log without changing playlists or settings.", "OK: clear log."),
+        "clear_cache": ("Clear cache", "Removes temporary playlist cache. The source will be downloaded again next time.", "OK: clear cache."),
+        "clear_history": ("Clear history", "Removes local IPTV Dream usage/watch history.", "OK: clear history."),
+        "delete_bouquets": ("Delete IPTV Dream bouquets", "Lets you remove bouquets created by IPTV Dream from Enigma2 channel lists.", "OK: choose bouquet set to delete."),
+        "preview": ("Playlist preview", "Shows channel count and groups detected in the currently loaded playlist.", "OK: show summary."),
+        "groups": ("Groups / bouquets", "Opens playlist groups. Export uses the clean group name as the visible bouquet name, without source/portal prefixes.", "OK: show groups."),
+        "fav_add_all": ("Add to favorites", "Adds all channels in the current playlist to a favorite group you choose.", "OK: choose favorite group name."),
+        "picons": ("Picons", "Downloads channel logos from tvg-logo URLs and stores them in the selected picon directory.", "OK: choose picon destination."),
+        "epg_map": ("EPG + mapping", "Installs EPG sources and prepares channel mapping for EPGImport.", "OK: start EPG mapping."),
+        "refresh": ("Refresh source", "Downloads the last M3U, Xtream or MAC source again and refreshes the playlist.", "OK: refresh playlist."),
+        "mac_add": ("Add MAC portal", "Adds a MAC/Stalker/MAG portal profile using host and MAC address.", "OK: add portal."),
+        "mac_delete": ("Delete MAC portal", "Removes a saved MAC portal profile from IPTV Dream.", "OK: choose portal to delete."),
+    },
+    "de": {
+        "m3u_url": ("M3U-URL", "Fügt eine M3U/M3U8-Playlist aus dem Internet hinzu. Vollständige URL einfügen; IPTV Dream lädt und gruppiert die Sender.", "OK: M3U-URL eingeben."),
+        "m3u_file": ("M3U-Datei", "Öffnet eine lokale M3U/M3U8-Datei vom Receiver, aus /tmp oder von USB.", "OK: M3U/M3U8-Datei auswählen."),
+        "xtream": ("Xtream Codes", "Verbindet sich über Host, Benutzername und Passwort mit Xtream. LIVE, VOD und Filter werden unterstützt.", "OK: Xtream Codes öffnen."),
+        "mac": ("MAC-Portal", "Unterstützt MAC/Stalker/MAG-Portale. Portal hinzufügen oder gespeichertes Profil und Inhaltstyp wählen.", "OK: MAC-Portale öffnen."),
+        "favorites": ("Favoriten", "Öffnet gespeicherte Favoritengruppen und Sender.", "OK: Favoriten anzeigen."),
+        "manage": ("Verwaltung", "Sprache, Servicetyp 4097/5002, EPG, Logs, Cache, Verlauf und IPTV-Dream-Bouquets verwalten.", "OK: Einstellungen öffnen."),
+        "stats": ("Statistiken", "Zeigt Sitzungs-, Playlist- und Nutzungsstatistiken.", "OK: Statistiken anzeigen."),
+        "webif": ("Webinterface", "Schaltet das IPTV-Dream-WebIF im lokalen Netz auf Port 9999 ein oder aus.", "OK: WebIF umschalten."),
+        "update": ("Updates", "Prüft das offizielle Repository und kann eine neue Version sicher installieren.", "OK: nach Updates suchen."),
+        "lang": ("Sprache", "Wählt die Sprache oder den Automatikmodus entsprechend Enigma2.", "OK: Sprache wählen."),
+        "stype": ("Servicetyp", "Wechselt IPTV-Service-Referenzen zwischen 4097 und 5002.", "OK: 4097 / 5002 wechseln."),
+        "epgurl": ("Eigene EPG-URL", "Speichert eine eigene XMLTV/EPG-Quelle für die EPG-Werkzeuge.", "OK: EPG-URL eingeben."),
+        "debug_toggle": ("Debug-Modus", "Aktiviert ausführliche Diagnose in /tmp/iptvdream.log.", "OK: Debug umschalten."),
+        "show_log": ("Log anzeigen", "Zeigt die letzten IPTV-Dream-Diagnoseeinträge.", "OK: Log öffnen."),
+        "clear_log": ("Log löschen", "Leert das Diagnose-Log ohne Einstellungen zu ändern.", "OK: Log löschen."),
+        "clear_cache": ("Cache leeren", "Löscht den Playlist-Cache; die Quelle wird beim nächsten Mal neu geladen.", "OK: Cache leeren."),
+        "clear_history": ("Verlauf löschen", "Löscht den lokalen IPTV-Dream-Verlauf.", "OK: Verlauf löschen."),
+        "delete_bouquets": ("IPTV-Dream-Bouquets löschen", "Entfernt von IPTV Dream erstellte Bouquets aus Enigma2.", "OK: Bouquet-Satz wählen."),
+        "preview": ("Playlist-Übersicht", "Zeigt Senderzahl und erkannte Gruppen der geladenen Playlist.", "OK: Übersicht anzeigen."),
+        "groups": ("Gruppen / Bouquets", "Öffnet Playlist-Gruppen. Beim Export wird nur der saubere Gruppenname als Bouquetname verwendet.", "OK: Gruppen anzeigen."),
+        "fav_add_all": ("Zu Favoriten", "Fügt alle Sender der aktuellen Playlist einer Favoritengruppe hinzu.", "OK: Favoritengruppe wählen."),
+        "picons": ("Picons", "Lädt Senderlogos aus tvg-logo und speichert sie im gewählten Picon-Verzeichnis.", "OK: Picon-Ziel wählen."),
+        "epg_map": ("EPG + Zuordnung", "Installiert EPG-Quellen und erstellt die Zuordnung für EPGImport.", "OK: EPG-Zuordnung starten."),
+        "refresh": ("Quelle aktualisieren", "Lädt die zuletzt verwendete M3U-, Xtream- oder MAC-Quelle erneut.", "OK: Playlist aktualisieren."),
+        "mac_add": ("MAC-Portal hinzufügen", "Fügt ein MAC/Stalker/MAG-Profil mit Host und MAC-Adresse hinzu.", "OK: Portal hinzufügen."),
+        "mac_delete": ("MAC-Portal löschen", "Entfernt ein gespeichertes MAC-Portalprofil.", "OK: Portal zum Löschen wählen."),
+    },
+    "es": {
+        "m3u_url": ("URL M3U", "Añade una lista M3U/M3U8 desde Internet. Pega la URL completa; IPTV Dream descargará y agrupará los canales.", "OK: introduce la URL M3U."),
+        "m3u_file": ("Archivo M3U", "Abre un archivo M3U/M3U8 local del receptor, /tmp o USB.", "OK: selecciona el archivo M3U/M3U8."),
+        "xtream": ("Xtream Codes", "Conecta con Xtream usando host, usuario y contraseña. Admite LIVE, VOD y filtros.", "OK: abre Xtream Codes."),
+        "mac": ("Portal MAC", "Gestiona portales MAC/Stalker/MAG. Añade un portal o elige un perfil guardado y el tipo de contenido.", "OK: abre los portales MAC."),
+        "favorites": ("Favoritos", "Abre grupos y canales guardados como favoritos.", "OK: muestra favoritos."),
+        "manage": ("Gestión", "Idioma, servicio 4097/5002, EPG, logs, caché, historial y bouquets de IPTV Dream.", "OK: abre ajustes y herramientas."),
+        "stats": ("Estadísticas", "Muestra estadísticas de sesión, listas y uso del plugin.", "OK: muestra estadísticas."),
+        "webif": ("Interfaz web", "Activa o desactiva WebIF de IPTV Dream en el puerto 9999 de la red local.", "OK: cambia WebIF."),
+        "update": ("Actualizaciones", "Comprueba el repositorio oficial y puede instalar una versión más reciente de forma segura.", "OK: buscar actualizaciones."),
+        "lang": ("Idioma", "Selecciona el idioma o el modo automático según Enigma2.", "OK: elige idioma."),
+        "stype": ("Tipo de servicio", "Cambia las referencias IPTV entre 4097 y 5002.", "OK: cambia 4097 / 5002."),
+        "epgurl": ("URL EPG propia", "Guarda una fuente XMLTV/EPG personalizada para las herramientas EPG.", "OK: introduce URL EPG."),
+        "debug_toggle": ("Modo debug", "Activa diagnóstico detallado en /tmp/iptvdream.log.", "OK: cambia debug."),
+        "show_log": ("Ver log", "Muestra las últimas entradas de diagnóstico de IPTV Dream.", "OK: abre el log."),
+        "clear_log": ("Borrar log", "Vacía el log sin cambiar listas ni ajustes.", "OK: borra el log."),
+        "clear_cache": ("Borrar caché", "Elimina la caché de listas; la fuente se descargará otra vez.", "OK: borra la caché."),
+        "clear_history": ("Borrar historial", "Elimina el historial local de IPTV Dream.", "OK: borra el historial."),
+        "delete_bouquets": ("Borrar bouquets IPTV Dream", "Elimina bouquets creados por IPTV Dream de Enigma2.", "OK: elige el conjunto a borrar."),
+        "preview": ("Vista previa", "Muestra número de canales y grupos detectados en la lista cargada.", "OK: muestra el resumen."),
+        "groups": ("Grupos / bouquets", "Abre los grupos. Al exportar se usa solo el nombre limpio del grupo como bouquet.", "OK: muestra los grupos."),
+        "fav_add_all": ("Añadir a favoritos", "Añade todos los canales a un grupo de favoritos elegido.", "OK: elige el grupo."),
+        "picons": ("Picons", "Descarga logos desde tvg-logo y los guarda en el directorio elegido.", "OK: elige destino de picons."),
+        "epg_map": ("EPG + mapeo", "Instala fuentes EPG y prepara el mapeo para EPGImport.", "OK: iniciar mapeo EPG."),
+        "refresh": ("Actualizar fuente", "Vuelve a descargar la última fuente M3U, Xtream o MAC.", "OK: actualiza la lista."),
+        "mac_add": ("Añadir portal MAC", "Añade un perfil MAC/Stalker/MAG con host y dirección MAC.", "OK: añade portal."),
+        "mac_delete": ("Eliminar portal MAC", "Elimina un perfil MAC guardado.", "OK: elige portal a eliminar."),
+    },
+    "ar": {
+        "m3u_url": ("رابط M3U", "يضيف قائمة M3U/M3U8 من الإنترنت. الصق الرابط الكامل وسيقوم IPTV Dream بتنزيل القنوات وتجميعها.", "OK: أدخل رابط M3U."),
+        "m3u_file": ("ملف M3U", "يفتح ملف M3U/M3U8 محلياً من الجهاز أو /tmp أو USB.", "OK: اختر ملف M3U/M3U8."),
+        "xtream": ("Xtream Codes", "يتصل بلوحة Xtream باستخدام المضيف واسم المستخدم وكلمة المرور ويدعم LIVE وVOD والفلاتر.", "OK: افتح إعداد Xtream Codes."),
+        "mac": ("بوابة MAC", "يدير بوابات MAC/Stalker/MAG. أضف بوابة أو اختر ملفاً محفوظاً ونوع المحتوى.", "OK: افتح بوابات MAC."),
+        "favorites": ("المفضلة", "يفتح مجموعات وقنوات المفضلة المحفوظة.", "OK: اعرض المفضلة."),
+        "manage": ("الإدارة", "اللغة ونوع الخدمة 4097/5002 وEPG والسجلات والكاش والتاريخ وباقات IPTV Dream.", "OK: افتح الإعدادات والأدوات."),
+        "stats": ("الإحصائيات", "يعرض إحصائيات الجلسة وتحميل القوائم واستخدام الإضافة.", "OK: اعرض الإحصائيات."),
+        "webif": ("واجهة الويب", "تشغيل أو إيقاف WebIF على المنفذ 9999 في الشبكة المحلية.", "OK: بدّل WebIF."),
+        "update": ("التحديثات", "يفحص المستودع الرسمي ويمكنه تثبيت إصدار أحدث بأمان.", "OK: افحص التحديثات."),
+        "lang": ("اللغة", "اختيار لغة الواجهة أو الوضع التلقائي حسب Enigma2.", "OK: اختر اللغة."),
+        "stype": ("نوع الخدمة", "التبديل بين مراجع IPTV من النوع 4097 و5002.", "OK: بدّل 4097 / 5002."),
+        "epgurl": ("رابط EPG خاص", "يحفظ مصدر XMLTV/EPG خاص لاستخدامه مع أدوات EPG.", "OK: أدخل رابط EPG."),
+        "debug_toggle": ("وضع التصحيح", "يفعّل سجلاً تشخيصياً مفصلاً في /tmp/iptvdream.log.", "OK: بدّل وضع التصحيح."),
+        "show_log": ("عرض السجل", "يعرض أحدث رسائل التشخيص الخاصة بـ IPTV Dream.", "OK: افتح السجل."),
+        "clear_log": ("مسح السجل", "يمسح سجل التشخيص بدون تغيير القوائم أو الإعدادات.", "OK: امسح السجل."),
+        "clear_cache": ("مسح الكاش", "يحذف كاش القوائم المؤقت وسيتم تنزيل المصدر من جديد.", "OK: امسح الكاش."),
+        "clear_history": ("مسح السجل السابق", "يحذف تاريخ الاستخدام المحلي لـ IPTV Dream.", "OK: امسح التاريخ."),
+        "delete_bouquets": ("حذف باقات IPTV Dream", "يحذف الباقات التي أنشأها IPTV Dream من Enigma2.", "OK: اختر الباقات للحذف."),
+        "preview": ("معاينة القائمة", "يعرض عدد القنوات والمجموعات المكتشفة في القائمة الحالية.", "OK: اعرض الملخص."),
+        "groups": ("المجموعات / الباقات", "يفتح مجموعات القائمة. عند التصدير يستخدم اسم المجموعة النظيف فقط كاسم للباقـة.", "OK: اعرض المجموعات."),
+        "fav_add_all": ("إضافة للمفضلة", "يضيف كل القنوات إلى مجموعة مفضلة تختارها.", "OK: اختر مجموعة المفضلة."),
+        "picons": ("Picons", "ينزل شعارات القنوات من tvg-logo ويحفظها في مجلد picon المختار.", "OK: اختر مجلد picon."),
+        "epg_map": ("EPG + الربط", "يثبت مصادر EPG ويجهز ربط القنوات لـ EPGImport.", "OK: ابدأ ربط EPG."),
+        "refresh": ("تحديث المصدر", "يعيد تنزيل آخر مصدر M3U أو Xtream أو MAC.", "OK: حدّث القائمة."),
+        "mac_add": ("إضافة بوابة MAC", "يضيف ملف بوابة MAC/Stalker/MAG باستخدام المضيف وعنوان MAC.", "OK: أضف البوابة."),
+        "mac_delete": ("حذف بوابة MAC", "يحذف ملف بوابة MAC محفوظاً.", "OK: اختر البوابة للحذف."),
+    },
+    "ru": {
+        "m3u_url": ("M3U по URL", "Добавляет M3U/M3U8-плейлист из Интернета. Вставьте полный URL; IPTV Dream загрузит и сгруппирует каналы.", "OK: введите URL M3U."),
+        "m3u_file": ("Файл M3U", "Открывает локальный M3U/M3U8 из памяти ресивера, /tmp или USB.", "OK: выберите M3U/M3U8."),
+        "xtream": ("Xtream Codes", "Подключается к Xtream по host, логину и паролю. Поддерживает LIVE, VOD и фильтры.", "OK: открыть Xtream Codes."),
+        "mac": ("MAC-портал", "Работает с MAC/Stalker/MAG. Добавьте портал или выберите сохранённый профиль и тип контента.", "OK: открыть MAC-порталы."),
+        "favorites": ("Избранное", "Открывает сохранённые группы и каналы избранного.", "OK: показать избранное."),
+        "manage": ("Управление", "Язык, тип 4097/5002, EPG, логи, кэш, история и управление букетами IPTV Dream.", "OK: открыть настройки."),
+        "stats": ("Статистика", "Показывает статистику сеанса, загрузки плейлистов и использования плагина.", "OK: показать статистику."),
+        "webif": ("Web-интерфейс", "Включает или выключает WebIF IPTV Dream на порту 9999 в локальной сети.", "OK: переключить WebIF."),
+        "update": ("Обновления", "Проверяет официальный репозиторий и может безопасно установить новую версию.", "OK: проверить обновления."),
+        "lang": ("Язык", "Выбирает язык интерфейса или автоматический режим по Enigma2.", "OK: выбрать язык."),
+        "stype": ("Тип сервиса", "Переключает IPTV service reference между 4097 и 5002.", "OK: переключить 4097 / 5002."),
+        "epgurl": ("Свой URL EPG", "Сохраняет пользовательский источник XMLTV/EPG для инструментов EPG.", "OK: введите URL EPG."),
+        "debug_toggle": ("Режим debug", "Включает подробную диагностику в /tmp/iptvdream.log.", "OK: переключить debug."),
+        "show_log": ("Показать лог", "Показывает последние диагностические записи IPTV Dream.", "OK: открыть лог."),
+        "clear_log": ("Очистить лог", "Очищает диагностический лог без изменения настроек и плейлистов.", "OK: очистить лог."),
+        "clear_cache": ("Очистить кэш", "Удаляет временный кэш плейлистов; источник будет загружен заново.", "OK: очистить кэш."),
+        "clear_history": ("Очистить историю", "Удаляет локальную историю IPTV Dream.", "OK: очистить историю."),
+        "delete_bouquets": ("Удалить букеты IPTV Dream", "Удаляет букеты, созданные IPTV Dream, из Enigma2.", "OK: выберите набор букетов."),
+        "preview": ("Обзор плейлиста", "Показывает число каналов и найденные группы текущего плейлиста.", "OK: показать сводку."),
+        "groups": ("Группы / букеты", "Открывает группы. При экспорте видимым именем букета становится только чистое имя группы.", "OK: показать группы."),
+        "fav_add_all": ("Добавить в избранное", "Добавляет все каналы в выбранную группу избранного.", "OK: выберите группу."),
+        "picons": ("Пиконы", "Загружает логотипы из tvg-logo в выбранную папку picon.", "OK: выберите папку picon."),
+        "epg_map": ("EPG + привязка", "Устанавливает источники EPG и создаёт привязку каналов для EPGImport.", "OK: начать привязку EPG."),
+        "refresh": ("Обновить источник", "Повторно загружает последний источник M3U, Xtream или MAC.", "OK: обновить плейлист."),
+        "mac_add": ("Добавить MAC-портал", "Добавляет профиль MAC/Stalker/MAG по host и MAC-адресу.", "OK: добавить портал."),
+        "mac_delete": ("Удалить MAC-портал", "Удаляет сохранённый профиль MAC-портала.", "OK: выберите портал."),
+    },
+}
+
+GENERIC_HELP = {
+    "pl": ("Informacja", "Wybierz pozycję z listy. Opis aktualnie zaznaczonej funkcji pojawia się automatycznie.", "OK: wykonaj wybraną funkcję. EXIT: powrót."),
+    "en": ("Information", "Select an item. The description of the highlighted function is shown automatically.", "OK: run selected function. EXIT: back."),
+    "de": ("Information", "Wähle einen Eintrag. Die Beschreibung der markierten Funktion wird automatisch angezeigt.", "OK: Funktion ausführen. EXIT: zurück."),
+    "es": ("Información", "Selecciona una opción. La descripción de la función marcada aparece automáticamente.", "OK: ejecutar. EXIT: volver."),
+    "ar": ("معلومات", "اختر عنصراً من القائمة. يظهر شرح الوظيفة المحددة تلقائياً.", "OK: تنفيذ الوظيفة. EXIT: رجوع."),
+    "ru": ("Информация", "Выберите пункт. Описание выделенной функции показывается автоматически.", "OK: выполнить. EXIT: назад."),
+}
+
+
+PROJECT_HELP = {
+    "pl": ("Strona projektu / QR", "Pokazuje duży, czytelny kod QR prowadzący bezpośrednio do oficjalnej strony projektu IPTV Dream / AIO.", "OK lub 0: otwórz duży kod QR."),
+    "en": ("Project website / QR", "Shows a large readable QR code linking directly to the official IPTV Dream / AIO project website.", "OK or 0: open the large QR code."),
+    "de": ("Projekt-Webseite / QR", "Zeigt einen großen, gut lesbaren QR-Code zur offiziellen IPTV Dream / AIO Projekt-Webseite.", "OK oder 0: großen QR-Code öffnen."),
+    "es": ("Web del proyecto / QR", "Muestra un código QR grande y legible que abre la web oficial del proyecto IPTV Dream / AIO.", "OK o 0: abrir el código QR grande."),
+    "ar": ("موقع المشروع / QR", "يعرض رمز QR كبيراً وواضحاً يفتح الموقع الرسمي لمشروع IPTV Dream / AIO.", "OK أو 0: افتح رمز QR الكبير."),
+    "ru": ("Сайт проекта / QR", "Показывает большой читаемый QR-код, ведущий на официальный сайт проекта IPTV Dream / AIO.", "OK или 0: открыть большой QR-код."),
+}
+
+PROJECT_MENU_LABELS = {
+    "pl": "Strona projektu / QR",
+    "en": "Project website / QR",
+    "de": "Projekt-Webseite / QR",
+    "es": "Web del proyecto / QR",
+    "ar": "موقع المشروع / QR",
+    "ru": "Сайт проекта / QR",
+}
+
+QUICK_LEGEND = {
+    "pl": "1-4: źródła     5: ulubione     6: zarządzanie\n7: statystyki     8: WebIF     9: aktualizacje     0: strona / QR",
+    "en": "1-4: sources     5: favorites     6: management\n7: statistics     8: WebIF     9: updates     0: website / QR",
+    "de": "1-4: Quellen     5: Favoriten     6: Verwaltung\n7: Statistik     8: WebIF     9: Updates     0: Webseite / QR",
+    "es": "1-4: fuentes     5: favoritos     6: gestión\n7: estadísticas     8: WebIF     9: actualizaciones     0: web / QR",
+    "ar": "1-4: المصادر     5: المفضلة     6: الإدارة\n7: الإحصاءات     8: WebIF     9: التحديثات     0: الموقع / QR",
+    "ru": "1-4: источники     5: избранное     6: управление\n7: статистика     8: WebIF     9: обновления     0: сайт / QR",
+}
+
+MAIN_STATUS = {
+    "pl": "▲▼ wybór  •  OK uruchom  •  cyfry 1-9 skróty  •  0 strona projektu / QR",
+    "en": "▲▼ select  •  OK run  •  keys 1-9 shortcuts  •  0 project website / QR",
+    "de": "▲▼ wählen  •  OK starten  •  Tasten 1-9 Kurzbefehle  •  0 Projekt-Webseite / QR",
+    "es": "▲▼ elegir  •  OK ejecutar  •  teclas 1-9 atajos  •  0 web del proyecto / QR",
+    "ar": "▲▼ اختيار  •  OK تشغيل  •  الأرقام 1-9 اختصارات  •  0 موقع المشروع / QR",
+    "ru": "▲▼ выбор  •  OK запуск  •  клавиши 1-9 быстрый выбор  •  0 сайт проекта / QR",
+}
+
+PROJECT_SCREEN_TEXT = {
+    "pl": ("Strona projektu", "Zeskanuj kod telefonem, aby otworzyć stronę projektu.\nŻadne dane nie są wysyłane automatycznie."),
+    "en": ("Project website", "Scan the code with your phone to open the project website.\nNo data is sent automatically."),
+    "de": ("Projekt-Webseite", "Scanne den Code mit dem Telefon, um die Projekt-Webseite zu öffnen.\nEs werden keine Daten automatisch gesendet."),
+    "es": ("Web del proyecto", "Escanea el código con el teléfono para abrir la web del proyecto.\nNo se envía ningún dato automáticamente."),
+    "ar": ("موقع المشروع", "امسح الرمز بالهاتف لفتح موقع المشروع.\nلا يتم إرسال أي بيانات تلقائياً."),
+    "ru": ("Сайт проекта", "Отсканируйте код телефоном, чтобы открыть сайт проекта.\nДанные автоматически не отправляются."),
+}
+
 
 
 def _safe_mkdir(path):
@@ -134,56 +380,123 @@ def get_lan_ip():
         return "127.0.0.1"
 
 
-class IPTVDreamV6(Screen):
+class ProjectQRCodeScreen(Screen):
+    """Large native Enigma2 QR screen. No browser or network action is triggered."""
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,800" title="IPTV Dream v7.0.0">
-        <!-- TŁO (styl v6, nawiązanie kolorystyką do v5) -->
-        <eLabel position="0,0" size="1200,800" backgroundColor="#0f0f0f" zPosition="-5" />
+    <screen name="ProjectQRCodeScreen" position="center,center" size="1040,600" title="IPTV Dream - Project website">
+        <eLabel position="0,0" size="1040,600" backgroundColor="#06111d" zPosition="-10" />
+        <eLabel position="18,12" size="1004,64" backgroundColor="#091a2b" zPosition="-8" />
+        <eLabel position="18,12" size="1004,2" backgroundColor="#00d7ff" zPosition="-5" />
+        <widget name="title" position="38,24" size="964,38" font="Regular;31" halign="center" valign="center" foregroundColor="#20d8ff" transparent="1" />
 
-        <!-- NAGŁÓWEK -->
-        <eLabel position="20,18" size="1160,70" backgroundColor="#1a1a1a" cornerRadius="14" zPosition="-4" />
-        <eLabel position="20,18" size="1160,4" backgroundColor="#00c800" zPosition="-3" />
-        <widget name="title_label" position="40,30" size="1120,44" font="Regular;34" halign="center" valign="center" foregroundColor="#00ff88" transparent="1" />
-        <widget name="footer" position="120,74" size="1040,18" font="Regular;16" halign="center" valign="center" foregroundColor="#9a9a9a" transparent="1" />
-        <widget name="creator_logo" position="40,25" size="64,64" alphatest="on" zPosition="2" />
+        <eLabel position="24,92" size="424,424" backgroundColor="#ffffff" zPosition="-7" />
+        <widget name="qr" position="36,104" size="400,400" alphatest="on" scale="1" zPosition="2" />
 
-        <!-- PASEK STATUSU -->
-        <eLabel position="20,95" size="1160,40" backgroundColor="#222222" cornerRadius="10" zPosition="-4" />
-        <widget name="status_bar" position="40,102" size="1120,28" font="Regular;22" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" />
+        <eLabel position="470,92" size="546,424" backgroundColor="#091725" zPosition="-7" />
+        <widget name="section" position="496,116" size="494,36" font="Regular;25" foregroundColor="#20d8ff" transparent="1" />
+        <eLabel position="496,158" size="494,1" backgroundColor="#1e6c86" zPosition="-4" />
+        <widget name="url" position="496,182" size="494,78" font="Regular;22" foregroundColor="#ffffff" valign="center" transparent="1" />
+        <widget name="desc" position="496,286" size="494,116" font="Regular;20" foregroundColor="#d6e4ee" valign="top" transparent="1" />
+        <widget name="multi" position="496,420" size="494,70" font="Regular;17" foregroundColor="#94b8ca" valign="top" transparent="1" />
 
-        <!-- PANEL MENU (lewa strona) -->
-        <eLabel position="20,150" size="600,430" backgroundColor="#171717" cornerRadius="14" zPosition="-4" />
-        <widget name="menu_list" position="35,165" size="570,400" font="Regular;26" itemHeight="44" scrollbarMode="showOnDemand" enableWrapAround="1" transparent="1"  foregroundColor="#ffffff" foregroundColorSelected="#00ff88" backgroundColorSelected="#303030" />
+        <eLabel position="24,536" size="250,46" backgroundColor="#9d1d28" zPosition="1" />
+        <widget name="key_red" position="24,536" size="250,46" font="Regular;20" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="2" />
+        <widget name="footer" position="300,540" size="716,38" font="Regular;18" halign="right" valign="center" foregroundColor="#7fa8bc" transparent="1" />
+    </screen>
+    """
 
-        <!-- PANEL INFORMACYJNY (prawa strona) -->
-        <eLabel position="640,150" size="540,430" backgroundColor="#1d1d1d" cornerRadius="14" zPosition="-4" />
-        <widget name="info_title" position="660,165" size="500,34" font="Regular;24" halign="center" foregroundColor="#ffcc00" transparent="1" />
-        <widget name="info_text" position="660,205" size="500,360" font="Regular;20" halign="left" valign="top" foregroundColor="#e6e6e6" transparent="1" />
+    def __init__(self, session, lang="en"):
+        Screen.__init__(self, session)
+        self.lang = normalize_lang(lang, "en")
+        self["qr"] = Pixmap()
+        self["title"] = Label("IPTV Dream v%s" % PLUGIN_VERSION)
+        section, desc = PROJECT_SCREEN_TEXT.get(self.lang, PROJECT_SCREEN_TEXT["en"])
+        self["section"] = Label(section)
+        self["url"] = Label(PROJECT_URL)
+        self["desc"] = Label(desc)
+        self["multi"] = Label("PL: Zeskanuj kod telefonem.\nEN: Scan the code with your phone.\nDE: Scanne den Code mit dem Telefon.")
+        try:
+            back_text = _("back", self.lang)
+        except Exception:
+            back_text = "Back"
+        self["key_red"] = Label(back_text)
+        self["footer"] = Label("IPTV Dream • Paweł Pawełek")
+        self["actions"] = ActionMap(["ColorActions", "OkCancelActions"], {
+            "red": self.close,
+            "cancel": self.close,
+            "ok": self.close,
+        }, -1)
+        self.onLayoutFinish.append(self._load_qr)
 
-        <!-- QR + opis (jak v5, ale dopasowane do v6) -->
-        <eLabel position="20,595" size="600,140" backgroundColor="#141414" cornerRadius="14" zPosition="-4" />
-        <widget name="qr" position="35,610" size="110,110" alphatest="on" />
-        <widget name="support" position="155,608" size="450,90" font="Regular;20" foregroundColor="#00ff00" valign="top" transparent="1" />
-        <widget name="support_fb" position="35,707" size="570,28" font="BlueCrystal;20" halign="center" valign="center" foregroundColor="#00aaff" transparent="1" />
+    def _load_qr(self):
+        try:
+            from Tools.LoadPixmap import LoadPixmap
+            path = os.path.join(os.path.dirname(__file__), "pic", "qrcode.png")
+            pix = LoadPixmap(path=path)
+            if pix is not None and getattr(self["qr"], "instance", None):
+                self["qr"].instance.setPixmap(pix)
+                self["qr"].show()
+        except Exception:
+            pass
 
-        <!-- PRAWY DOLNY PANEL PODPOWIEDZI -->
-        <eLabel position="640,595" size="540,140" backgroundColor="#141414" cornerRadius="14" zPosition="-4" />
-        <widget name="hint" position="660,610" size="500,110" font="Regular;20" foregroundColor="#bdbdbd" valign="top" transparent="1" />
 
-        <!-- PROGRESS BAR (ukryty domyślnie) -->
-        <widget name="progress_bar" position="20,742" size="1160,16" borderWidth="2" borderColor="#00c800" backgroundColor="#303030" zPosition="2" />
-        <widget name="progress_text" position="20,720" size="1160,20" font="Regular;18" halign="center" foregroundColor="#00c800" transparent="1" zPosition="3" />
+class IPTVDreamV6(Screen):
+    # AIO Panel-inspired native Enigma2 layout. It uses only built-in fonts and
+    # widgets to keep compatibility across OpenATV/OpenPLi/OpenHDF/OpenViX skins.
+    skin = """
+    <screen name="IPTVDreamV6" position="center,center" size="1200,680" title="IPTV Dream v8.0.0">
+        <eLabel position="0,0" size="1200,680" backgroundColor="#06111d" zPosition="-10" />
 
-        <!-- PRZYCISKI KOLOROWE (styl v5, nowoczesne zaokrąglenie) -->
-        <eLabel position="20,765" size="280,35" backgroundColor="#9f1313" cornerRadius="10" zPosition="1" />
-        <eLabel position="320,765" size="280,35" backgroundColor="#1f771f" cornerRadius="10" zPosition="1" />
-        <eLabel position="620,765" size="280,35" backgroundColor="#b59a00" cornerRadius="10" zPosition="1" />
-        <eLabel position="920,765" size="260,35" backgroundColor="#0040a0" cornerRadius="10" zPosition="1" />
+        <!-- Header: clean, centred, no e-mail/social clutter -->
+        <eLabel position="16,10" size="1168,58" backgroundColor="#091a2b" zPosition="-8" />
+        <eLabel position="16,10" size="1168,2" backgroundColor="#00d7ff" zPosition="-5" />
+        <eLabel position="16,66" size="1168,1" backgroundColor="#174b61" zPosition="-5" />
+        <widget name="title_label" position="180,19" size="840,38" font="Regular;34" halign="center" valign="center" foregroundColor="#20d8ff" transparent="1" />
 
-        <widget name="key_red" position="20,765" size="280,35" font="Regular;20" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="2" />
-        <widget name="key_green" position="320,765" size="280,35" font="Regular;20" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="2" />
-        <widget name="key_yellow" position="620,765" size="280,35" font="Regular;20" halign="center" valign="center" foregroundColor="#000000" transparent="1" zPosition="2" />
-        <widget name="key_blue" position="920,765" size="260,35" font="Regular;20" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="2" />
+        <!-- Compact runtime/status row -->
+        <eLabel position="16,76" size="1168,31" backgroundColor="#081522" zPosition="-8" />
+        <widget name="status_bar" position="34,80" size="1132,23" font="Regular;17" halign="center" valign="center" foregroundColor="#c8d8e2" transparent="1" />
+        <widget name="progress_text" position="34,80" size="1132,19" font="Regular;16" halign="center" foregroundColor="#22f083" transparent="1" zPosition="3" />
+        <widget name="progress_bar" position="34,101" size="1132,5" borderWidth="1" borderColor="#00d7ff" backgroundColor="#173142" zPosition="2" />
+
+        <!-- Left navigation -->
+        <eLabel position="16,117" size="520,340" backgroundColor="#071421" zPosition="-8" />
+        <eLabel position="16,117" size="520,1" backgroundColor="#1c6078" zPosition="-5" />
+        <widget name="menu_list" position="30,130" size="492,316" font="Regular;22" itemHeight="31" scrollbarMode="showOnDemand" enableWrapAround="1" transparent="1" foregroundColor="#edf4f8" foregroundColorSelected="#ffffff" backgroundColorSelected="#0b5a6b" />
+
+        <!-- Right context information -->
+        <eLabel position="552,117" size="632,340" backgroundColor="#081725" zPosition="-8" />
+        <eLabel position="552,117" size="632,1" backgroundColor="#1c6078" zPosition="-5" />
+        <widget name="info_title" position="576,132" size="584,38" font="Regular;25" halign="left" valign="center" foregroundColor="#20d8ff" transparent="1" />
+        <eLabel position="576,177" size="584,1" backgroundColor="#1a6e89" zPosition="-4" />
+        <widget name="info_text" position="576,190" size="584,248" font="Regular;17" halign="left" valign="top" foregroundColor="#d7e6ef" transparent="1" />
+
+        <!-- Project website / real readable QR -->
+        <eLabel position="16,467" size="520,104" backgroundColor="#071421" zPosition="-8" />
+        <eLabel position="16,467" size="520,1" backgroundColor="#1c6078" zPosition="-5" />
+        <widget name="qr" position="28,474" size="90,90" alphatest="on" scale="1" zPosition="2" />
+        <widget name="support" position="132,476" size="388,40" font="Regular;17" foregroundColor="#20d8ff" valign="top" transparent="1" />
+        <widget name="website" position="132,522" size="388,38" font="Regular;16" halign="left" valign="top" foregroundColor="#ffffff" transparent="1" />
+
+        <!-- Quick navigation legend -->
+        <eLabel position="552,467" size="632,104" backgroundColor="#071421" zPosition="-8" />
+        <eLabel position="552,467" size="632,1" backgroundColor="#1c6078" zPosition="-5" />
+        <widget name="quick_legend" position="576,484" size="584,70" font="Regular;17" foregroundColor="#9eb9c9" valign="center" transparent="1" />
+
+        <!-- Coloured actions -->
+        <eLabel position="16,582" size="278,40" backgroundColor="#a51d29" zPosition="1" />
+        <eLabel position="309,582" size="278,40" backgroundColor="#128139" zPosition="1" />
+        <eLabel position="602,582" size="278,40" backgroundColor="#b18b00" zPosition="1" />
+        <eLabel position="895,582" size="289,40" backgroundColor="#1558ad" zPosition="1" />
+        <widget name="key_red" position="16,582" size="278,40" font="Regular;18" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="2" />
+        <widget name="key_green" position="309,582" size="278,40" font="Regular;18" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="2" />
+        <widget name="key_yellow" position="602,582" size="278,40" font="Regular;18" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="2" />
+        <widget name="key_blue" position="895,582" size="289,40" font="Regular;18" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" zPosition="2" />
+
+        <!-- Dynamic help: PL / EN / DE for the highlighted function -->
+        <eLabel position="16,632" size="1168,43" backgroundColor="#081522" zPosition="-8" />
+        <eLabel position="16,632" size="1168,1" backgroundColor="#1c6078" zPosition="-5" />
+        <widget name="hint" position="34,637" size="1132,33" font="Regular;15" foregroundColor="#b8ccd8" valign="center" transparent="1" />
     </screen>
     """
 
@@ -208,7 +521,7 @@ class IPTVDreamV6(Screen):
         self["status_bar"] = Label("")
         self["progress_bar"] = ProgressBar()
         try:
-            self["progress_bar"].setRange(0, 100)
+            self["progress_bar"].setRange((0, 100))
         except Exception:
             pass
         self["progress_text"] = Label("")
@@ -218,18 +531,10 @@ class IPTVDreamV6(Screen):
         self["key_blue"] = Label(_("export", self.lang))
 
         self["qr"] = Pixmap()
-        self["creator_logo"] = Pixmap()
-        self["support"] = Label(_("support_ui", self.lang))
-
-        self["support_fb"] = Label('Facebook: Enigma 2 Oprogramowanie i dodatki')
-
-
-        self["hint"] = Label(_("hint_ui", self.lang))
-        try:
-            foot_date = time.strftime("%Y-%m-%d")
-        except Exception:
-            foot_date = ""
-        self["footer"] = Label(_("foot", self.lang).format(date=foot_date) + " v%s" % PLUGIN_VERSION)
+        self["support"] = Label("")
+        self["website"] = Label(PROJECT_URL)
+        self["quick_legend"] = Label("")
+        self["hint"] = Label("")
 
 
         # --- Inicjalizacja logiki v6 (konfiguracja, akcje, timery) ---
@@ -338,17 +643,25 @@ class IPTVDreamV6(Screen):
                 '7': lambda: self.onNumberKey(7),
                 '8': lambda: self.onNumberKey(8),
                 '9': lambda: self.onNumberKey(9),
+                '0': self.openProjectWebsite,
             },
             -1,
         )
+
+        # Context help follows the highlighted item immediately.
+        try:
+            if self._onMenuSelectionChanged not in self["menu_list"].onSelectionChanged:
+                self["menu_list"].onSelectionChanged.append(self._onMenuSelectionChanged)
+        except Exception:
+            pass
 
         # inicjalizacja UI po zbudowaniu ekranu (pixmap, menu)
         self.onLayoutFinish.append(self._init_ui)
 
     def _apply_language_to_static_ui(self):
-        """Refresh static UI labels that depend on language."""
+        """Refresh static labels after a language change."""
         try:
-            self["title_label"].setText(_("title", self.lang))
+            self["title_label"].setText("IPTV Dream v%s" % PLUGIN_VERSION)
             self["key_red"].setText(_("exit", self.lang))
             self["key_green"].setText(_("check_upd", self.lang))
             self["key_yellow"].setText(_("epg_install", self.lang))
@@ -356,32 +669,22 @@ class IPTVDreamV6(Screen):
         except Exception:
             pass
 
-        # Support text block
         try:
-            if self.lang == "pl":
-                support_txt = "\\c00ffffffPodoba Ci się wtyczka?\n\\c0000ff00Wesprzyj twórcę i rozwój.\n\\c00ffcc00Dziękuję!\\c00ffffff"
-            else:
-                support_txt = "\\c00ffffffDo you like the plugin?\n\\c0000ff00Support the creator & development.\n\\c00ffcc00Thank you!\\c00ffffff"
-            self["support"].setText(support_txt)
+            label, scan = PROJECT_LABELS.get(self.lang, PROJECT_LABELS["en"])
+            self["support"].setText("%s\n%s" % (label, scan))
+            self["website"].setText(PROJECT_URL)
+            self["quick_legend"].setText(QUICK_LEGEND.get(self.lang, QUICK_LEGEND["en"]))
         except Exception:
             pass
 
-        # Hint + footer
         try:
-            if self.lang == "pl":
-                self["hint"].setText("Naciśnij 1-9 lub OK, aby wybrać opcję.\nWebIF: port 9999 • Cache i streaming aktywne.")
-            else:
-                self["hint"].setText("Press 1-9 or OK to select an option.\nWebIF: port 9999 • Cache & streaming enabled.")
+            self._onMenuSelectionChanged()
         except Exception:
-            pass
-        try:
-            foot_date = time.strftime("%Y-%m-%d")
-        except Exception:
-            foot_date = ""
-        try:
-            self["footer"].setText(_("foot", self.lang).format(date=foot_date) + " v%s" % PLUGIN_VERSION)
-        except Exception:
-            pass
+            generic = GENERIC_HELP.get(self.lang, GENERIC_HELP["en"])
+            try:
+                self["hint"].setText(generic[2])
+            except Exception:
+                pass
 
     # ---------- config ----------
 
@@ -421,9 +724,108 @@ class IPTVDreamV6(Screen):
         self["info_title"].setText(title)
         self["info_text"].setText(text)
 
+    def _help_for_action(self, action):
+        key = action[0] if isinstance(action, tuple) and action else action
+        if key == "project":
+            return PROJECT_HELP.get(self.lang, PROJECT_HELP["en"])
+        lang_map = ACTION_HELP.get(self.lang, ACTION_HELP.get("en", {}))
+        data = lang_map.get(key)
+        if data:
+            return data
+
+        # Dynamic list items get useful information without hard-coded provider text.
+        payload = action[1] if isinstance(action, tuple) and len(action) > 1 else None
+        if key in ("fav_group", "pl_group"):
+            group_name = str(payload or "")
+            if self.lang == "pl": return ("Grupa", "Wybrana grupa: %s" % group_name, "OK: otwórz grupę.")
+            if self.lang == "de": return ("Gruppe", "Ausgewählte Gruppe: %s" % group_name, "OK: Gruppe öffnen.")
+            if self.lang == "es": return ("Grupo", "Grupo seleccionado: %s" % group_name, "OK: abrir grupo.")
+            if self.lang == "ar": return ("المجموعة", "المجموعة المحددة: %s" % group_name, "OK: افتح المجموعة.")
+            if self.lang == "ru": return ("Группа", "Выбранная группа: %s" % group_name, "OK: открыть группу.")
+            return ("Group", "Selected group: %s" % group_name, "OK: open group.")
+        if key in ("fav_item", "pl_item") and isinstance(payload, dict):
+            title = payload.get("title") or payload.get("name") or ""
+            group = payload.get("group") or ""
+            if self.lang == "pl": return ("Kanał", "%s\nGrupa: %s" % (title, group), "OK: wybierz kanał.")
+            if self.lang == "de": return ("Sender", "%s\nGruppe: %s" % (title, group), "OK: Sender wählen.")
+            if self.lang == "es": return ("Canal", "%s\nGrupo: %s" % (title, group), "OK: seleccionar canal.")
+            if self.lang == "ar": return ("القناة", "%s\nالمجموعة: %s" % (title, group), "OK: اختر القناة.")
+            if self.lang == "ru": return ("Канал", "%s\nГруппа: %s" % (title, group), "OK: выбрать канал.")
+            return ("Channel", "%s\nGroup: %s" % (title, group), "OK: select channel.")
+        if key == "mac_pick" and isinstance(payload, dict):
+            host = (payload.get("host") or payload.get("url") or "").strip()
+            if self.lang == "pl": return ("Portal MAC", "Wybrany portal: %s" % host, "OK: wybierz rodzaj treści i połącz.")
+            if self.lang == "de": return ("MAC-Portal", "Gewähltes Portal: %s" % host, "OK: Inhaltstyp wählen und verbinden.")
+            if self.lang == "es": return ("Portal MAC", "Portal seleccionado: %s" % host, "OK: elige contenido y conecta.")
+            if self.lang == "ar": return ("بوابة MAC", "البوابة المحددة: %s" % host, "OK: اختر نوع المحتوى واتصل.")
+            if self.lang == "ru": return ("MAC-портал", "Выбранный портал: %s" % host, "OK: выберите тип контента.")
+            return ("MAC Portal", "Selected portal: %s" % host, "OK: choose content type and connect.")
+
+        if key in ("back_main", "back_playlist", "back_fav_groups", "pl_groups_back"):
+            if self.lang == "pl": return ("Powrót", "Wraca do poprzedniego ekranu lub menu głównego.", "OK/EXIT: wróć.")
+            if self.lang == "de": return ("Zurück", "Kehrt zum vorherigen Bildschirm oder Hauptmenü zurück.", "OK/EXIT: zurück.")
+            if self.lang == "es": return ("Volver", "Vuelve a la pantalla anterior o al menú principal.", "OK/EXIT: volver.")
+            if self.lang == "ar": return ("رجوع", "العودة إلى الشاشة السابقة أو القائمة الرئيسية.", "OK/EXIT: رجوع.")
+            if self.lang == "ru": return ("Назад", "Возвращает на предыдущий экран или в главное меню.", "OK/EXIT: назад.")
+            return ("Back", "Returns to the previous screen or main menu.", "OK/EXIT: back.")
+
+        return GENERIC_HELP.get(self.lang, GENERIC_HELP["en"])
+
+    def _main_multilingual_help(self, action):
+        """PL/EN/DE explanation used on the main screen, matching the AIO-style mock-up."""
+        key = action[0] if isinstance(action, tuple) and action else action
+        if key == "project":
+            tables = PROJECT_HELP
+        else:
+            tables = ACTION_HELP
+        try:
+            pl = tables.get("pl", {}).get(key) if tables is ACTION_HELP else tables.get("pl")
+            en = tables.get("en", {}).get(key) if tables is ACTION_HELP else tables.get("en")
+            de = tables.get("de", {}).get(key) if tables is ACTION_HELP else tables.get("de")
+        except Exception:
+            pl = en = de = None
+        if not (pl and en and de):
+            return None
+        current = self._help_for_action(action)
+        title = current[0]
+        text = "PL  %s\n\nEN  %s\n\nDE  %s" % (pl[1], en[1], de[1])
+        hint = "PL: %s   |   EN: %s   |   DE: %s" % (pl[2], en[2], de[2])
+        return title, text, hint
+
+    def _onMenuSelectionChanged(self):
+        """Update the information panel when the highlight moves."""
+        try:
+            cur = self["menu_list"].getCurrent()
+            action = cur[1] if cur and len(cur) > 1 else None
+        except Exception:
+            action = None
+        if getattr(self, "menu_context", "main") == "main":
+            data = self._main_multilingual_help(action)
+        else:
+            data = None
+        title, text, hint = data if data else self._help_for_action(action)
+        # Add current runtime values where useful.
+        key = action[0] if isinstance(action, tuple) and action else action
+        if key == "webif":
+            try:
+                text += "\nhttp://%s:%d  [%s]" % (get_lan_ip(), WEBIF_PORT, "ON" if self.webif_enabled else "OFF")
+            except Exception:
+                pass
+        elif key == "stype":
+            try:
+                text += "\nCurrent / bieżący: %s" % self.service_type
+            except Exception:
+                pass
+        self.updateInfoPanel(title, text)
+        try:
+            self["hint"].setText(hint)
+        except Exception:
+            pass
+
     def _init_ui(self):
         """Uzupełnia UI po utworzeniu ekranu (menu + QR) i uruchamia WebIF jeśli włączone."""
-        # QR + logo twórcy
+        # QR strony projektu. Skin ma scale="1", więc Enigma2 pokazuje cały kod,
+        # a nie jego przycięty lewy-górny fragment.
         try:
             from Tools.LoadPixmap import LoadPixmap
             qr_path = os.path.join(os.path.dirname(__file__), "pic", "qrcode.png")
@@ -432,21 +834,18 @@ class IPTVDreamV6(Screen):
                 if p is not None and getattr(self["qr"], "instance", None):
                     self["qr"].instance.setPixmap(p)
                     self["qr"].show()
-            logo_path = os.path.join(os.path.dirname(__file__), "pic", "pawel_logo.png")
-            if os.path.exists(logo_path):
-                lp = LoadPixmap(path=logo_path)
-                if lp is not None and getattr(self["creator_logo"], "instance", None):
-                    self["creator_logo"].instance.setPixmap(lp)
-                    self["creator_logo"].show()
         except Exception:
             pass
 
         # Start WebIF jeśli włączone w config
         if getattr(self, "webif_enabled", False):
             try:
-                start_web_server(WEBIF_PORT, self.onWebIfData)
+                self.webif_enabled = bool(start_web_server(WEBIF_PORT, self.onWebIfData))
             except Exception:
                 self.webif_enabled = False
+            if not self.webif_enabled:
+                self.cfg["webif_enabled"] = False
+                self._save_cfg()
 
         # stan początkowy
         try:
@@ -473,7 +872,7 @@ class IPTVDreamV6(Screen):
         self.close()
 
     def onNumberKey(self, n):
-        """Wybór pozycji klawiszami 1-9 (jak w v5)."""
+        """Wybór głównych pozycji klawiszami 1-9; klawisz 0 otwiera stronę projektu / QR."""
         try:
             lst = self["menu_list"].list
         except Exception:
@@ -511,7 +910,7 @@ class IPTVDreamV6(Screen):
         num_reset = "\\c00ffffff"
         num_colors = {
             1: "\\c0000ff00", 2: "\\c0000ff00", 3: "\\c0000ff00", 4: "\\c0000ff00",
-            5: "\\c00a0a0a0", 6: "\\c00b000ff", 7: "\\c00ff7a00", 8: "\\c000080ff", 9: "\\c00ff0000",
+            0: "\\c0000d7ff", 5: "\\c00a0a0a0", 6: "\\c00b000ff", 7: "\\c00ff7a00", 8: "\\c000080ff", 9: "\\c00ff0000",
         }
         def N(i):
             return "%s%d%s" % (num_colors.get(i, "\\c00ffffff"), i, num_reset)
@@ -523,8 +922,9 @@ class IPTVDreamV6(Screen):
         lbl5 = _("menu_favorites", self.lang)
         lbl6 = _("menu_management", self.lang)
         lbl7 = _("menu_stats", self.lang)
-        lbl8 = _("menu_webif", self.lang) % (webif_txt, webif_url)
+        lbl8 = (_("menu_webif", self.lang) % (webif_txt, "")).rstrip()
         lbl9 = _("menu_updates", self.lang)
+        lbl0 = PROJECT_MENU_LABELS.get(self.lang, PROJECT_MENU_LABELS["en"])
 
         items = [
             ("%s  %s" % (N(1), lbl1), "m3u_url"),
@@ -536,12 +936,14 @@ class IPTVDreamV6(Screen):
             ("%s  %s" % (N(7), lbl7), "stats"),
             ("%s  %s" % (N(8), lbl8), "webif"),
             ("%s  %s" % (N(9), lbl9), "update"),
+            ("%s  %s" % (N(0), lbl0), "project"),
         ]
         self.menu_context = "main"
         self["menu_list"].setList(items)
+        self._onMenuSelectionChanged()
 
-        self["status_bar"].setText(_("main_status", self.lang))
-        self["hint"].setText(_("main_hint", self.lang))
+        self["status_bar"].setText(MAIN_STATUS.get(self.lang, MAIN_STATUS["en"]))
+        self._onMenuSelectionChanged()
 
 
     def _language_label(self):
@@ -552,6 +954,13 @@ class IPTVDreamV6(Screen):
             return _("language_manual_label", self.lang) % _language_display_name(mode)
         except Exception:
             return self.lang.upper()
+
+    def openProjectWebsite(self):
+        """Open a large, readable QR code screen. It does not send any data."""
+        try:
+            self.session.open(ProjectQRCodeScreen, self.lang)
+        except Exception as e:
+            self.session.open(MessageBox, "QR error: %s" % e, MessageBox.TYPE_ERROR)
 
     def openLanguageChoice(self):
         items = [
@@ -621,8 +1030,9 @@ class IPTVDreamV6(Screen):
             (back_lbl, "back_main"),
         ]
         self["menu_list"].setList(items)
+        self._onMenuSelectionChanged()
         self["status_bar"].setText(st_title)
-        self["hint"].setText(hint_txt)
+        self._onMenuSelectionChanged()
 
     def showPlaylistMenu(self):
         if not self.current_playlist:
@@ -639,8 +1049,9 @@ class IPTVDreamV6(Screen):
             (_("⬅️ Powrót", self.lang), "back_main"),
         ]
         self["menu_list"].setList(items)
+        self._onMenuSelectionChanged()
         self["status_bar"].setText(_("Playlista: %s", self.lang) % (self.playlist_name or ""))
-        self["hint"].setText(_("ZIELONY: aktualizacje • ŻÓŁTY: źródła EPG • NIEBIESKI: eksport\nOK: wybór • 8: WebIF 9999", self.lang))
+        self._onMenuSelectionChanged()
 
     def showFavorites(self):
         try:
@@ -662,6 +1073,7 @@ class IPTVDreamV6(Screen):
             items.append(("⭐ %s (%d)" % (g, cnt), ("fav_group", g)))
         items.append((_("⬅️ Powrót", self.lang), "back_main"))
         self["menu_list"].setList(items)
+        self._onMenuSelectionChanged()
         self["status_bar"].setText(_("Ulubione", self.lang))
 
     def showFavoritesGroup(self, group_name):
@@ -677,6 +1089,7 @@ class IPTVDreamV6(Screen):
             items.append(("• %s" % title, ("fav_item", ch)))
         items.append((_("⬅️ Powrót", self.lang), "back_fav_groups"))
         self["menu_list"].setList(items)
+        self._onMenuSelectionChanged()
         self["status_bar"].setText(_("Ulubione: %s", self.lang) % group_name)
 
     # ---------- nawigacja / dispatch ----------
@@ -722,6 +1135,17 @@ class IPTVDreamV6(Screen):
                 ch = action[1]
                 self.updateInfoPanel(_("Ulubione", self.lang), _("Kanał: %s\nURL: %s", self.lang) % (ch.get("title", ""), ch.get("url", "")))
                 return
+            if action[0] == "pl_group":
+                return self.showPlaylistGroupItems(action[1])
+            if action[0] == "pl_groups_back":
+                return self.showPlaylistGroups()
+            if action[0] == "pl_item":
+                ch = action[1] or {}
+                title = ch.get("title", "")
+                group = ch.get("group", "")
+                url = ch.get("url", "")
+                self.updateInfoPanel(title or _("Kanał", self.lang), "%s\n%s" % (group, url))
+                return
 
         # string actions
         if action == "m3u_url":
@@ -742,6 +1166,8 @@ class IPTVDreamV6(Screen):
             return self.toggleWebIf()
         if action == "update":
             return self.checkUpdates()
+        if action == "project":
+            return self.openProjectWebsite()
 
         if action == "lang":
             return self.openLanguageChoice()
@@ -805,6 +1231,8 @@ class IPTVDreamV6(Screen):
             return self.deleteDreamBouquets()
         if action == "back_main":
             return self.showMainMenu()
+        if action == "back_playlist":
+            return self.showPlaylistMenu()
         if action == "back_fav_groups":
             return self.showFavorites()
 
@@ -829,7 +1257,7 @@ class IPTVDreamV6(Screen):
         self.load_start_time = time.time()
         self["status_bar"].setText(message)
         try:
-            self["progress_bar"].setRange(0, 100)
+            self["progress_bar"].setRange((0, 100))
         except Exception:
             pass
         self["progress_bar"].setValue(0)
@@ -839,7 +1267,10 @@ class IPTVDreamV6(Screen):
         if self.loading_timer:
             try:
                 tmo = int(timeout_ms) if timeout_ms is not None else int(LOAD_TIMEOUT_MS)
-                self.loading_timer.start(tmo)
+                try:
+                    self.loading_timer.start(tmo, True)
+                except TypeError:
+                    self.loading_timer.start(tmo)
             except Exception:
                 pass
 
@@ -854,6 +1285,8 @@ class IPTVDreamV6(Screen):
         self["progress_text"].hide()
 
     def updateProgress(self, value, text=""):
+        if not getattr(self, "is_loading", False):
+            return
         try:
             self["progress_bar"].setValue(int(value))
             if text:
@@ -973,8 +1406,10 @@ class IPTVDreamV6(Screen):
         self.startLoading(_("Pobieranie Xtream ...", self.lang))
 
         def _dl():
-            base = host if host.startswith("http") else "http://%s" % host
-            url = "%s/get.php?username=%s&password=%s&type=m3u_plus&output=ts" % (base, user, pwd)
+            base = host if host.startswith(("http://", "https://")) else "http://%s" % host
+            base = base.rstrip("/")
+            query = urlencode({"username": user, "password": pwd, "type": "m3u_plus", "output": "ts"})
+            url = "%s/get.php?%s" % (base, query)
             r = http_get(url, timeout=(int(self.cfg.get('net_timeout_connect',7)), int(self.cfg.get('net_timeout_read',30))), retries=int(self.cfg.get('net_retries',2)), backoff=float(self.cfg.get('net_backoff',0.8)), verify=bool(self.cfg.get('ssl_verify', False)), debug=bool(self.cfg.get('debug', False)), log_file=self.cfg.get('log_file','/tmp/iptvdream.log'))
             return r.content
 
@@ -982,7 +1417,7 @@ class IPTVDreamV6(Screen):
             if err:
                 self.onPlaylistLoaded(None, None, err)
                 return
-            playlist = parse_m3u_bytes_improved(data, content_filter=content_type)
+            playlist = self.loader.parse_m3u_content(data, progress_callback=self.updateProgress, content_filter=content_type)
             suffix = "LIVE" if content_type == "live" else "VOD" if content_type == "vod" else "ADULT" if content_type == "adult" else "ALL"
             self.last_source = {"type": "xtream", "value": {"host": host, "user": user, "pass": pwd, "filter": content_type}}
             self.cfg["last_source"] = self.last_source
@@ -1004,6 +1439,7 @@ class IPTVDreamV6(Screen):
         items.append((_("⬅️ Powrót", self.lang), "back_main"))
         self.menu_context = "mac_menu"
         self["menu_list"].setList(items)
+        self._onMenuSelectionChanged()
         self["status_bar"].setText(_("MAC Portal", self.lang))
 
     def _mac_menu_dispatch(self, action):
@@ -1120,11 +1556,11 @@ class IPTVDreamV6(Screen):
     def toggleWebIf(self):
         try:
             if self.webif_enabled:
-                stop_web_server()
-                self.webif_enabled = False
+                self.webif_enabled = not bool(stop_web_server())
             else:
-                start_web_server(WEBIF_PORT, self.onWebIfData)
-                self.webif_enabled = True
+                self.webif_enabled = bool(start_web_server(WEBIF_PORT, self.onWebIfData))
+                if not self.webif_enabled:
+                    self.session.open(MessageBox, _("Nie udało się uruchomić WebIF. Port może być zajęty.", self.lang), MessageBox.TYPE_ERROR, timeout=4)
 
             self.cfg["webif_enabled"] = self.webif_enabled
             self._save_cfg()
@@ -1165,6 +1601,9 @@ class IPTVDreamV6(Screen):
     # ---------- po załadowaniu playlisty ----------
 
     def onPlaylistLoaded(self, playlist, name, error):
+        # Ignore late worker callbacks after user cancel/watchdog timeout.
+        if not getattr(self, "is_loading", False):
+            return
         self.stopLoading()
 
         if error:
@@ -1229,6 +1668,7 @@ class IPTVDreamV6(Screen):
         items.append((_("⬅️ Powrót", self.lang), "back_playlist"))
         self._playlist_groups_cache = groups
         self["menu_list"].setList(items)
+        self._onMenuSelectionChanged()
         self["status_bar"].setText(_("Grupy", self.lang))
 
     def showPlaylistGroupItems(self, group_name):
@@ -1239,6 +1679,7 @@ class IPTVDreamV6(Screen):
             items.append(("• %s" % ch.get("title", "Bez nazwy" if self.lang == "pl" else "No name"), ("pl_item", ch)))
         items.append((_("⬅️ Powrót", self.lang), ("pl_groups_back", None)))
         self["menu_list"].setList(items)
+        self._onMenuSelectionChanged()
         self["status_bar"].setText(group_name)
 
     def addPlaylistToFavorites(self):
@@ -1676,19 +2117,21 @@ class IPTVDreamV6(Screen):
 
     def clearCache(self):
         try:
-            if os.path.exists(CACHE_DIR):
-                for root, dirs, files in os.walk(CACHE_DIR, topdown=False):
-                    for f in files:
-                        try:
-                            os.remove(os.path.join(root, f))
-                        except Exception:
-                            pass
-                    for d in dirs:
-                        try:
-                            os.rmdir(os.path.join(root, d))
-                        except Exception:
-                            pass
-            _safe_mkdir(CACHE_DIR)
+            for cache_dir in (CACHE_DIR, LEGACY_CACHE_DIR):
+                if os.path.exists(cache_dir):
+                    for root, dirs, files in os.walk(cache_dir, topdown=False):
+                        for fname in files:
+                            try:
+                                os.remove(os.path.join(root, fname))
+                            except Exception:
+                                pass
+                        for dname in dirs:
+                            try:
+                                os.rmdir(os.path.join(root, dname))
+                            except Exception:
+                                pass
+                if cache_dir == CACHE_DIR:
+                    _safe_mkdir(cache_dir)
             self.session.open(MessageBox, _("Wyczyszczono cache.", self.lang), MessageBox.TYPE_INFO, timeout=2)
         except Exception as e:
             self.session.open(MessageBox, "Cache error: %s" % e, MessageBox.TYPE_ERROR)
@@ -1763,7 +2206,7 @@ class IPTVDreamV6(Screen):
             pass
 
         try:
-            total_bq, total_ch = export_bouquets(final_list, self.playlist_name)
+            total_bq, total_ch = export_bouquets(final_list, self.playlist_name, service_type=str(self.service_type))
         except Exception as e:
             try:
                 self["status_bar"].setText("Export error")
@@ -1810,77 +2253,8 @@ IPTVDreamMain = IPTVDreamV6
 
 
 def parse_m3u_bytes_improved(data, content_filter=None):
-    """Parser M3U (kompatybilny z poprzednimi wydaniami).
-
-    Args:
-        data: bytes
-        content_filter: live/vod/adult/all/None
-    Returns:
-        list[dict]
-    """
-    if not data:
-        return []
-
+    """Backward-compatible wrapper around the production M3U parser."""
     try:
-        text = data.decode("utf-8", "ignore")
+        return PlaylistLoader().parse_m3u_content(data, content_filter=content_filter)
     except Exception:
-        try:
-            text = data.decode("latin-1", "ignore")
-        except Exception:
-            return []
-
-    lines = text.splitlines()
-    out = []
-
-    # filtry - heurystyka na podstawie group-title / tvg-name
-    def _match_filter(meta):
-        if not content_filter or content_filter in ("all",):
-            return True
-        meta_l = (meta or "").lower()
-        if content_filter == "adult":
-            return ("xxx" in meta_l) or ("adult" in meta_l)
-        if content_filter == "vod":
-            return ("vod" in meta_l) or ("movie" in meta_l) or ("series" in meta_l)
-        if content_filter == "live":
-            # Live: wszystko, co nie wygląda na VOD/XXX
-            return not (("vod" in meta_l) or ("movie" in meta_l) or ("series" in meta_l) or ("xxx" in meta_l) or ("adult" in meta_l))
-        return True
-
-    extinf_re = re.compile(r"#EXTINF:(?P<attrs>[^,]*),(?P<title>.*)$")
-    attr_re = re.compile(r'(\w+?)="(.*?)"')
-
-    cur = None
-    for ln in lines:
-        ln = ln.strip()
-        if not ln:
-            continue
-        if ln.startswith("#EXTINF"):
-            m = extinf_re.match(ln)
-            if not m:
-                cur = None
-                continue
-            attrs = m.group("attrs")
-            title = (m.group("title") or "").strip()
-            a = {k: v for (k, v) in attr_re.findall(attrs)}
-            group = a.get("group-title") or a.get("group") or "Inne"
-            logo = a.get("tvg-logo") or ""
-            if not _match_filter(group + " " + title):
-                cur = None
-                continue
-            cur = {
-                "title": title,
-                "group": group,
-                "tvg-logo": logo,
-                "tvg-id": a.get("tvg-id", ""),
-                "tvg-name": a.get("tvg-name", ""),
-            }
-            continue
-        if ln.startswith("#"):
-            continue
-        # URL
-        if cur is not None:
-            cur["url"] = ln
-            out.append(cur)
-            cur = None
-
-    return out
+        return []

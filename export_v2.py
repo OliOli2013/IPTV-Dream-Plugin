@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v7.0.0 - szybki, bezpieczny eksport bukietów + EPG/Picon.
+IPTV Dream v8.0.0 - szybki, bezpieczny eksport bukietów + EPG/Picon.
 
 Wersja przebudowana pod mechanizmy zgodne z TvMad:
 - normalizacja nazw kanałów i aliasy picon,
@@ -24,9 +24,14 @@ except Exception:
     eDVBDB = None
 
 try:
-    from .tools.channel_name_utils import clean_live_channel_name, normalize_channel_key, channel_name_variants, alias_candidates
+    from .tools.channel_name_utils import (
+        clean_live_channel_name, clean_display_channel_name, clean_bouquet_name,
+        normalize_channel_key, channel_name_variants, alias_candidates
+    )
 except Exception:
     clean_live_channel_name = None
+    clean_display_channel_name = None
+    clean_bouquet_name = None
     normalize_channel_key = None
     channel_name_variants = None
     alias_candidates = None
@@ -67,23 +72,22 @@ def sanit(name):
 
 
 def sanit_title(name):
+    """Return a clean visible channel name without provider country prefixes.
+
+    v8 deliberately keeps meaningful suffixes such as HD/FHD/UHD/4K in the
+    displayed channel name. Matching helpers may still generate quality-free
+    aliases for EPG/picons, but the user-facing bouquet remains faithful to the
+    provider name apart from technical country/language tags.
+    """
     if not name:
         return "No Name"
-    name = _safe_text(name).replace('\n', '').strip()
-    name = re.sub(r'tvg-[a-z]+="[^"]*"', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'[\(\[].*?[\)\]]', '', name)
-    name = re.sub(r'^(PL|EN|DE|IT|UK|US|ES|AR|VIP|RAW|FHD|UHD|HEVC|4K)\s*[|:-]?\s*', '', name, flags=re.IGNORECASE)
-    # Nie usuwamy agresywnie XXX/adult – to była jedna z przyczyn gubienia treści dla dorosłych.
-    tags = ['HD', 'FHD', 'UHD', '4K', 'RAW', 'VIP', 'PL', 'SD', 'HEVC', 'H265', 'UK', 'US', 'DE', 'ES']
-    for tag in tags:
-        name = re.sub(r'\s+[-|]?\s*' + tag + r'$', '', name, flags=re.IGNORECASE)
-    name = name.replace('|', ' ').replace('"', '').strip()
+    name = _safe_text(name).replace('\n', ' ').replace('\r', ' ').strip()
+    name = re.sub(r'tvg-[a-z-]+="[^"]*"', '', name, flags=re.IGNORECASE)
+    name = name.replace('\"', '').strip()
     name = re.sub(r'\s+', ' ', name)
-    if clean_live_channel_name:
+    if clean_display_channel_name:
         try:
-            cleaned = clean_live_channel_name(name)
-            if cleaned and len(cleaned) >= 2:
-                name = cleaned
+            name = clean_display_channel_name(name)
         except Exception:
             pass
     return name if len(name) >= 2 else "Stream"
@@ -422,7 +426,7 @@ def _write_epg_sources():
         _ensure_dir(EPG_DIR)
         # Główne źródła podobne do starszych wersji, ale rozszerzone o DE/ES/AR.
         sources = [
-            ("IPTV Dream - Poland", "http://epg.ovh/pl.xml.gz"),
+            ("IPTV Dream - Poland", "https://epg.ovh/pl.gz"),
             ("IPTV Dream - Poland open-epg", "https://www.open-epg.com/files/poland2.xml.gz"),
             ("IPTV Dream - Germany", "https://iptv-epg.org/files/epg-de.xml.gz"),
             ("IPTV Dream - Spain", "https://iptv-epg.org/files/epg-es.xml.gz"),
@@ -431,7 +435,6 @@ def _write_epg_sources():
             ("IPTV Dream - France", "https://iptv-epg.org/files/epg-fr.xml.gz"),
             ("IPTV Dream - Italy", "https://iptv-epg.org/files/epg-it.xml.gz"),
             ("IPTV Dream - Russia", "https://iptv-epg.org/files/epg-ru.xml.gz"),
-            ("IPTV Dream - World Mix", "http://epg.bevy.be/bevy.xml.gz"),
         ]
         buf = ['<?xml version="1.0" encoding="utf-8"?>\n<sources>\n', '  <sourcecat sourcecatname="IPTV Dream EPG">\n']
         for desc, url in sources:
@@ -450,6 +453,44 @@ def _write_epg_sources():
         return True
     except Exception as e:
         print('[IPTVDream] EPG source write error: %s' % e)
+        return False
+
+
+def _write_light_epg_mapping(mapping):
+    """Write a bounded EPGImport map using the exact bouquet service refs.
+
+    This is intentionally smaller than create_epg_xml(): it keeps export fast
+    while ensuring EPGImport is not left with an empty channels file.
+    """
+    try:
+        _ensure_dir(EPG_DIR)
+        tmp = EPG_CHANNEL_FILE + '.tmp'
+        seen = set()
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write('<?xml version="1.0" encoding="utf-8"?>\n<channels>\n')
+            for entry in mapping or []:
+                ref = _safe_text(entry.get('ref')).strip()
+                if not ref:
+                    continue
+                name = _safe_text(entry.get('name')).strip()
+                tvg = _safe_text(entry.get('tvg')).strip()
+                ids = []
+                for xid in (tvg, name, re.sub(r'\s+', '', name), re.sub(r'\s+', '', name).lower() + '.pl' if name else ''):
+                    xid = _safe_text(xid).strip()
+                    if xid and xid not in ids and len(xid) <= 160:
+                        ids.append(xid)
+                for xid in ids[:4]:
+                    key = ref + '|' + xid
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    f.write('  <channel id="%s">%s</channel>\n' % (escape(xid), escape(ref)))
+            f.write('</channels>\n')
+        os.replace(tmp, EPG_CHANNEL_FILE)
+        _write_epg_sources()
+        return True
+    except Exception as e:
+        print('[IPTVDream] Lightweight EPG map error: %s' % e)
         return False
 
 
@@ -491,7 +532,7 @@ def create_epg_xml(mapping):
 def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097", include_epg_picons=False):
     """Szybki eksport playlisty do bukietów Enigma2.
 
-    Ważne: od v7.0.0 eksport bukietów pozostaje szybki i nie buduje ciężkich map EPG/Picon
+    Ważne: od v8.0.0 eksport bukietów pozostaje szybki i nie buduje ciężkich map EPG/Picon
     w tej samej operacji. To przywraca szybkie działanie eksportu i eliminuje
     wiszący pasek 0% oraz GSOD przy dużych listach/MAC. EPG i pikony pozostają
     obsługiwane przez osobne funkcje wtyczki.
@@ -508,11 +549,18 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
         except Exception:
             grp = "Main"
         grp = _safe_text(grp).strip() or "Main"
+        if clean_bouquet_name:
+            try:
+                grp = clean_bouquet_name(grp)
+            except Exception:
+                pass
+        grp = _safe_text(grp).strip() or "Main"
         groups.setdefault(grp, []).append(ch)
 
     total_channels = 0
     total_bouquets = 0
     export_errors = []
+    epg_mapping_light = []
 
     ua_encoded = urllib.parse.quote(RAW_UA)
     ua_suffix = "#User-Agent=%s" % ua_encoded
@@ -523,7 +571,9 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
         written_in_group = 0
         try:
             _ensure_dir(BOUQUET_DIR)
-            lines = ["#NAME %s - %s" % (bouquet_name or "IPTV", grp)]
+            # v8: visible bouquet name is exactly the provider group name.
+            # The source/portal name stays only in the internal filename to avoid collisions.
+            lines = ["#NAME %s" % grp]
             for ch in chans:
                 try:
                     url = _safe_text(ch.get("url", "")).strip()
@@ -537,8 +587,17 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
                     tvg_id = (ch.get("epg_id") or ch.get("tvg-id") or ch.get("tvg_id") or "")
                     sid, tsid, onid, namespace = _stable_dvb_ids(url, title, tvg_id)
                     ref_prefix = "%s:0:1:%s:%s:%s:%s:0:0:0" % (service_type, sid, tsid, onid, namespace)
-                    full_ref = "%s:%s:%s" % (ref_prefix, urllib.parse.quote(url, safe=':/?&=%#|+-._~'), title)
-                    lines.append("#SERVICE %s" % full_ref)
+                    if not _is_vod_like(title, grp, url):
+                        epg_mapping_light.append({
+                            'ref': ref_prefix,
+                            'name': title,
+                            'tvg': tvg_id,
+                            'group': grp
+                        })
+                    # The URL is one field of an Enigma2 service reference: encode ':'
+                    # from http:// so it cannot be interpreted as a field separator.
+                    encoded_url = urllib.parse.quote(url, safe='/%')
+                    lines.append("#SERVICE %s:%s:" % (ref_prefix, encoded_url))
                     lines.append("#DESCRIPTION %s" % title)
                     written_in_group += 1
                     total_channels += 1
@@ -573,6 +632,11 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
     if total_channels == 0 and playlist:
         last_error = export_errors[-1] if export_errors else 'no valid stream URLs found'
         raise Exception('No channels exported. %s' % last_error)
+
+    # Always keep a small exact EPGImport map in sync with exported bouquets.
+    # This is local file I/O only; no network/picon work is performed here.
+    if epg_mapping_light:
+        _write_light_epg_mapping(epg_mapping_light)
 
     # Ciężkie EPG/Picon można nadal uruchomić świadomie przez osobny tryb,
     # ale GUI domyślnie wywołuje szybki eksport bez tych operacji.

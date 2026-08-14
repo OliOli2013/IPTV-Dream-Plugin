@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v7.0.0 - bounded MAC/Stalker/MAG helper.
+"""IPTV Dream v8.0.0 - bounded MAC/Stalker/MAG helper.
 
 Reworked after comparing mature IPTV plugins:
 - fast, deterministic endpoint selection instead of probing many variants,
@@ -34,6 +34,14 @@ try:
 except Exception:
     def _(txt, lang='pl'):
         return txt
+
+try:
+    from .channel_name_utils import clean_display_channel_name, clean_bouquet_name
+except Exception:
+    def clean_display_channel_name(value):
+        return clean_name(value)
+    def clean_bouquet_name(value):
+        return clean_name(value)
 
 try:
     from .logger import get_logger, mask_sensitive
@@ -778,7 +786,7 @@ def _group_matches(row, gid):
 
 def _is_local_url(url):
     u = (url or '').strip().lower()
-    return u.startswith(('http://localhost/', 'https://localhost/', 'http://127.0.0.1/', 'https://127.0.0.1/')) or '/localhost/' in u
+    return u.startswith(('http://localhost/', 'https://localhost/', 'http://128.0.0.1/', 'https://128.0.0.1/')) or '/localhost/' in u
 
 
 def _abs_logo(logo, root):
@@ -812,10 +820,12 @@ def _play_url(client, row, kind='itv', resolve=True):
 
 
 def _channel_from_live(client, row, genres, forced_group=None, resolve=True):
-    name = clean_name(row.get('name') or row.get('title') or ('Channel %s' % (row.get('id') or '')))
+    raw_name = clean_name(row.get('name') or row.get('title') or ('Channel %s' % (row.get('id') or '')))
+    name = clean_display_channel_name(raw_name)
     gid = _row_gid(row)
     group = forced_group or genres.get(gid) or row.get('genre') or row.get('category') or row.get('tv_genre') or 'Inne'
-    group = clean_name(group)
+    raw_group = clean_name(group)
+    group = clean_bouquet_name(raw_group)
     adult = _is_adult_title_group(name, group)
     if adult:
         group = 'XXX'
@@ -823,8 +833,11 @@ def _channel_from_live(client, row, genres, forced_group=None, resolve=True):
     url = _play_url(client, row, 'itv', resolve=resolve)
     return {
         'title': name,
+        'name': name,
+        'raw_title': raw_name,
         'url': url,
         'group': group,
+        'raw_group': raw_group,
         'logo': logo,
         'tvg-logo': logo,
         'epg': '',
@@ -891,7 +904,7 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
                     if not isinstance(g, dict):
                         continue
                     gid = str(g.get('id') or g.get('genre_id') or g.get('category_id') or '').strip()
-                    name = clean_name(g.get('title') or g.get('name') or 'Inne')
+                    name = clean_bouquet_name(clean_name(g.get('title') or g.get('name') or 'Inne'))
                     if gid:
                         genres[gid] = name
                         genre_order.append(gid)
@@ -983,12 +996,12 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
                 cid = cat.get('id') or cat.get('category_id')
                 if cid is None:
                     continue
-                group = clean_name(cat.get('title') or cat.get('name') or 'VOD')
+                group = clean_bouquet_name(clean_name(cat.get('title') or cat.get('name') or 'VOD'))
                 cb(10 + int((cidx / float(total_cats)) * 85), 'VOD: %s' % group)
                 for it in client.ordered_list('vod', cid, max_pages=MAC_MAX_VOD_PAGES, sortby='added'):
                     if not isinstance(it, dict):
                         continue
-                    title = clean_name(it.get('name') or it.get('title') or 'VOD')
+                    title = clean_display_channel_name(clean_name(it.get('name') or it.get('title') or 'VOD'))
                     logo = _abs_logo(it.get('screenshot_uri') or it.get('poster') or it.get('cover') or it.get('logo') or '', client.portal_root)
                     cmd = it.get('cmd') or it.get('play_cmd') or it.get('command') or ''
                     url = client.link(cmd, 'vod') or StalkerClient.clean_cmd(cmd)
@@ -1009,12 +1022,12 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
                 cid = cat.get('id') or cat.get('category_id')
                 if cid is None:
                     continue
-                group = clean_name(cat.get('title') or cat.get('name') or 'Series')
+                group = clean_bouquet_name(clean_name(cat.get('title') or cat.get('name') or 'Series'))
                 cb(10 + int((cidx / float(total_cats)) * 85), 'SERIES: %s' % group)
                 for it in client.ordered_list('series', cid, max_pages=MAC_MAX_SERIES_PAGES, sortby='added'):
                     if not isinstance(it, dict):
                         continue
-                    title = clean_name(it.get('name') or it.get('title') or 'Series')
+                    title = clean_display_channel_name(clean_name(it.get('name') or it.get('title') or 'Series'))
                     logo = _abs_logo(it.get('screenshot_uri') or it.get('poster') or it.get('cover') or it.get('logo') or '', client.portal_root)
                     cmd = it.get('cmd') or it.get('play_cmd') or it.get('command') or ''
                     url = client.link(cmd, 'series') or StalkerClient.clean_cmd(cmd)
@@ -1044,9 +1057,14 @@ def parse_m3u_text(content):
                 attrs = {k.lower(): v for k, v in attr_re.findall(line.split(',', 1)[0])}
             except Exception:
                 attrs = {}
+            raw_title = clean_name(attrs.get('tvg-name') or title)
+            raw_group = clean_name(attrs.get('group-title') or attrs.get('group') or 'Main')
             current = {
-                'title': clean_name(attrs.get('tvg-name') or title),
-                'group': clean_name(attrs.get('group-title') or attrs.get('group') or 'Main'),
+                'title': clean_display_channel_name(raw_title),
+                'name': clean_display_channel_name(raw_title),
+                'group': clean_bouquet_name(raw_group),
+                'raw_title': raw_title,
+                'raw_group': raw_group,
                 'logo': attrs.get('tvg-logo') or attrs.get('logo') or '',
                 'epg_id': attrs.get('tvg-id') or attrs.get('epg-id') or attrs.get('id') or ''
             }
