@@ -6,6 +6,6 @@ must not initialize Xtream/WebIF/EPG screens or fail because an unrelated module
 is unavailable on a particular Enigma2 image.
 """
 
-TOOLS_VERSION = "8.0.0"
+TOOLS_VERSION = "8.0.1"
 
 __all__ = ['TOOLS_VERSION']

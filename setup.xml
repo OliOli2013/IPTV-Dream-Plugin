@@ -2,17 +2,17 @@
 <setupxml>
     <plugin
         key="IPTVDreamV8"
-        name="IPTV Dream v8.0.0"
+        name="IPTV Dream v8.0.1"
         description="Wtyczka IPTV dla Enigma2 - M3U / Xtream / MAC / EPG / Pikony / WebIF"
         author="Paweł Pawełek"
-        version="8.0.0"
+        version="8.0.1"
         icon="plugin.png"
         type="1"
         namespace="iptv_dream_v8"
     >
         <labels>
             <![CDATA[
-                IPTV Dream v8.0.0
+                IPTV Dream v8.0.1
 
                 Funkcje:
                 • M3U z URL i pliku
@@ -24,7 +24,10 @@
                 • WebIF na porcie 9999
                 • Języki: Polski, English, Deutsch, Español, العربية, Русский
 
-                Najważniejsze zmiany 8.0.0:
+                Najważniejsze zmiany 8.0.1:
+                • naprawiony eksport nazw kanałów (brak N/A)
+                • naprawione odtwarzanie linków MAC/Stalker przez 127.0.0.1
+                • poprawna obsługa dużych portali i unikalne nazwy źródeł
                 • czyste nazwy bukietów zgodne z nazwą grupy z playlisty
                 • usuwanie przedrostków krajowych typu |DE|, [PL], DE:, UK - z nazw kanałów i grup
                 • poprawione dopasowanie EPG i picon po oczyszczeniu nazw
@@ -48,7 +51,7 @@
             ]]>
         </prerequisites>
         <attributes>
-            <attribute name="version" value="8.0.0" />
+            <attribute name="version" value="8.0.1" />
             <attribute name="api_version" value="1.0" />
             <attribute name="plugin_type" value="iptv" />
             <attribute name="category" value="multimedia" />

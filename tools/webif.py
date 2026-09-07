@@ -20,11 +20,17 @@ import base64
 import re
 import json
 
+try:
+    from urllib.parse import urlsplit
+except Exception:
+    from urlparse import urlsplit
+
 # Shared plugin config (v6)
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
 PROJECT_URL = "https://olioli2013.github.io/aio-iptv-projekt/"
 
 _server_port = None
+_server_listen_port = None
 _on_data_ready_callback = None
 
 
@@ -32,16 +38,16 @@ def is_valid_url(url):
     """Allow http/https URLs and optional IPTV pipe options after URL."""
     try:
         url = (url or '').split('|', 1)[0].strip()
+        if not url or re.search(r'[\x00-\x20\x7f]', url):
+            return False
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() not in ('http', 'https') or not parsed.hostname:
+            return False
+        # Accessing .port also validates malformed and out-of-range ports.
+        port = parsed.port
+        return port is None or 1 <= int(port) <= 65535
     except Exception:
-        pass
-    regex = re.compile(
-        r'^(?:http|https)://'
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}\.?|'
-        r'localhost|'
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
-        r'(?::\d+)?'
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-    return re.match(regex, url) is not None
+        return False
 
 
 def _img_base64(rel_path):
@@ -71,10 +77,10 @@ def _read_plugin_version():
         if os.path.exists(ver_path):
             with open(ver_path, "r", encoding="utf-8") as f:
                 v = (f.read() or "").strip()
-                return v or "8.0.0"
+                return v or "8.0.1"
     except Exception:
         pass
-    return "8.0.0"
+    return "8.0.1"
 
 
 def _detect_lang_from_system():
@@ -298,34 +304,56 @@ class IPTVDreamWebIf(Resource):
 
 
 def start_web_server(port, on_data_ready):
-    """Start WebIF server and report whether it is actually listening."""
-    global _server_port
+    """Start WebIF and fall back to a nearby port if the preferred one is busy."""
+    global _server_port, _server_listen_port
     if _server_port:
         return True
     if not WEBIF_AVAILABLE or reactor is None or Site is None:
         print("[IPTVDream] WebIF unavailable: python3-twisted-web is not installed")
         return False
     try:
-        root = IPTVDreamWebIf(on_data_ready)
-        _server_port = reactor.listenTCP(int(port), Site(root))
-        print("[IPTVDream] Web interface started on port %s" % port)
-        return True
-    except Exception as e:
-        _server_port = None
-        print("[IPTVDream] Failed to start web server: %s" % e)
-        return False
+        preferred = int(port)
+    except Exception:
+        preferred = 9999
+    if preferred < 1024 or preferred > 65535:
+        preferred = 9999
+    candidates = []
+    for candidate in [preferred] + list(range(preferred + 1, min(65535, preferred + 5) + 1)) + [10000]:
+        if candidate not in candidates:
+            candidates.append(candidate)
+    last_error = None
+    for candidate in candidates:
+        try:
+            root = IPTVDreamWebIf(on_data_ready)
+            _server_port = reactor.listenTCP(candidate, Site(root))
+            _server_listen_port = candidate
+            print("[IPTVDream] Web interface started on port %s" % candidate)
+            return True
+        except Exception as e:
+            _server_port = None
+            _server_listen_port = None
+            last_error = e
+    print("[IPTVDream] Failed to start web server: %s" % last_error)
+    return False
+
+
+def get_web_server_port(default=None):
+    return _server_listen_port if _server_listen_port is not None else default
 
 
 def stop_web_server():
     """Stop WebIF server and report success."""
-    global _server_port
+    global _server_port, _server_listen_port
     if not _server_port:
         return True
     try:
         _server_port.stopListening()
         _server_port = None
+        _server_listen_port = None
         print("[IPTVDream] Web interface stopped")
         return True
     except Exception as e:
+        _server_port = None
+        _server_listen_port = None
         print("[IPTVDream] Failed to stop web server: %s" % e)
         return False

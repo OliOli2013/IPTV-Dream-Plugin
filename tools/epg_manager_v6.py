@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v8.0.0 - MENADŻER EPG
+IPTV Dream v8.0.1 - MENADŻER EPG
 - Rozszerzone źródła EPG (20+ źródeł)
 - Inteligentne mapowanie do kanałów satelitarnych
 - Automatyczna instalacja EPG
@@ -10,6 +10,7 @@ IPTV Dream v8.0.0 - MENADŻER EPG
 
 import os, re, json, time, requests
 from datetime import datetime, timedelta
+from xml.sax.saxutils import escape
 try:
     from .channel_name_utils import normalize_channel_key, channel_name_variants
 except Exception:
@@ -102,26 +103,28 @@ class EPGManager:
         try:
             # Tworzenie pliku sources.xml
             content = '<?xml version="1.0" encoding="utf-8"?>\n<sources>\n'
-            content += '    <sourcecat sourcecatname="IPTV Dream v8.0.0 EPG Sources">\n'
+            content += '    <sourcecat sourcecatname="IPTV Dream v8.0.1 EPG Sources">\n'
             
             # Dodaj wszystkie źródła
             for source in self.epg_sources:
                 content += f'''        <source type="gen_xmltv" channels="iptvdream.channels.xml">
-                    <description>{source['name']}</description>
-                    <url>{source['url']}</url>
+                    <description>{escape(str(source['name']))}</description>
+                    <url>{escape(str(source['url']))}</url>
                 </source>\n'''
             
             # Dodaj własne źródło jeśli podano
             if custom_url and custom_url.strip().startswith(('http', 'ftp')):
                 content += f'''        <source type="gen_xmltv" channels="iptvdream.channels.xml">
                     <description>Custom EPG Source</description>
-                    <url>{custom_url.strip()}</url>
+                    <url>{escape(custom_url.strip())}</url>
                 </source>\n'''
 
             content += '    </sourcecat>\n</sources>\n'
             
-            with open(self.sources_file, "w", encoding="utf-8") as f:
+            tmp_sources = self.sources_file + ".tmp"
+            with open(tmp_sources, "w", encoding="utf-8") as f:
                 f.write(content)
+            os.replace(tmp_sources, self.sources_file)
             
             # Upewnij się, że plik kanałów istnieje
             if not os.path.exists(self.channels_file):

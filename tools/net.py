@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v8.0.0 - hardened network helpers.
+"""IPTV Dream v8.0.1 - hardened network helpers.
 
 The helper is intentionally small and defensive. It never touches Enigma2 UI
 objects directly and every caller receives tagged errors that can be translated

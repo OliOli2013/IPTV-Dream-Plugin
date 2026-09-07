@@ -24,9 +24,11 @@ _MAX_BYTES = 512 * 1024
 _BACKUP_COUNT = 2
 
 # Mask common credential patterns (query params + JSON-ish)
-_RE_QUERY = re.compile(r"([?&](?:password|pass|pwd)=)([^&]+)", re.IGNORECASE)
+_RE_QUERY = re.compile(r"([?&](?:username|user|password|pass|pwd|token|api[_-]?key|auth)=)([^&#\s]+)", re.IGNORECASE)
 _RE_JSON  = re.compile(r"(\"(?:password|pass|pwd)\"\s*:\s*\")(.*?)(\")", re.IGNORECASE)
 _RE_XTREAM_URL = re.compile(r"(username=)([^&]+)(&password=)([^&]+)", re.IGNORECASE)
+_RE_URL_USERINFO = re.compile(r"((?:https?|rtsp)://)[^/@\s:]+:[^/@\s]+@", re.IGNORECASE)
+_RE_XTREAM_PATH = re.compile(r"((?:https?|rtsp)://[^/\s]+/(?:live|movie|series)/)[^/\s]+/[^/\s]+", re.IGNORECASE)
 
 
 def mask_sensitive(text):
@@ -35,6 +37,8 @@ def mask_sensitive(text):
         if text is None:
             return ""
         s = str(text)
+        s = _RE_URL_USERINFO.sub(r"\1***:***@", s)
+        s = _RE_XTREAM_PATH.sub(r"\1***/***", s)
         s = _RE_QUERY.sub(r"\1***", s)
         s = _RE_JSON.sub(r"\1***\3", s)
         s = _RE_XTREAM_URL.sub(r"\1***\3***", s)

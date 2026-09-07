@@ -118,12 +118,12 @@ def _cleanup_package_artifacts(root_dir):
         "README_v5.1.md", "README_v6.0.md", "TOOLS_IMPROVEMENTS_v5.1.md",
         "V6_INSTALLATION_FIX.md", "XTREAM_WINDOW_FIX.md",
         "GITHUB_REPLACE_INSTRUCTIONS.txt", "FILES_TO_DELETE_GITHUB.txt",
-        "CHANGED_FILES_8.0.0.txt", "RELEASE_TITLE.txt", "RELEASE_BODY_PL.md",
+        "RELEASE_TITLE.txt", "RELEASE_BODY_PL.md",
         "RELEASE_BODY_EN.md", "SHA256SUMS.txt", ".gitignore"
     }
     for current, dirs, files in os.walk(root_dir):
         for d in list(dirs):
-            if d in ("__pycache__", ".github", "screenshots", "release", "docs"):
+            if d in ("__pycache__", ".github", "screenshots", "release", "docs", "tests", "packaging"):
                 shutil.rmtree(os.path.join(current, d), ignore_errors=True)
                 try:
                     dirs.remove(d)
@@ -132,7 +132,11 @@ def _cleanup_package_artifacts(root_dir):
         for fname in files:
             full = os.path.join(current, fname)
             remove = fname.endswith((".pyc", ".pyo", ".ipk", ".deb", ".patch"))
-            if current == root_dir and (fname in root_junk or fname.startswith("IPTVDream-8.0.0-")):
+            release_artifact = bool(re.match(
+                r'^(?:CHANGED_FILES_\d|IPTVDream-\d|AUDIT_|GITHUB_UPLOAD_|SHA256SUMS|build_ipk\.sh$)',
+                fname
+            ))
+            if current == root_dir and (fname in root_junk or release_artifact):
                 remove = True
             if remove:
                 try:

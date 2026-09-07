@@ -1,0 +1,11 @@
+Package: enigma2-plugin-extensions-iptvdream
+Version: @VERSION@
+Architecture: all
+Section: extra
+Priority: optional
+Depends: enigma2, python3-requests, python3-twisted
+Recommends: python3-twisted-web, enigma2-plugin-extensions-epgimport
+Maintainer: Paweł Pawełek <aio-iptv@wp.pl>
+License: GPL-3.0
+Homepage: https://olioli2013.github.io/aio-iptv-projekt/
+Description: IPTV Dream for Enigma2 - M3U, Xtream, MAC/Stalker, bouquets, EPG, picons and WebIF

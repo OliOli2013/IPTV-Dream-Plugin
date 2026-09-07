@@ -107,6 +107,7 @@ class PiconManager:
             "cache_enabled": True,
             "cache_max_age": 86400,
             "download_timeout": 10,
+            "max_download_bytes": 5 * 1024 * 1024,
             "max_concurrent_downloads": 5,
             "fallback_colors": True,
             "quality_preference": "high",
@@ -115,11 +116,20 @@ class PiconManager:
 
     def save_config(self):
         """Zapisuje konfigurację picon."""
+        tmp = self.config_file + '.tmp'
         try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
+            parent = os.path.dirname(self.config_file)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2)
-        except:
-            pass
+            os.replace(tmp, self.config_file)
+        except Exception:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
 
     def get_cache_key(self, url):
         """Generuje klucz cache."""
@@ -141,10 +151,11 @@ class PiconManager:
         """
         if not url or not channel_name:
             return None
+
+        cache_key = self.get_cache_key(url)
         
         # Sprawdź cache
         if self.config.get("cache_enabled", True):
-            cache_key = self.get_cache_key(url)
             cache_file = os.path.join(self.cache_dir, f"{cache_key}.png")
             
             if self.is_cache_valid(cache_file):
@@ -180,11 +191,25 @@ class PiconManager:
             content_type = response.headers.get('content-type', '').lower()
             if 'image' not in content_type and not str(url).lower().split('?', 1)[0].endswith(('.png', '.jpg', '.jpeg', '.webp')):
                 raise Exception("Nieprawidłowy typ zawartości")
+
+            max_bytes = max(65536, int(self.config.get("max_download_bytes", 5 * 1024 * 1024)))
+            try:
+                advertised = int(response.headers.get('content-length', 0) or 0)
+            except Exception:
+                advertised = 0
+            if advertised > max_bytes:
+                raise Exception("Picon przekracza limit %d B" % max_bytes)
             
             # Zapisz plik tymczasowy
             temp_file = os.path.join(self.temp_dir, f"temp_{cache_key}.png")
+            downloaded = 0
             with open(temp_file, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
+                    if not chunk:
+                        continue
+                    downloaded += len(chunk)
+                    if downloaded > max_bytes:
+                        raise Exception("Picon przekracza limit %d B" % max_bytes)
                     f.write(chunk)
             
             if PIL_AVAILABLE:
@@ -212,6 +237,11 @@ class PiconManager:
                 return picon_file
             
         except Exception as e:
+            try:
+                if 'temp_file' in locals() and os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception:
+                pass
             print(f"[PiconManager] Błąd pobierania picon dla {channel_name}: {e}")
             
             # Fallback na generowany picon tylko jeśli Pillow jest dostępne.
@@ -227,6 +257,10 @@ class PiconManager:
                 return image_file if os.path.exists(image_file) else None
             # Otwórz obraz
             img = Image.open(image_file)
+            width, height = img.size
+            if width <= 0 or height <= 0 or width > 4096 or height > 4096 or width * height > 16000000:
+                raise Exception("Nieprawidłowe wymiary picon")
+            img.load()
             
             # Konwersja do RGB jeśli potrzebne
             if img.mode != 'RGB':

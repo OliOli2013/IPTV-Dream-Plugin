@@ -114,15 +114,15 @@ class EPGManager:
             # 1. Dodajemy wszystkie źródła domyślne
             for source in EPG_SOURCES:
                 content += f'''        <source type="gen_xmltv" channels="iptvdream.channels.xml">
-            <description>{source['description']}</description>
-            <url>{source['url']}</url>
+            <description>{escape(str(source['description']))}</description>
+            <url>{escape(str(source['url']))}</url>
         </source>\n'''
             
             # 2. Dodajemy własne źródło EPG, jeśli podano
             if custom_url and custom_url.strip().startswith(('http', 'ftp')):
                 content += f'''        <source type="gen_xmltv" channels="iptvdream.channels.xml">
-            <description>{_("epg_custom", self.lang)}</description>
-            <url>{custom_url.strip()}</url>
+            <description>{escape(str(_("epg_custom", self.lang)))}</description>
+            <url>{escape(custom_url.strip())}</url>
         </source>\n'''
 
             content += '    </sourcecat>\n</sources>\n'

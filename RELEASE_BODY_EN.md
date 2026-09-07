@@ -1,38 +1,27 @@
-# IPTV Dream v8.0.0
+# IPTV Dream 8.0.1
 
-A major Enigma2 IPTV Dream update combining the 7.0.1 stability audit with clean bouquet/channel naming and a refreshed AIO Panel-inspired interface.
+Maintenance release based on a full review of version 8.0.0.
 
-## Highlights
+Highlights:
 
-- **Bouquet display names now match the playlist group name only** — no playlist, username or portal prefix.
-- Technical country/language prefixes are removed from channel and group names, for example:
-  - `|DE| HOPE TV` → `HOPE TV`
-  - `[PL] TVP 1 HD` → `TVP 1 HD`
-  - `UK - BBC ONE FHD` → `BBC ONE FHD`
-- Clean names improve **EPG and picon matching**, while the original `tvg-id` remains preferred.
-- Visible quality suffixes such as `HD/FHD/UHD/4K` are preserved.
-- Channel normalization was corrected for names such as **CANAL+**, **TV PULS**, **CHANNEL 4** and **KANAL D**.
-- New AIO Panel-inspired dark navy/cyan/green UI and IPTV Dream branding.
-- Context-sensitive help updates immediately when a menu item is highlighted.
-- Help text is available in **PL / EN / DE / ES / AR / RU**.
-- The main screen now contains a QR code and the project website: `https://olioli2013.github.io/aio-iptv-projekt/`.
-- WebIF menu text is cleaner; the full `IP:9999` address is shown in the information panel.
-- Playlist group navigation was also fixed.
+- fixed channels displayed as `N/A` after bouquet export;
+- fixed black playback for unresolved MAC/Stalker loopback links (`127.0.0.1`);
+- local portal commands are resolved even on lists larger than 400 channels;
+- safe Enigma2 service-reference URL and channel-name encoding;
+- reliable export reporting, `bouquets.tv` backup and stale-entry cleanup;
+- source-aware bouquet sets plus a one-step option to remove every old IPTV Dream bouquet;
+- collision-resistant M3U/Xtream/MAC source names without leaking usernames or MAC fragments;
+- WebIF automatically falls back when port 9999 is occupied;
+- EPG XML, picon download, logging, installer and updater hardening;
+- automated regression tests in GitHub Actions.
 
-## Installation
+Validation: 10/10 regression tests, complete Python compilation, installer syntax check, IPK payload inspection and reproducible package build.
+
+Install from `/tmp`:
 
 ```sh
-opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_8.0.0_all.ipk
+opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_8.0.1_all.ipk
 init 4
 sleep 2
 init 3
 ```
-
-GitHub installer:
-
-```sh
-wget -qO - https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh | /bin/sh
-```
-
-**Author:** Paweł Pawełek  
-**Project website:** `https://olioli2013.github.io/aio-iptv-projekt/`

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v8.0.0
+"""IPTV Dream v8.0.1
 
 Cel tej wersji w repozytorium użytkownika:
 - Zachować funkcjonalność i optymalizacje v6 (szybsze ładowanie, cache, multi-thread),
@@ -17,11 +17,13 @@ import json
 import time
 import threading
 import socket
+import hashlib
 
 try:
-    from urllib.parse import urlencode
+    from urllib.parse import urlencode, urlparse
 except Exception:
     from urllib import urlencode
+    from urlparse import urlparse
 
 import requests
 from twisted.internet import reactor
@@ -46,12 +48,12 @@ except Exception:
 
 # lokalne moduły
 from .file_pick import M3UFilePick
-from .export_v2 import export_bouquets
+from .export_v2 import export_bouquets, _atomic_write
 from .tools.lang import _, SUPPORTED_LANGS, LANGUAGE_NAMES, normalize_lang
 from .tools.net import http_get
 from .tools.logger import get_logger, mask_sensitive
 from .tools.bouquet_picker import BouquetPicker
-from .tools.webif import start_web_server, stop_web_server
+from .tools.webif import start_web_server, stop_web_server, get_web_server_port
 from .tools.updater import check_update, do_update
 from .tools.epg_picon import install_epg_sources
 from .tools.favorites import FavoritesManager
@@ -77,7 +79,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "8.0.0"
+    return "8.0.1"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
@@ -107,6 +109,25 @@ EPG_URL_KEY = "epg_url"
 
 PROJECT_URL = "https://olioli2013.github.io/aio-iptv-projekt/"
 
+
+def _source_label(kind, source_key, suffix="", hint=""):
+    """Create a stable, non-secret source name for bouquet filenames."""
+    source_key = str(source_key or "")
+    if not hint:
+        try:
+            hint = urlparse(source_key.split('|', 1)[0]).hostname or ""
+        except Exception:
+            hint = ""
+    hint = re.sub(r'[^A-Za-z0-9._-]+', '_', str(hint or '')).strip('._-')[:32]
+    digest = hashlib.sha1(source_key.encode('utf-8', 'ignore')).hexdigest()[:8]
+    parts = [str(kind or 'IPTV')]
+    if hint:
+        parts.append(hint)
+    parts.append(digest)
+    if suffix:
+        parts.append(str(suffix))
+    return '-'.join(parts)
+
 PROJECT_LABELS = {
     "pl": ("Strona projektu", "Zeskanuj kod QR, aby odwiedzić stronę twórcy."),
     "en": ("Project website", "Scan the QR code to visit the creator website."),
@@ -127,7 +148,7 @@ ACTION_HELP = {
         "favorites": ("Ulubione", "Otwiera zapisane grupy i kanały dodane do ulubionych w IPTV Dream.", "OK: pokaż ulubione."),
         "manage": ("Zarządzanie", "Język, typ serwisu 4097/5002, EPG, logi, cache, historia oraz zarządzanie bukietami IPTV Dream.", "OK: otwórz ustawienia i narzędzia."),
         "stats": ("Statystyki", "Pokazuje statystyki sesji, ładowania playlist oraz użycia wtyczki.", "OK: pokaż statystyki."),
-        "webif": ("Web Interfejs", "Włącza lub wyłącza WebIF IPTV Dream na porcie 9999 w sieci lokalnej.", "OK: przełącz WebIF."),
+        "webif": ("Web Interfejs", "Włącza lub wyłącza WebIF IPTV Dream w sieci lokalnej. Preferuje port 9999 i automatycznie wybiera wolny port, gdy jest zajęty.", "OK: przełącz WebIF."),
         "update": ("Aktualizacje", "Sprawdza wersję w oficjalnym repozytorium i może bezpiecznie zainstalować nowsze wydanie.", "OK: sprawdź aktualizacje."),
         "lang": ("Język", "Wybiera język interfejsu albo tryb automatyczny zgodny z językiem Enigma2.", "OK: wybierz język."),
         "stype": ("Typ serwisu", "Przełącza referencje IPTV pomiędzy 4097 i 5002. Użyj typu najlepiej współpracującego z odtwarzaczem Twojego image.", "OK: przełącz 4097 / 5002."),
@@ -444,7 +465,7 @@ class IPTVDreamV6(Screen):
     # AIO Panel-inspired native Enigma2 layout. It uses only built-in fonts and
     # widgets to keep compatibility across OpenATV/OpenPLi/OpenHDF/OpenViX skins.
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,680" title="IPTV Dream v8.0.0">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,680" title="IPTV Dream v8.0.1">
         <eLabel position="0,0" size="1200,680" backgroundColor="#06111d" zPosition="-10" />
 
         <!-- Header: clean, centred, no e-mail/social clutter -->
@@ -590,6 +611,12 @@ class IPTVDreamV6(Screen):
             self.service_type = 4097
 
         self.webif_enabled = bool(self.cfg.get('webif_enabled', False))
+        try:
+            self.webif_port = int(self.cfg.get('webif_port', WEBIF_PORT))
+            if self.webif_port < 1024 or self.webif_port > 65535:
+                self.webif_port = WEBIF_PORT
+        except Exception:
+            self.webif_port = WEBIF_PORT
         self.last_source = self.cfg.get('last_source')
         self.current_playlist = None
         self.playlist_name = ''
@@ -808,7 +835,7 @@ class IPTVDreamV6(Screen):
         key = action[0] if isinstance(action, tuple) and action else action
         if key == "webif":
             try:
-                text += "\nhttp://%s:%d  [%s]" % (get_lan_ip(), WEBIF_PORT, "ON" if self.webif_enabled else "OFF")
+                text += "\nhttp://%s:%d  [%s]" % (get_lan_ip(), self.webif_port, "ON" if self.webif_enabled else "OFF")
             except Exception:
                 pass
         elif key == "stype":
@@ -840,7 +867,11 @@ class IPTVDreamV6(Screen):
         # Start WebIF jeśli włączone w config
         if getattr(self, "webif_enabled", False):
             try:
-                self.webif_enabled = bool(start_web_server(WEBIF_PORT, self.onWebIfData))
+                self.webif_enabled = bool(start_web_server(self.webif_port, self.onWebIfData))
+                if self.webif_enabled:
+                    self.webif_port = get_web_server_port(self.webif_port)
+                    self.cfg['webif_port'] = self.webif_port
+                    self._save_cfg()
             except Exception:
                 self.webif_enabled = False
             if not self.webif_enabled:
@@ -903,7 +934,7 @@ class IPTVDreamV6(Screen):
     def showMainMenu(self):
         ip = get_lan_ip()
         webif_txt = "ON" if self.webif_enabled else "OFF"
-        webif_url = "http://%s:%d" % (ip, WEBIF_PORT)
+        webif_url = "http://%s:%d" % (ip, self.webif_port)
 
         # Kolory numerów (jak w referencyjnych screenach v5):
         # 1-4 zielony, 5 szary, 6 fiolet, 7 pomarańcz, 8 niebieski, 9 czerwony.
@@ -1357,7 +1388,8 @@ class IPTVDreamV6(Screen):
             playlist = self.loader.parse_m3u_content(content, progress_callback=self.updateProgress)
             return playlist
 
-        run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, "M3U-URL", err))
+        source_name = _source_label("M3U", raw_input)
+        run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, source_name, err))
 
     # ---------- M3U file ----------
 
@@ -1422,7 +1454,8 @@ class IPTVDreamV6(Screen):
             self.last_source = {"type": "xtream", "value": {"host": host, "user": user, "pass": pwd, "filter": content_type}}
             self.cfg["last_source"] = self.last_source
             self._save_cfg()
-            self.onPlaylistLoaded(playlist, "Xtream-%s-%s" % (user, suffix), None)
+            source_name = _source_label("Xtream", "%s|%s" % (host, user), suffix=suffix)
+            self.onPlaylistLoaded(playlist, source_name, None)
 
         run_in_thread(_dl, _done)
 
@@ -1513,19 +1546,12 @@ class IPTVDreamV6(Screen):
         self.last_source = {"type": "mac", "value": {"host": host, "mac": mac, "filter": content_type}}
         self.cfg["last_source"] = self.last_source
         self._save_cfg()
-        # unique playlist name per portal + content type
-        def _mk_id():
-            try:
-                dom = host.split('://', 1)[-1].split('/', 1)[0]
-            except Exception:
-                dom = host
-            mac_id = mac.replace(':', '').replace('-', '')
-            mac_id = mac_id[-6:] if len(mac_id) >= 6 else mac_id
-            ident = (portal_name or dom).strip() or dom
-            ident = ident.replace('/', '_').replace(' ', '_')
-            return '%s_%s' % (ident, mac_id) if mac_id else ident
         suffix = 'LIVE' if content_type == 'live' else ('VOD' if content_type == 'vod' else ('ADULT' if content_type == 'adult' else 'SERIES'))
-        pl_name = 'MAC-%s-%s' % (_mk_id(), suffix)
+        try:
+            portal_hint = portal_name or urlparse(host).hostname or "portal"
+        except Exception:
+            portal_hint = portal_name or "portal"
+        pl_name = _source_label('MAC', '%s|%s' % (host, mac), suffix=suffix, hint=portal_hint)
         run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, pl_name, err))
 
     def deleteMacPortal(self):
@@ -1558,7 +1584,10 @@ class IPTVDreamV6(Screen):
             if self.webif_enabled:
                 self.webif_enabled = not bool(stop_web_server())
             else:
-                self.webif_enabled = bool(start_web_server(WEBIF_PORT, self.onWebIfData))
+                self.webif_enabled = bool(start_web_server(self.webif_port, self.onWebIfData))
+                if self.webif_enabled:
+                    self.webif_port = get_web_server_port(self.webif_port)
+                    self.cfg['webif_port'] = self.webif_port
                 if not self.webif_enabled:
                     self.session.open(MessageBox, _("Nie udało się uruchomić WebIF. Port może być zajęty.", self.lang), MessageBox.TYPE_ERROR, timeout=4)
 
@@ -2026,7 +2055,7 @@ class IPTVDreamV6(Screen):
 
     
     def deleteDreamBouquets(self):
-        """Bulk-delete bouquets created by IPTV Dream (by #NAME base)."""
+        """Bulk-delete bouquets created by IPTV Dream by source or all at once."""
         try:
             import glob
             bq_files = sorted(glob.glob("/etc/enigma2/userbouquet.iptv_dream_*.tv"))
@@ -2042,9 +2071,12 @@ class IPTVDreamV6(Screen):
             base = None
             try:
                 with open(fp, "r", errors="ignore") as f:
-                    first = (f.readline() or "").strip()
-                if first.startswith("#NAME"):
-                    nm = first.replace("#NAME", "", 1).strip()
+                    header = [(f.readline() or "").strip() for _idx in range(5)]
+                source_line = next((x for x in header if x.startswith("#IPTVDREAM_SOURCE ")), "")
+                if source_line:
+                    base = source_line.replace("#IPTVDREAM_SOURCE", "", 1).strip()
+                elif header and header[0].startswith("#NAME"):
+                    nm = header[0].replace("#NAME", "", 1).strip()
                     base = nm.split(" - ", 1)[0].strip() if nm else None
             except Exception:
                 base = None
@@ -2052,7 +2084,9 @@ class IPTVDreamV6(Screen):
                 base = "IPTVDream"
             groups.setdefault(base, []).append(fp)
 
-        choices = []
+        all_key = "__iptvdream_all__"
+        all_label = "Wszystkie bukiety IPTV Dream" if self.lang == "pl" else "All IPTV Dream bouquets"
+        choices = [("%s (%d)" % (all_label, len(bq_files)), all_key)]
         for base, fps in sorted(groups.items(), key=lambda x: x[0].lower()):
             choices.append(("%s (%d)" % (base, len(fps)), base))
 
@@ -2060,9 +2094,10 @@ class IPTVDreamV6(Screen):
             if not choice:
                 return
             base = choice[1]
-            fps = groups.get(base, [])
+            fps = list(bq_files) if base == all_key else groups.get(base, [])
             if not fps:
                 return
+            display_base = all_label if base == all_key else base
 
             def _confirm(yes):
                 if not yes:
@@ -2087,8 +2122,7 @@ class IPTVDreamV6(Screen):
                         if keep:
                             new_lines.append(ln)
                     if new_lines != idx_lines:
-                        with open(idx_path, "w") as f:
-                            f.writelines(new_lines)
+                        _atomic_write(idx_path, ''.join(new_lines))
                 except Exception:
                     pass
 
@@ -2110,7 +2144,7 @@ class IPTVDreamV6(Screen):
                 msg = ("Usunięto %d bukietów." % removed) if self.lang=="pl" else ("Deleted %d bouquets." % removed)
                 self.session.open(MessageBox, msg, MessageBox.TYPE_INFO, timeout=4)
 
-            prompt = ("Usunąć bukiety dla: %s ?" % base) if self.lang=="pl" else ("Delete bouquets for: %s ?" % base)
+            prompt = ("Usunąć bukiety dla: %s ?" % display_base) if self.lang=="pl" else ("Delete bouquets for: %s ?" % display_base)
             self.session.openWithCallback(_confirm, MessageBox, prompt, MessageBox.TYPE_YESNO)
 
         self.session.openWithCallback(_picked, ChoiceBox, title=_("Wybierz zestaw bukietów", self.lang) if self.lang=="pl" else _("Select bouquet set", self.lang), list=choices)

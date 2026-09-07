@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v8.0.0 - robust playlist loader.
+"""IPTV Dream v8.0.1 - robust playlist loader.
 
 Rebuilt for provider compatibility:
 - accepts valid M3U even when server sends wrong Content-Type (text/html),
@@ -34,7 +34,7 @@ DEFAULT_CONFIG = "/etc/enigma2/iptvdream_v6_config.json"
 UA_DESKTOP = DEFAULT_HEADERS.get('User-Agent')
 UA_MAG = 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 4 rev: 1812 Mobile Safari/533.3'
 UA_VLC = 'VLC/3.0.20 LibVLC/3.0.20'
-UA_IPTV = 'Mozilla/5.0 IPTV-Dream/8.0.0 Enigma2'
+UA_IPTV = 'Mozilla/5.0 IPTV-Dream/8.0.1 Enigma2'
 
 HTML_MARKERS = (
     '<html', '<!doctype html', '<body', '<head', 'cloudflare', 'captcha',

@@ -1,3 +1,1 @@
-103350b99de67dcd002081bac47d38474beca42c5687c04fd665ed9f98878bc3  enigma2-plugin-extensions-iptvdream_8.0.0_all.ipk
-95efdb8cdc591aa15a444ac20def46ffde31a91edff9527b25c067396762d155  dream_v6.py
-63cb564510961272bb2420e1764583ce80236aacd27629289aa6b074a96708a1  pic/qrcode.png
+ec064dd09254e3b4cd4fe371bd1462f0f55b40ee15f6f8afefa96d87e7ad0bd6  enigma2-plugin-extensions-iptvdream_8.0.1_all.ipk

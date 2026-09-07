@@ -21,7 +21,7 @@ class ConfigManager:
     def ensure_defaults(self):
         """Upewnia się, że istnieją wszystkie domyślne ustawienia."""
         defaults = {
-            "version": "8.0.0",
+            "version": "8.0.1",
             "language": "auto",
             "debug": False,
             "log_file": "/tmp/iptvdream.log",
@@ -75,6 +75,7 @@ class ConfigManager:
         for key, value in defaults.items():
             if key not in self.config:
                 self.config[key] = value
+        self.config["version"] = defaults["version"]
         
         self.save_config()
     

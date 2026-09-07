@@ -1,6 +1,16 @@
-# IPTV Dream v8.0.0
+# IPTV Dream v8.0.1
 
 **IPTV Dream** to wtyczka IPTV dla odbiorników **Enigma2 / Python 3**. Obsługuje listy M3U/M3U8, Xtream Codes, portale MAC/Stalker/MAG, eksport do bukietów Enigma2, EPGImport, pikony, ulubione, statystyki, WebIF i aktualizacje online.
+
+## Najważniejsze zmiany w 8.0.1
+
+- Naprawiono eksport kanałów wyświetlanych jako **N/A**: nazwa jest zapisywana zarówno w referencji usługi, jak i w `#DESCRIPTION`.
+- Naprawiono czarny ekran w portalach MAC/Stalker: lokalne polecenia `127.0.0.1` są zawsze rozwiązywane do prawdziwego URL, także na listach powyżej 400 kanałów.
+- Dodano walidację i bezpieczne kodowanie URL/nazw w bukietach oraz ochronę przed uszkodzonymi wpisami wieloliniowymi.
+- Eksport liczy tylko bukiety faktycznie dodane do `bouquets.tv`, usuwa duplikaty i nieistniejące wpisy IPTV Dream oraz wykonuje jedną poprawą kopię indeksu.
+- Zarządzanie rozpoznaje zestawy po źródle i pozwala jednym wyborem usunąć wszystkie stare bukiety IPTV Dream przed ponownym eksportem.
+- Nazwy źródeł M3U/Xtream/MAC są unikalne i nie ujawniają loginu ani fragmentu adresu MAC.
+- Poprawiono walidację URL w WebIF, automatyczny wybór wolnego portu przy konflikcie 9999, escapowanie XML EPG oraz czyszczenie plików developerskich przez instalator/updater.
 
 ## Najważniejsze zmiany w 8.0.0
 
@@ -36,7 +46,7 @@
 ## Instalacja IPK
 
 ```sh
-opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_8.0.0_all.ipk
+opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_8.0.1_all.ipk
 init 4
 sleep 2
 init 3

@@ -1,3 +1,15 @@
+IPTV Dream 8.0.1 - Export/MAC regression fixes and hardening
+2026-09-07
+
+- Naprawiono wyświetlanie N/A przez dodanie zakodowanej nazwy do pełnej referencji #SERVICE.
+- Naprawiono literówkę 128.0.0.1 -> 127.0.0.1 i rozwiązywanie lokalnych komend MAC/Stalker także dla dużych list.
+- Dodano walidację jednoliniowych nazw, schematu URL i bezpieczne kodowanie pól service reference.
+- Poprawiono transakcyjne liczenie eksportu, backup/pruning bouquets.tv i obsługę błędów indeksu.
+- Dodano identyfikator źródła w bukiecie i opcję jednorazowego usunięcia wszystkich starych bukietów IPTV Dream.
+- Zapobiegnięto kolizjom nazw źródeł oraz ujawnianiu loginu Xtream i fragmentu MAC w nazwach plików.
+- Poprawiono XML EPG, walidację URL i fallback portu WebIF oraz generyczne czyszczenie artefaktów aktualizacji.
+- Dodano testy regresyjne eksportu M3U, referencji Enigma2 i portali MAC.
+
 IPTV Dream 8.0.0 - Rebranding, Clean Bouquets, EPG/Picon Name Fixes
 2026-08-14
 

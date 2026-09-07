@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v8.0.0 - bounded MAC/Stalker/MAG helper.
+"""IPTV Dream v8.0.1 - bounded MAC/Stalker/MAG helper.
 
 Reworked after comparing mature IPTV plugins:
 - fast, deterministic endpoint selection instead of probing many variants,
@@ -785,8 +785,19 @@ def _group_matches(row, gid):
 
 
 def _is_local_url(url):
-    u = (url or '').strip().lower()
-    return u.startswith(('http://localhost/', 'https://localhost/', 'http://128.0.0.1/', 'https://128.0.0.1/')) or '/localhost/' in u
+    """Detect portal placeholders/proxies that cannot play on the receiver.
+
+    v8.0.0 accidentally checked 128.0.0.1 instead of the loopback address
+    127.0.0.1, so unresolved MAG commands could be exported as black streams.
+    """
+    try:
+        parsed = urlparse((url or '').strip())
+        host = (getattr(parsed, 'hostname', '') or '').rstrip('.').lower()
+    except Exception:
+        return False
+    if host in ('localhost', '::1', '0.0.0.0'):
+        return True
+    return host == '127.0.0.1' or host.startswith('127.')
 
 
 def _abs_logo(logo, root):
@@ -799,12 +810,16 @@ def _abs_logo(logo, root):
 def _play_url(client, row, kind='itv', resolve=True):
     cmd = row.get('cmd') or row.get('play_cmd') or row.get('command') or row.get('cmds') or ''
     direct = StalkerClient.clean_cmd(cmd)
-    if direct.startswith(('http://', 'https://', 'rtmp://', 'rtsp://')) and not _is_local_url(direct):
+    direct_is_url = direct.startswith(('http://', 'https://', 'rtmp://', 'rtsp://'))
+    if direct_is_url and not _is_local_url(direct):
         # Keep direct URLs; resolving all channels would slow down big portals.
         return direct
-    if resolve:
+    # Even for large portals, local proxy URLs and opaque ffmpeg commands must
+    # be resolved. Only already-direct remote URLs are safe to fast-path.
+    must_resolve = bool(direct and (not direct_is_url or _is_local_url(direct)))
+    if resolve or must_resolve:
         try:
-            u = client.link(cmd, kind)
+            u = StalkerClient.clean_cmd(client.link(cmd, kind))
             if u and not _is_local_url(u):
                 return u
         except Exception:

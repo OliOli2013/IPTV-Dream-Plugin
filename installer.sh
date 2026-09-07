@@ -174,10 +174,13 @@ rm -f \
 # Pliki potrzebne tylko na GitHubie / w release nie powinny trafiać do runtime tunera.
 rm -f \
   "$PLUGIN_DST/GITHUB_REPLACE_INSTRUCTIONS.txt" "$PLUGIN_DST/FILES_TO_DELETE_GITHUB.txt" \
-  "$PLUGIN_DST/CHANGED_FILES_8.0.0.txt" "$PLUGIN_DST/RELEASE_TITLE.txt" \
+  "$PLUGIN_DST"/CHANGED_FILES_*.txt "$PLUGIN_DST/RELEASE_TITLE.txt" \
   "$PLUGIN_DST/RELEASE_BODY_PL.md" "$PLUGIN_DST/RELEASE_BODY_EN.md" \
-  "$PLUGIN_DST/SHA256SUMS.txt" "$PLUGIN_DST"/*.patch 2>/dev/null
-rm -rf "$PLUGIN_DST/.github" "$PLUGIN_DST/screenshots" "$PLUGIN_DST/release" "$PLUGIN_DST/docs" 2>/dev/null
+  "$PLUGIN_DST/SHA256SUMS.txt" "$PLUGIN_DST/build_ipk.sh" \
+  "$PLUGIN_DST"/AUDIT_*.md "$PLUGIN_DST"/GITHUB_UPLOAD_*.txt \
+  "$PLUGIN_DST"/*.patch 2>/dev/null
+rm -rf "$PLUGIN_DST/.github" "$PLUGIN_DST/screenshots" "$PLUGIN_DST/release" "$PLUGIN_DST/docs" \
+  "$PLUGIN_DST/tests" "$PLUGIN_DST/packaging" 2>/dev/null
 
 # Walidacja: wymagane pliki + składnia Pythona przed restartem GUI.
 [ -f "$PLUGIN_DST/plugin.py" ] || die "Po instalacji brakuje $PLUGIN_DST/plugin.py (błędne źródła lub struktura)."

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v8.0.0 - szybki, bezpieczny eksport bukietów + EPG/Picon.
+IPTV Dream v8.0.1 - szybki, bezpieczny eksport bukietów + EPG/Picon.
 
 Wersja przebudowana pod mechanizmy zgodne z TvMad:
 - normalizacja nazw kanałów i aliasy picon,
@@ -64,6 +64,12 @@ def _safe_text(v):
         return ""
 
 
+def _single_line(value):
+    """Return text safe for one Enigma2 bouquet line."""
+    value = _safe_text(value)
+    return re.sub(r'[\x00-\x1f\x7f]+', ' ', value).strip()
+
+
 def sanit(name):
     name = _safe_text(name).strip()
     name = re.sub(r'[\\/*?:"<>|]', '', name)
@@ -81,7 +87,7 @@ def sanit_title(name):
     """
     if not name:
         return "No Name"
-    name = _safe_text(name).replace('\n', ' ').replace('\r', ' ').strip()
+    name = _single_line(name)
     name = re.sub(r'tvg-[a-z-]+="[^"]*"', '', name, flags=re.IGNORECASE)
     name = name.replace('\"', '').strip()
     name = re.sub(r'\s+', ' ', name)
@@ -91,6 +97,47 @@ def sanit_title(name):
         except Exception:
             pass
     return name if len(name) >= 2 else "Stream"
+
+
+def _normalize_service_type(value):
+    """Keep custom ServiceApp types possible, but reject malformed fields."""
+    try:
+        number = int(value)
+        if 1 <= number <= 65535:
+            return str(number)
+    except Exception:
+        pass
+    return "4097"
+
+
+def _normalize_stream_url(value):
+    """Validate and strip characters that could inject bouquet directives."""
+    value = re.sub(r'[\x00-\x1f\x7f]+', '', _safe_text(value)).strip()
+    if not re.match(r'^[A-Za-z][A-Za-z0-9+.-]*://', value):
+        return ""
+    return value
+
+
+def _quote_ref_field(value, safe=''):
+    """Quote one service-reference field without double-encoding valid %XX."""
+    out = []
+    for part in re.split(r'(%[0-9A-Fa-f]{2})', _safe_text(value)):
+        if re.match(r'^%[0-9A-Fa-f]{2}$', part or ''):
+            out.append(part.upper())
+        else:
+            out.append(urllib.parse.quote(part, safe=safe))
+    return ''.join(out)
+
+
+def _build_service_line(ref_prefix, url, title):
+    """Build a canonical Enigma2 IPTV reference including a fallback name.
+
+    #DESCRIPTION remains present for normal images. Encoding the title as the
+    final service-reference field fixes images that display N/A when it is empty.
+    """
+    encoded_url = _quote_ref_field(url, safe='/')
+    encoded_title = _quote_ref_field(_single_line(title), safe=' /+._~-')
+    return "#SERVICE %s:%s:%s" % (ref_prefix, encoded_url, encoded_title)
 
 
 def _mk_bouquet_filename(bq_name, group_name):
@@ -400,11 +447,46 @@ def _backup_bouquets_once(idx):
         pass
 
 
+def _bouquet_filename_from_include(line):
+    try:
+        match = re.search(r'FROM\s+BOUQUET\s+"([^"]+)"', line or '', re.I)
+        return os.path.basename(match.group(1)) if match else ""
+    except Exception:
+        return ""
+
+
+def _prune_bouquets_index():
+    """Remove duplicate and dangling IPTV Dream includes, preserving user data."""
+    idx = os.path.join(BOUQUET_DIR, "bouquets.tv")
+    if not os.path.exists(idx):
+        return True
+    try:
+        with open(idx, "r", errors="ignore") as f:
+            original = [line.rstrip('\n') for line in f]
+        cleaned = []
+        seen = set()
+        for line in original:
+            if _is_iptvdream_include(line):
+                filename = _bouquet_filename_from_include(line)
+                key = line.strip()
+                if not filename or key in seen:
+                    continue
+                if not os.path.isfile(os.path.join(BOUQUET_DIR, filename)):
+                    continue
+                seen.add(key)
+            cleaned.append(line)
+        if cleaned != original:
+            _atomic_write(idx, '\n'.join(cleaned).rstrip() + '\n')
+        return True
+    except Exception as e:
+        print('[IPTVDream] bouquets.tv cleanup error: %s' % e)
+        return False
+
+
 def add_to_bouquets_index(bq_filename):
     idx = os.path.join(BOUQUET_DIR, "bouquets.tv")
     entry = '#SERVICE 1:7:1:0:0:0:0:0:0:0:FROM BOUQUET "%s" ORDER BY bouquet' % bq_filename
     try:
-        _backup_bouquets_once(idx)
         lines = []
         if os.path.exists(idx):
             with open(idx, "r", errors="ignore") as f:
@@ -537,10 +619,7 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
     wiszący pasek 0% oraz GSOD przy dużych listach/MAC. EPG i pikony pozostają
     obsługiwane przez osobne funkcje wtyczki.
     """
-    try:
-        service_type = str(int(service_type))
-    except Exception:
-        service_type = str(service_type or "4097")
+    service_type = _normalize_service_type(service_type)
 
     groups = {}
     for ch in playlist or []:
@@ -565,42 +644,47 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
     ua_encoded = urllib.parse.quote(RAW_UA)
     ua_suffix = "#User-Agent=%s" % ua_encoded
 
+    _ensure_dir(BOUQUET_DIR)
+    index_path = os.path.join(BOUQUET_DIR, "bouquets.tv")
+    _backup_bouquets_once(index_path)
+    _prune_bouquets_index()
+
     for grp, chans in groups.items():
         filename = _mk_bouquet_filename(bouquet_name, grp)
         bq_fullpath = os.path.join(BOUQUET_DIR, filename)
         written_in_group = 0
+        group_epg_mapping = []
         try:
-            _ensure_dir(BOUQUET_DIR)
             # v8: visible bouquet name is exactly the provider group name.
             # The source/portal name stays only in the internal filename to avoid collisions.
-            lines = ["#NAME %s" % grp]
+            display_group = _single_line(grp) or "Main"
+            source_name = _single_line(bouquet_name or "IPTV") or "IPTV"
+            lines = [
+                "#NAME %s" % display_group,
+                "#IPTVDREAM_SOURCE %s" % source_name,
+            ]
             for ch in chans:
                 try:
-                    url = _safe_text(ch.get("url", "")).strip()
+                    url = _normalize_stream_url(ch.get("url", ""))
                     if not url:
                         continue
                     title_raw = ch.get("title") or ch.get("name") or "No Name"
                     title = sanit_title(title_raw)
-                    url = url.replace(" ", "%20")
-                    if "User-Agent" not in url and "user-agent" not in url.lower():
+                    if url.lower().startswith(('http://', 'https://')) and "user-agent" not in url.lower():
                         url += ua_suffix
                     tvg_id = (ch.get("epg_id") or ch.get("tvg-id") or ch.get("tvg_id") or "")
                     sid, tsid, onid, namespace = _stable_dvb_ids(url, title, tvg_id)
                     ref_prefix = "%s:0:1:%s:%s:%s:%s:0:0:0" % (service_type, sid, tsid, onid, namespace)
                     if not _is_vod_like(title, grp, url):
-                        epg_mapping_light.append({
+                        group_epg_mapping.append({
                             'ref': ref_prefix,
                             'name': title,
                             'tvg': tvg_id,
                             'group': grp
                         })
-                    # The URL is one field of an Enigma2 service reference: encode ':'
-                    # from http:// so it cannot be interpreted as a field separator.
-                    encoded_url = urllib.parse.quote(url, safe='/%')
-                    lines.append("#SERVICE %s:%s:" % (ref_prefix, encoded_url))
+                    lines.append(_build_service_line(ref_prefix, url, title))
                     lines.append("#DESCRIPTION %s" % title)
                     written_in_group += 1
-                    total_channels += 1
                 except Exception as e:
                     # Pojedynczy uszkodzony kanał nie może zatrzymać całego eksportu.
                     try:
@@ -619,8 +703,16 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
             continue
 
         if written_in_group > 0:
-            add_to_bouquets_index(filename)
-            total_bouquets += 1
+            if add_to_bouquets_index(filename):
+                total_bouquets += 1
+                total_channels += written_in_group
+                epg_mapping_light.extend(group_epg_mapping)
+            else:
+                export_errors.append('cannot add %s to bouquets.tv' % filename)
+                try:
+                    os.remove(bq_fullpath)
+                except Exception:
+                    pass
         else:
             # Nie zostawiaj pustych bukietów po grupach bez poprawnych URL.
             try:
@@ -632,6 +724,8 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
     if total_channels == 0 and playlist:
         last_error = export_errors[-1] if export_errors else 'no valid stream URLs found'
         raise Exception('No channels exported. %s' % last_error)
+
+    _prune_bouquets_index()
 
     # Always keep a small exact EPGImport map in sync with exported bouquets.
     # This is local file I/O only; no network/picon work is performed here.
