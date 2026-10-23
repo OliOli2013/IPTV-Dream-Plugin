@@ -52,6 +52,50 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Brak programu: $1"
 }
 
+validate_python_tree() {
+  # Bez compileall/py_compile: dostepne takze w okrojonych obrazach Enigma2.
+  python3 - "$1" <<'PYVALIDATE'
+import os
+import sys
+
+root = sys.argv[1]
+if not os.path.isdir(root):
+    sys.stderr.write('BŁĄD: Brak katalogu do walidacji: %s\n' % root)
+    sys.exit(1)
+
+errors = 0
+checked = 0
+
+def walk_error(exc):
+    global errors
+    errors += 1
+    sys.stderr.write('BŁĄD odczytu katalogu: %s\n' % exc)
+
+for directory, subdirs, files in os.walk(root, onerror=walk_error):
+    subdirs[:] = [name for name in subdirs if name not in
+                  ('.git', '.github', '__pycache__', 'tests', 'docs', 'packaging')]
+    for name in files:
+        if not name.endswith('.py'):
+            continue
+        path = os.path.join(directory, name)
+        try:
+            with open(path, 'rb') as handle:
+                compile(handle.read(), path, 'exec')
+            checked += 1
+        except Exception as exc:
+            errors += 1
+            sys.stderr.write('BŁĄD Python %s: %s\n' % (path, exc))
+
+if errors:
+    sys.stderr.write('BŁĄD: Nieudana walidacja (%s problemów).\n' % errors)
+    sys.exit(1)
+if not checked:
+    sys.stderr.write('BŁĄD: Nie znaleziono plików Python do sprawdzenia.\n')
+    sys.exit(1)
+print('>>> Walidacja składni Python OK: %s plików (bez py_compile).' % checked)
+PYVALIDATE
+}
+
 # ===== Parsowanie argumentów =====
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -141,7 +185,7 @@ fi
 for REQUIRED in plugin.py dream_v6.py export_v2.py core/playlist_loader.py tools/net.py tools/lang.py; do
   [ -f "$SRC_DIR/$REQUIRED" ] || die "Niepełne źródła aktualizacji: brak $REQUIRED."
 done
-python3 -m compileall -q "$SRC_DIR" || die "Pobrane źródła mają błąd składni Python. Stara wersja nie została zmieniona."
+validate_python_tree "$SRC_DIR" || die "Walidacja pobranych źródeł nie powiodła się. Stara wersja nie została zmieniona."
 find "$SRC_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} \; 2>/dev/null
 
 BACKUP=""
@@ -186,7 +230,7 @@ rm -rf "$PLUGIN_DST/.github" "$PLUGIN_DST/screenshots" "$PLUGIN_DST/release" "$P
 [ -f "$PLUGIN_DST/plugin.py" ] || die "Po instalacji brakuje $PLUGIN_DST/plugin.py (błędne źródła lub struktura)."
 [ -f "$PLUGIN_DST/dream_v6.py" ] || die "Po instalacji brakuje dream_v6.py."
 [ -f "$PLUGIN_DST/core/playlist_loader.py" ] || die "Po instalacji brakuje core/playlist_loader.py."
-python3 -m compileall -q "$PLUGIN_DST" || die "Walidacja składni Python nie powiodła się."
+validate_python_tree "$PLUGIN_DST" || die "Walidacja składni Python po instalacji nie powiodła się."
 
 log "Czyszczenie cache Pythona..."
 rm -rf \
