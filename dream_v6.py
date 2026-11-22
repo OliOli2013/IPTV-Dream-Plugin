@@ -1,13 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v8.0.1
-
-Cel tej wersji w repozytorium użytkownika:
-- Zachować funkcjonalność i optymalizacje v6 (szybsze ładowanie, cache, multi-thread),
-- Zachować okno główne v6 (większy rozmiar, panel informacji, progress bar),
-- Jednocześnie wizualnie nawiązać do v5 (pasek przycisków, numeracja opcji, QR + opis).
-
-Kod jest przygotowany tak, aby nie powodować Green Screen (defensywna obsługa wyjątków).
-"""
+"""IPTV Dream 9: scoped background work and a native Enigma2 media browser."""
 
 from __future__ import absolute_import, print_function
 
@@ -15,7 +7,6 @@ import os
 import re
 import json
 import time
-import threading
 import socket
 import hashlib
 
@@ -67,6 +58,11 @@ from .tools.epg_manager_v6 import EPGManager
 from .tools.xtream_one_window_fixed import XtreamWindow  # alias w pliku
 
 from .core.playlist_loader import PlaylistLoader
+from .core.config_manager import ConfigManager
+from .tools.storage import write_json
+from .tools.tasks import TaskScope, TaskCancelled
+from .tools.ui import fit_skin
+from .tools.media import RecentMedia
 
 def _read_version():
     try:
@@ -79,7 +75,7 @@ def _read_version():
                     return v
     except Exception:
         pass
-    return "8.0.1"
+    return "9.0.0"
 
 PLUGIN_VERSION = _read_version()
 CONFIG_FILE = "/etc/enigma2/iptvdream_v6_config.json"
@@ -374,21 +370,6 @@ def _safe_mkdir(path):
         pass
 
 
-def run_in_thread(fn, cb, *args, **kwargs):
-    """Uruchamia fn w wątku i zwraca wynik do cb(result, error)."""
-
-    def _runner():
-        try:
-            res = fn(*args, **kwargs)
-            reactor.callFromThread(cb, res, None)
-        except Exception as e:
-            reactor.callFromThread(cb, None, str(e))
-
-    t = threading.Thread(target=_runner)
-    t.daemon = True
-    t.start()
-
-
 def get_lan_ip():
     """Najczęściej poprawny IP LAN bez wywołań shell."""
     try:
@@ -427,6 +408,7 @@ class ProjectQRCodeScreen(Screen):
     """
 
     def __init__(self, session, lang="en"):
+        self.skin = fit_skin(self.skin)
         Screen.__init__(self, session)
         self.lang = normalize_lang(lang, "en")
         self["qr"] = Pixmap()
@@ -465,7 +447,7 @@ class IPTVDreamV6(Screen):
     # AIO Panel-inspired native Enigma2 layout. It uses only built-in fonts and
     # widgets to keep compatibility across OpenATV/OpenPLi/OpenHDF/OpenViX skins.
     skin = """
-    <screen name="IPTVDreamV6" position="center,center" size="1200,680" title="IPTV Dream v8.0.1">
+    <screen name="IPTVDreamV6" position="center,center" size="1200,680" title="IPTV Dream v9.0.0">
         <eLabel position="0,0" size="1200,680" backgroundColor="#06111d" zPosition="-10" />
 
         <!-- Header: clean, centred, no e-mail/social clutter -->
@@ -522,8 +504,13 @@ class IPTVDreamV6(Screen):
     """
 
     def __init__(self, session):
+        self.skin = fit_skin(self.skin)
         Screen.__init__(self, session)
         self.session = session
+        self._closed = False
+        self._tasks = TaskScope(reactor.callFromThread)
+        self._cancellable = True
+        self.recent_media = RecentMedia()
         try:
             self.setTitle("IPTV Dream v%s" % PLUGIN_VERSION)
         except Exception:
@@ -560,13 +547,7 @@ class IPTVDreamV6(Screen):
 
         # --- Inicjalizacja logiki v6 (konfiguracja, akcje, timery) ---
         _safe_mkdir(CACHE_DIR)
-        self.cfg = {}
-        try:
-            if os.path.exists(CONFIG_FILE):
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    self.cfg = json.load(f) or {}
-        except Exception:
-            self.cfg = {}
+        self.cfg = ConfigManager(CONFIG_FILE).config
 
         # ustawienia domyślne
         self.cfg.setdefault('language', 'auto')
@@ -581,6 +562,7 @@ class IPTVDreamV6(Screen):
         self.cfg.setdefault('net_timeout_read', 30)
         self.cfg.setdefault('net_retries', 2)
         self.cfg.setdefault('net_backoff', 0.8)
+        self.cfg.setdefault('intro_enabled', True)
 
         # Prefer language from plugin config; AUTO follows Enigma2 system language.
         try:
@@ -608,6 +590,8 @@ class IPTVDreamV6(Screen):
         try:
             self.service_type = int(self.cfg.get('service_type', 4097))
         except Exception:
+            self.service_type = 4097
+        if self.service_type not in (4097, 5002):
             self.service_type = 4097
 
         self.webif_enabled = bool(self.cfg.get('webif_enabled', False))
@@ -730,21 +714,12 @@ class IPTVDreamV6(Screen):
             if getattr(self, "last_source", None) is not None:
                 self.cfg["last_source"] = self.last_source
 
-            # Zapis atomowy
-            tmp = CONFIG_FILE + ".tmp"
-            try:
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(self.cfg, f, indent=2, ensure_ascii=False)
-                os.replace(tmp, CONFIG_FILE)
-            finally:
-                try:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
-                except Exception:
-                    pass
-        except Exception:
-            # Nie wywalaj GUI przy problemie zapisu
-            pass
+            write_json(CONFIG_FILE, self.cfg)
+            return True
+        except Exception as exc:
+            if hasattr(self, "log"):
+                self.log.warning("Settings save failed: %s", mask_sensitive(exc))
+            return False
 
 
     def updateInfoPanel(self, title, text):
@@ -892,6 +867,9 @@ class IPTVDreamV6(Screen):
         """EXIT: powrót albo zamknięcie."""
         try:
             if getattr(self, "is_loading", False):
+                if not self._cancellable:
+                    self["status_bar"].setText("Trwa zapis. Poczekaj." if self.lang == "pl" else "Saving. Please wait.")
+                    return
                 self.stopLoading()
                 self["status_bar"].setText(_("Przerwano.", self.lang))
                 return
@@ -1058,6 +1036,9 @@ class IPTVDreamV6(Screen):
             (cache_lbl, "clear_cache"),
             (hist_lbl, "clear_history"),
             (delbq_lbl, "delete_bouquets"),
+            (("Intro: " if self.lang == "pl" else "Startup intro: ") + ("ON" if self.cfg.get("intro_enabled", True) else "OFF"), "intro_toggle"),
+            (("Diagnostyka odbiornika" if self.lang == "pl" else "Receiver diagnostics"), "diagnostics"),
+            (("Ostatnio odtwarzane" if self.lang == "pl" else "Recently played"), "recent_media"),
             (back_lbl, "back_main"),
         ]
         self["menu_list"].setList(items)
@@ -1071,6 +1052,7 @@ class IPTVDreamV6(Screen):
             return
         self.menu_context = "playlist"
         items = [
+            (("Odtwarzacz / Szukaj / LIVE / VOD" if self.lang == "pl" else "Player / Search / LIVE / VOD"), "media"),
             (_("📊 Podgląd playlisty", self.lang), "preview"),
             (_("📁 Grupy", self.lang), "groups"),
             (_("⭐ Dodaj całość do ulubionych", self.lang), "fav_add_all"),
@@ -1113,15 +1095,7 @@ class IPTVDreamV6(Screen):
             self.session.open(MessageBox, _("Brak kanałów w tej grupie.", self.lang), MessageBox.TYPE_INFO)
             return
 
-        self.menu_context = "favorites_list"
-        items = []
-        for ch in chans[:300]:
-            title = ch.get("title", "Bez nazwy" if self.lang == "pl" else "No name")
-            items.append(("• %s" % title, ("fav_item", ch)))
-        items.append((_("⬅️ Powrót", self.lang), "back_fav_groups"))
-        self["menu_list"].setList(items)
-        self._onMenuSelectionChanged()
-        self["status_bar"].setText(_("Ulubione: %s", self.lang) % group_name)
+        return self.openMediaBrowser(chans, group_name)
 
     # ---------- nawigacja / dispatch ----------
 
@@ -1138,6 +1112,8 @@ class IPTVDreamV6(Screen):
 
     def _dispatch(self, action):
         if not action:
+            return
+        if self.is_loading or self._closed:
             return
 
         # --- MAC Portal menu (v6) ---
@@ -1164,19 +1140,14 @@ class IPTVDreamV6(Screen):
                 return self.showFavoritesGroup(action[1])
             if action[0] == "fav_item":
                 ch = action[1]
-                self.updateInfoPanel(_("Ulubione", self.lang), _("Kanał: %s\nURL: %s", self.lang) % (ch.get("title", ""), ch.get("url", "")))
-                return
+                return self.playMedia(ch)
             if action[0] == "pl_group":
                 return self.showPlaylistGroupItems(action[1])
             if action[0] == "pl_groups_back":
                 return self.showPlaylistGroups()
             if action[0] == "pl_item":
                 ch = action[1] or {}
-                title = ch.get("title", "")
-                group = ch.get("group", "")
-                url = ch.get("url", "")
-                self.updateInfoPanel(title or _("Kanał", self.lang), "%s\n%s" % (group, url))
-                return
+                return self.playMedia(ch)
 
         # string actions
         if action == "m3u_url":
@@ -1199,6 +1170,16 @@ class IPTVDreamV6(Screen):
             return self.checkUpdates()
         if action == "project":
             return self.openProjectWebsite()
+        if action == "media":
+            return self.openMediaBrowser(self.current_playlist or [], self.playlist_name)
+        if action == "recent_media":
+            return self.openMediaBrowser(self.recent_media.items(), "Ostatnio odtwarzane" if self.lang == "pl" else "Recently played")
+        if action == "intro_toggle":
+            self.cfg["intro_enabled"] = not self.cfg.get("intro_enabled", True)
+            self._save_cfg()
+            return self.showManagementMenu()
+        if action == "diagnostics":
+            return self.showDiagnostics()
 
         if action == "lang":
             return self.openLanguageChoice()
@@ -1283,7 +1264,12 @@ class IPTVDreamV6(Screen):
 
     # ---------- operacje ładowania ----------
 
-    def startLoading(self, message, timeout_ms=None):
+    def startLoading(self, message, timeout_ms=None, cancellable=True):
+        if self.is_loading or self._closed:
+            return False
+        self._tasks.begin()
+        self.loader.last_warning = ""
+        self._cancellable = cancellable
         self.is_loading = True
         self.load_start_time = time.time()
         self["status_bar"].setText(message)
@@ -1304,8 +1290,10 @@ class IPTVDreamV6(Screen):
                     self.loading_timer.start(tmo)
             except Exception:
                 pass
+        return True
 
     def stopLoading(self):
+        self._tasks.cancel()
         self.is_loading = False
         if self.loading_timer:
             try:
@@ -1329,6 +1317,9 @@ class IPTVDreamV6(Screen):
 
     def onLoadingTimeout(self):
         if self.is_loading:
+            if not self._cancellable:
+                self["status_bar"].setText("Operacja nadal trwa. Poczekaj." if self.lang == "pl" else "Operation in progress. Please wait.")
+                return
             self.stopLoading()
             self["status_bar"].setText(_("Przekroczono czas ładowania (timeout).", self.lang))
 
@@ -1338,7 +1329,9 @@ class IPTVDreamV6(Screen):
         last_url = self.cfg.get("last_url", "http://")
         self.session.openWithCallback(self.onUrlReady, VirtualKeyBoard, title=_("Wprowadź URL playlisty M3U:", self.lang), text=last_url)
 
-    def onUrlReady(self, url):
+    def onUrlReady(self, url, force_refresh=False):
+        if self.is_loading or self._closed:
+            return
         url = (url or "").strip()
         if not url:
             return
@@ -1380,16 +1373,21 @@ class IPTVDreamV6(Screen):
         self.cfg["last_source"] = self.last_source
         self._save_cfg()
 
-        self.startLoading(_("Pobieranie playlisty (URL) ...", self.lang))
+        if not self.startLoading(_("Pobieranie playlisty (URL) ...", self.lang)):
+            return
+        progress = self._tasks.progress(self.updateProgress)
 
         def _load():
             # PlaylistLoader ma cache i parsowanie
-            content = self.loader.load_m3u_url(url, progress_callback=self.updateProgress, headers=getattr(self, "_m3u_url_headers", None))
-            playlist = self.loader.parse_m3u_content(content, progress_callback=self.updateProgress)
+            content = self.loader.load_m3u_url(url, progress_callback=progress, headers=headers, force_refresh=force_refresh)
+            playlist = self.loader.parse_m3u_content(content, progress_callback=progress, base_url=getattr(self.loader, 'last_source_url', None) or url)
+            if headers:
+                for channel in playlist:
+                    channel['headers'] = dict(headers, **channel.get('headers', {}))
             return playlist
 
         source_name = _source_label("M3U", raw_input)
-        run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, source_name, err))
+        self._tasks.run(_load, lambda res, err: self.onPlaylistLoaded(res, source_name, err))
 
     # ---------- M3U file ----------
 
@@ -1397,21 +1395,25 @@ class IPTVDreamV6(Screen):
         self.session.openWithCallback(self.onFileReady, M3UFilePick, start_dir="/tmp/")
 
     def onFileReady(self, path):
+        if self.is_loading or self._closed:
+            return
         if not path:
             return
         self.last_source = {"type": "m3u_file", "value": path}
         self.cfg["last_source"] = self.last_source
         self._save_cfg()
 
-        self.startLoading(_("Wczytywanie pliku M3U ...", self.lang))
+        if not self.startLoading(_("Wczytywanie pliku M3U ...", self.lang)):
+            return
+        progress = self._tasks.progress(self.updateProgress)
 
         def _load():
             content = self.loader.load_m3u_file(path)
-            playlist = self.loader.parse_m3u_content(content, progress_callback=self.updateProgress)
+            playlist = self.loader.parse_m3u_content(content, progress_callback=progress)
             return playlist
 
         name = os.path.splitext(os.path.basename(path))[0]
-        run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, name, err))
+        self._tasks.run(_load, lambda res, err: self.onPlaylistLoaded(res, name, err))
 
     # ---------- Xtream ----------
 
@@ -1430,26 +1432,29 @@ class IPTVDreamV6(Screen):
         ]
         self.session.openWithCallback(self.onXtreamTypeSelected, ChoiceBox, title=_("Wybierz typ treści", self.lang), list=options)
 
-    def onXtreamTypeSelected(self, choice):
+    def onXtreamTypeSelected(self, choice, force_refresh=False):
+        if self.is_loading or self._closed:
+            return
         if not choice:
             return
         content_type = choice[1]
         host, user, pwd = self.xtream_data
-        self.startLoading(_("Pobieranie Xtream ...", self.lang))
+        if not self.startLoading(_("Pobieranie Xtream ...", self.lang)):
+            return
+        progress = self._tasks.progress(self.updateProgress)
 
         def _dl():
             base = host if host.startswith(("http://", "https://")) else "http://%s" % host
             base = base.rstrip("/")
             query = urlencode({"username": user, "password": pwd, "type": "m3u_plus", "output": "ts"})
             url = "%s/get.php?%s" % (base, query)
-            r = http_get(url, timeout=(int(self.cfg.get('net_timeout_connect',7)), int(self.cfg.get('net_timeout_read',30))), retries=int(self.cfg.get('net_retries',2)), backoff=float(self.cfg.get('net_backoff',0.8)), verify=bool(self.cfg.get('ssl_verify', False)), debug=bool(self.cfg.get('debug', False)), log_file=self.cfg.get('log_file','/tmp/iptvdream.log'))
-            return r.content
+            data = self.loader.load_m3u_url(url, progress_callback=progress, force_refresh=force_refresh)
+            return self.loader.parse_m3u_content(data, progress_callback=progress, content_filter=content_type, base_url=getattr(self.loader, 'last_source_url', None) or url)
 
-        def _done(data, err):
+        def _done(playlist, err):
             if err:
                 self.onPlaylistLoaded(None, None, err)
                 return
-            playlist = self.loader.parse_m3u_content(data, progress_callback=self.updateProgress, content_filter=content_type)
             suffix = "LIVE" if content_type == "live" else "VOD" if content_type == "vod" else "ADULT" if content_type == "adult" else "ALL"
             self.last_source = {"type": "xtream", "value": {"host": host, "user": user, "pass": pwd, "filter": content_type}}
             self.cfg["last_source"] = self.last_source
@@ -1457,7 +1462,7 @@ class IPTVDreamV6(Screen):
             source_name = _source_label("Xtream", "%s|%s" % (host, user), suffix=suffix)
             self.onPlaylistLoaded(playlist, source_name, None)
 
-        run_in_thread(_dl, _done)
+        self._tasks.run(_dl, _done)
 
     # ---------- MAC Portal ----------
 
@@ -1535,12 +1540,14 @@ class IPTVDreamV6(Screen):
         msg = _("Pobieranie z MAC Portal ...", self.lang)
         if content_type in ("vod","series"):
             msg = (_("Pobieranie z MAC Portal ...", self.lang) + _("mac_large_library", self.lang))
-        self.startLoading(msg, timeout_ms=tmo)
+        if not self.startLoading(msg, timeout_ms=tmo):
+            return
+        progress = self._tasks.progress(self.updateProgress)
 
         def _load():
             # tools/mac_portal.py w repozytorium przyjmuje (host, mac) bez progress_callback.
             # Progress pokazujemy na poziomie GUI (start/stop + status), a parsowanie nie blokuje GUI.
-            playlist = parse_mac_playlist(host, mac, content_type=content_type, progress_callback=self.updateProgress)
+            playlist = parse_mac_playlist(host, mac, content_type=content_type, progress_callback=progress)
             return playlist
 
         self.last_source = {"type": "mac", "value": {"host": host, "mac": mac, "filter": content_type}}
@@ -1552,7 +1559,7 @@ class IPTVDreamV6(Screen):
         except Exception:
             portal_hint = portal_name or "portal"
         pl_name = _source_label('MAC', '%s|%s' % (host, mac), suffix=suffix, hint=portal_hint)
-        run_in_thread(_load, lambda res, err: self.onPlaylistLoaded(res, pl_name, err))
+        self._tasks.run(_load, lambda res, err: self.onPlaylistLoaded(res, pl_name, err))
 
     def deleteMacPortal(self):
         portals = load_mac_json() or []
@@ -1599,6 +1606,8 @@ class IPTVDreamV6(Screen):
 
     def onWebIfData(self, data):
         """Callback z WebIF (POST)."""
+        if self._closed or self.is_loading:
+            return False
         try:
             typ = data.get("type")
             if typ == "m3u":
@@ -1626,6 +1635,8 @@ class IPTVDreamV6(Screen):
                     reactor.callFromThread(self.startMacDownload, host, mac, mode, None)
         except Exception as e:
             print("[IPTVDreamV6] WebIF data error:", e)
+            return False
+        return True
 
     # ---------- po załadowaniu playlisty ----------
 
@@ -1670,6 +1681,9 @@ class IPTVDreamV6(Screen):
         self.updateInfoPanel(title, body)
 
         self.showPlaylistMenu()
+        warning = getattr(self.loader, 'last_warning', '')
+        if warning:
+            self["status_bar"].setText(warning if self.lang == 'pl' else 'Source unavailable. Showing a saved copy.')
 
     def showPlaylistPreview(self):
         if not self.current_playlist:
@@ -1702,14 +1716,51 @@ class IPTVDreamV6(Screen):
 
     def showPlaylistGroupItems(self, group_name):
         chs = self._playlist_groups_cache.get(group_name, [])
-        self.menu_context = "playlist_group_items"
-        items = []
-        for ch in chs[:400]:
-            items.append(("• %s" % ch.get("title", "Bez nazwy" if self.lang == "pl" else "No name"), ("pl_item", ch)))
-        items.append((_("⬅️ Powrót", self.lang), ("pl_groups_back", None)))
-        self["menu_list"].setList(items)
-        self._onMenuSelectionChanged()
-        self["status_bar"].setText(group_name)
+        return self.openMediaBrowser(chs, group_name)
+
+    def openMediaBrowser(self, channels, title="IPTV Dream"):
+        if not channels:
+            self.session.open(MessageBox, "Brak pozycji do wyświetlenia." if self.lang == "pl" else "No media to display.", MessageBox.TYPE_INFO)
+            return
+        from .media_screen import MediaBrowser
+        self.session.open(MediaBrowser, channels, self.playMedia, self.addMediaFavorite, self.lang, title)
+
+    def addMediaFavorite(self, channel):
+        self.favorites.add_to_favorites(channel, group_name="IPTV Dream")
+        self.session.open(MessageBox, "Dodano do ulubionych." if self.lang == "pl" else "Added to favorites.", MessageBox.TYPE_INFO, timeout=2)
+
+    def playMedia(self, channel):
+        try:
+            from enigma import eServiceReference
+            from .player import DreamMoviePlayer
+            from .export_v2 import playback_reference
+            reference, _prefix, title = playback_reference(channel, str(self.service_type))
+            service = eServiceReference(reference)
+            service.setName(title)
+            if self.service_type == 5002:
+                if not os.path.isdir('/usr/lib/enigma2/python/Plugins/SystemPlugins/ServiceApp') or not os.path.exists('/usr/bin/exteplayer3'):
+                    raise ValueError("Typ 5002 wymaga ServiceApp i exteplayer3. W ustawieniach wybierz 4097." if self.lang == "pl" else "Type 5002 requires ServiceApp and exteplayer3. Select 4097 in settings.")
+            self.session.open(DreamMoviePlayer, service)
+            try:
+                self.recent_media.add(channel)
+            except OSError as exc:
+                self.log.warning("Recent media save failed: %s", mask_sensitive(exc))
+        except Exception as exc:
+            self.session.open(MessageBox, "IPTV Dream: %s" % mask_sensitive(exc), MessageBox.TYPE_ERROR)
+
+    def showDiagnostics(self):
+        import platform
+        from enigma import getDesktop
+        size = getDesktop(0).size()
+        lines = ["IPTV Dream %s" % PLUGIN_VERSION, "Python %s / %s" % (platform.python_version(), platform.machine()),
+                 "GUI: %dx%d" % (size.width(), size.height()), "Service: %s" % self.service_type]
+        for label, path in (("ServiceApp", "/usr/lib/enigma2/python/Plugins/SystemPlugins/ServiceApp"),
+                            ("exteplayer3", "/usr/bin/exteplayer3"),
+                            ("EPGImport", "/usr/lib/enigma2/python/Plugins/Extensions/EPGImport")):
+            lines.append("%s: %s" % (label, "OK" if os.path.exists(path) else ("brak" if self.lang == "pl" else "missing")))
+        lines.append("WebIF: %s" % ("http://%s:%s" % (get_lan_ip(), self.webif_port) if self.webif_enabled else "OFF"))
+        lines.append("Log: %s" % self.cfg.get("log_file", "/tmp/iptvdream.log"))
+        self.updateInfoPanel("Diagnostyka" if self.lang == "pl" else "Diagnostics", "\n".join(lines))
 
     def addPlaylistToFavorites(self):
         if not self.current_playlist:
@@ -1728,8 +1779,8 @@ class IPTVDreamV6(Screen):
         if not group_name:
             return
         try:
-            for ch in self.current_playlist:
-                self.favorites.add_to_favorites(ch, group_name=group_name)
+            if not self.favorites.add_many(self.current_playlist, group_name=group_name):
+                raise OSError("Nie można zapisać ulubionych" if self.lang == "pl" else "Cannot save favorites")
             self.session.open(MessageBox, _("Dodano do ulubionych (grupa: %s).", self.lang) % group_name, MessageBox.TYPE_INFO, timeout=3)
         except Exception as e:
             self.session.open(MessageBox, _("Błąd ulubionych: %s", self.lang) % e, MessageBox.TYPE_ERROR)
@@ -1809,17 +1860,21 @@ class IPTVDreamV6(Screen):
             except Exception:
                 pass
 
-            self.startLoading(_("Pobieranie picon ...", self.lang) + "\n" + pdir)
+            if not self.startLoading(_("Pobieranie picon ...", self.lang) + "\n" + pdir):
+                return
 
             _start_download()
 
         def _start_download():
+            progress = self._tasks.progress(self.updateProgress)
+            cancel_event = self._tasks.current
+            playlist_snapshot = self.current_playlist or []
             # istniejąca logika pobierania (w wątku)
             def _work():
                 """Pobiera pikony szybciej (wielowątkowo) i aktualizuje progress."""
                 items = []
                 seen = set()
-                for ch in (self.current_playlist or []):
+                for ch in playlist_snapshot:
                     title = (ch.get("title") or ch.get("name") or "").strip()
                     purl = (ch.get("tvg-logo") or ch.get("tvg_logo") or ch.get("logo") or "").strip()
                     if title and purl:
@@ -1846,6 +1901,8 @@ class IPTVDreamV6(Screen):
                 done = 0
 
                 def _one(purl_title):
+                    if cancel_event.is_set():
+                        return False
                     purl, title = purl_title
                     try:
                         out = self.picons.download_picon(purl, title)
@@ -1866,13 +1923,15 @@ class IPTVDreamV6(Screen):
                                 pass
                             if total > 0 and (done % 10 == 0 or done == total):
                                 try:
-                                    reactor.callFromThread(
-                                        self.updateProgress,
-                                        min(100, (done / float(total)) * 100),
-                                        "Picon %d/%d" % (done, total)
-                                    )
+                                    progress(min(100, (done / float(total)) * 100), "Picon %d/%d" % (done, total))
+                                except TaskCancelled:
+                                    for pending in futs:
+                                        pending.cancel()
+                                    raise
                                 except Exception:
                                     pass
+                except TaskCancelled:
+                    raise
                 except Exception:
                     for it in items:
                         done += 1
@@ -1880,7 +1939,9 @@ class IPTVDreamV6(Screen):
                             ok += 1
                         if total > 0 and (done % 25 == 0 or done == total):
                             try:
-                                reactor.callFromThread(self.updateProgress, min(100, (done / float(total)) * 100), "Picon %d/%d" % (done, total))
+                                progress(min(100, (done / float(total)) * 100), "Picon %d/%d" % (done, total))
+                            except TaskCancelled:
+                                raise
                             except Exception:
                                 pass
 
@@ -1893,7 +1954,7 @@ class IPTVDreamV6(Screen):
                     return
                 self.session.open(MessageBox, _("Pobrano/gotowe picon: %d", self.lang) % res, MessageBox.TYPE_INFO)
 
-            run_in_thread(_work, _done)
+            self._tasks.run(_work, _done)
 
         # jeśli jest zapamiętana ścieżka, ustaw ją jako domyślny wybór
         try:
@@ -1926,7 +1987,7 @@ class IPTVDreamV6(Screen):
         st = src.get("type")
         val = src.get("value")
         if st == "m3u_url":
-            return self.onUrlReady(val)
+            return self.onUrlReady(val, force_refresh=True)
         if st == "m3u_file":
             return self.onFileReady(val)
         if st == "mac":
@@ -1937,23 +1998,25 @@ class IPTVDreamV6(Screen):
             pwd = val.get("pass")
             flt = val.get("filter", "all")
             self.xtream_data = (host, user, pwd)
-            return self.onXtreamTypeSelected(("REFRESH", flt))
+            return self.onXtreamTypeSelected(("REFRESH", flt), force_refresh=True)
 
     # ---------- EPG / Update / Settings ----------
 
     def forceInstallEPG(self):
         custom_url = self.cfg.get(EPG_URL_KEY)
-        try:
-            ok, msg = install_epg_sources(custom_url=custom_url)
-            if ok:
-                self.session.open(MessageBox, "%s" % msg, MessageBox.TYPE_INFO)
-            else:
-                self.session.open(MessageBox, "EPG error: %s" % msg, MessageBox.TYPE_ERROR)
-        except Exception as e:
-            self.session.open(MessageBox, "EPG error: %s" % e, MessageBox.TYPE_ERROR)
+        if not self.startLoading("EPG ...", cancellable=False):
+            return
+
+        def done(result, error):
+            self.stopLoading()
+            ok, message = result if not error else (False, error)
+            self.session.open(MessageBox, mask_sensitive(message), MessageBox.TYPE_INFO if ok else MessageBox.TYPE_ERROR)
+
+        self._tasks.run(lambda: install_epg_sources(custom_url=custom_url), done)
 
     def checkUpdates(self):
-        self.startLoading(_("Sprawdzanie aktualizacji ...", self.lang))
+        if not self.startLoading(_("Sprawdzanie aktualizacji ...", self.lang)):
+            return
 
         def _chk():
             # tools/updater.check_update() zwraca 4 wartości w repo:
@@ -1993,12 +2056,13 @@ class IPTVDreamV6(Screen):
             self.session.openWithCallback(lambda yn: self._do_update_yesno(yn, info), MessageBox,
                                           _("Dostępna aktualizacja:\n%s\n\nZainstalować?", self.lang) % info, MessageBox.TYPE_YESNO)
 
-        run_in_thread(_chk, _done)
+        self._tasks.run(_chk, _done)
 
     def _do_update_yesno(self, yes, info):
         if not yes:
             return
-        self.startLoading(_("Instalowanie aktualizacji ...", self.lang))
+        if not self.startLoading(_("Instalowanie aktualizacji ...", self.lang), cancellable=False):
+            return
 
         def _upd():
             return do_update()
@@ -2018,7 +2082,7 @@ class IPTVDreamV6(Screen):
             else:
                 self.session.open(MessageBox, _("Aktualizacja zakończona (brak szczegółów).", self.lang), MessageBox.TYPE_INFO)
 
-        run_in_thread(_upd, _done)
+        self._tasks.run(_upd, _done)
 
     def showSettings(self):
         items = []
@@ -2173,6 +2237,7 @@ class IPTVDreamV6(Screen):
     def clearHistory(self):
         try:
             self.history.clear_history()
+            write_json(self.recent_media.path, [])
             self.session.open(MessageBox, _("Wyczyszczono historię.", self.lang), MessageBox.TYPE_INFO, timeout=2)
         except Exception as e:
             self.session.open(MessageBox, "History error: %s" % e, MessageBox.TYPE_ERROR)
@@ -2200,6 +2265,8 @@ class IPTVDreamV6(Screen):
     # ---------- eksport ----------
 
     def exportBouquet(self):
+        if self.is_loading:
+            return
         if not self.current_playlist:
             self.session.open(MessageBox, _("Najpierw wczytaj playlistę!", self.lang), MessageBox.TYPE_ERROR)
             return
@@ -2228,43 +2295,36 @@ class IPTVDreamV6(Screen):
             self.session.open(MessageBox, _("Nie wybrano kanałów do eksportu.", self.lang), MessageBox.TYPE_INFO, timeout=3)
             return
 
-        # v7.0.0: szybki eksport jak wcześniej — bez ciężkiego paska 0%, bez EPG/Picon w tej samej operacji.
-        try:
-            self["progress_bar"].hide()
-            self["progress_text"].hide()
-        except Exception:
-            pass
-        try:
-            self["status_bar"].setText(_("exporting_bouquets", self.lang))
-        except Exception:
-            pass
+        if not self.startLoading(_("exporting_bouquets", self.lang), cancellable=False):
+            return
+        name, service_type = self.playlist_name, str(self.service_type)
 
-        try:
-            total_bq, total_ch = export_bouquets(final_list, self.playlist_name, service_type=str(self.service_type))
-        except Exception as e:
+        def done(result, error):
+            self.stopLoading()
+            if error:
+                self.session.open(MessageBox, "Export: %s" % mask_sensitive(error), MessageBox.TYPE_ERROR)
+                return
+            total_bq, total_ch = result
             try:
-                self["status_bar"].setText("Export error")
+                if eDVBDB:
+                    eDVBDB.getInstance().reloadBouquets()
+                    eDVBDB.getInstance().reloadServicelist()
             except Exception:
                 pass
-            self.session.open(MessageBox, "Export error: %s" % e, MessageBox.TYPE_ERROR)
-            return
+            message = _("exported_channels_bouquets", self.lang) % (total_ch, total_bq)
+            self["status_bar"].setText(message)
+            self.session.open(MessageBox, message, MessageBox.TYPE_INFO)
 
-        try:
-            if eDVBDB:
-                eDVBDB.getInstance().reloadBouquets()
-                eDVBDB.getInstance().reloadServicelist()
-        except Exception:
-            pass
-
-        try:
-            self["status_bar"].setText(_("exported_channels_bouquets", self.lang) % (total_ch, total_bq))
-        except Exception:
-            pass
-        self.session.open(MessageBox, _("exported_channels_bouquets", self.lang) % (total_ch, total_bq), MessageBox.TYPE_INFO)
+        self._tasks.run(lambda: export_bouquets(final_list, name, service_type=service_type, reload_services=False), done)
 
     # ---------- close ----------
 
     def close(self):
+        if self.is_loading and not self._cancellable:
+            self["status_bar"].setText("Trwa zapis. Poczekaj." if self.lang == "pl" else "Saving. Please wait.")
+            return
+        self._closed = True
+        self._tasks.close()
         try:
             self._save_cfg()
         except Exception:

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v8.0.1 - hardened network helpers.
+"""IPTV Dream v9.0.0 - hardened network helpers.
 
 The helper is intentionally small and defensive. It never touches Enigma2 UI
 objects directly and every caller receives tagged errors that can be translated
@@ -149,6 +149,10 @@ def http_get(url, session=None, headers=None, timeout=None, retries=2, backoff=0
             return resp
 
         except NetError as e:
+            try:
+                resp.close()
+            except Exception:
+                pass
             last_exc = e
             logger.warning("%s for %s", e, mask_sensitive(url))
             retryable = _is_retryable_http(e.status_code or 0)
@@ -163,14 +167,14 @@ def http_get(url, session=None, headers=None, timeout=None, retries=2, backoff=0
 
         except requests.exceptions.RequestException as e:
             code = "NET-ABORTED" if _is_connection_abort(e) else "NET-REQUEST"
-            last_exc = NetError(code, str(e))
+            last_exc = NetError(code, mask_sensitive(e))
             logger.warning("%s for %s (%s)", code, mask_sensitive(url), mask_sensitive(e))
             if attempt >= int(retries):
                 raise last_exc
 
         except Exception as e:
             code = "NET-ABORTED" if _is_connection_abort(e) else "NET-UNKNOWN"
-            last_exc = NetError(code, str(e))
+            last_exc = NetError(code, mask_sensitive(e))
             logger.warning("%s for %s (%s)", code, mask_sensitive(url), mask_sensitive(e))
             if attempt >= int(retries):
                 raise last_exc

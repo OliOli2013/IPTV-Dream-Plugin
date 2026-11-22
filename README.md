@@ -1,79 +1,78 @@
-# IPTV Dream v8.0.1
+# IPTV Dream 9.0.0
 
-**IPTV Dream** to wtyczka IPTV dla odbiorników **Enigma2 / Python 3**. Obsługuje listy M3U/M3U8, Xtream Codes, portale MAC/Stalker/MAG, eksport do bukietów Enigma2, EPGImport, pikony, ulubione, statystyki, WebIF i aktualizacje online.
+Wtyczka IPTV dla Enigma2 z Pythonem 3. M3U/M3U8, Xtream i MAC/Stalker, eksport bukietów, EPGImport, pikony i WebIF.
 
-## Najważniejsze zmiany w 8.0.1
+## Co zmieniono
 
-- Naprawiono eksport kanałów wyświetlanych jako **N/A**: nazwa jest zapisywana zarówno w referencji usługi, jak i w `#DESCRIPTION`.
-- Naprawiono czarny ekran w portalach MAC/Stalker: lokalne polecenia `127.0.0.1` są zawsze rozwiązywane do prawdziwego URL, także na listach powyżej 400 kanałów.
-- Dodano walidację i bezpieczne kodowanie URL/nazw w bukietach oraz ochronę przed uszkodzonymi wpisami wieloliniowymi.
-- Eksport liczy tylko bukiety faktycznie dodane do `bouquets.tv`, usuwa duplikaty i nieistniejące wpisy IPTV Dream oraz wykonuje jedną poprawą kopię indeksu.
-- Zarządzanie rozpoznaje zestawy po źródle i pozwala jednym wyborem usunąć wszystkie stare bukiety IPTV Dream przed ponownym eksportem.
-- Nazwy źródeł M3U/Xtream/MAC są unikalne i nie ujawniają loginu ani fragmentu adresu MAC.
-- Poprawiono walidację URL w WebIF, automatyczny wybór wolnego portu przy konflikcie 9999, escapowanie XML EPG oraz czyszczenie plików developerskich przez instalator/updater.
+- Lokalne intro IPTV Dream / AIO Hub Enigma 2 z animowanym paskiem (około 2,4 s), pomijane przez OK. EXIT zamyka. W Zarządzaniu można je wyłączyć. Nie przerywa telewizji i nie wymaga dekodera wideo.
+- Przeglądarka multimediów: odtwarzanie LIVE i VOD, wyszukiwanie po nazwie i grupie (także bez polskich znaków), filtr Wszystko/LIVE/VOD, strony po 100 pozycji, ulubione i ostatnio uruchamiane pozycje.
+- Odtwarzacz korzysta z kontrolek obrazu systemowego (audio, napisy, przewijanie, jeśli strumień to obsługuje). STOP/EXIT wraca do IPTV Dream. Obsłużono różne sygnatury MoviePlayer w OpenATV i OpenPLi.
+- Wyniki i postęp należą do konkretnego zadania. Anulowany lub zamknięty ekran nie przyjmuje spóźnionego wyniku. Aktualizacje widżetów odbywają się w głównym wątku.
+- Pobieranie i parsowanie Xtream, eksport bukietów oraz instalacja źródeł EPG pracują w tle. Zapisów i podmiany wersji nie przerywa się w połowie.
+- Parser zachowuje User-Agent/Referer z EXTVLCOPT i nagłówki KODIPROP, rozpoznaje pojedyncze manifesty HLS i względne adresy strumieni. Odtwarzacz i eksport używają wspólnego budowania referencji.
+- Ręczne odświeżenie nie ukrywa awarii źródła starym cache. Zwykłe otwarcie może użyć kopii awaryjnej i pokazuje komunikat.
+- Odczyt konfiguracji nie zapisuje jej ponownie. Nowe zapisy ustawień, ulubionych i ostatnich pozycji są atomowe i mają uprawnienia 0600. Dodawanie całej listy do ulubionych wykonuje jeden zapis.
+- Główne ekrany dopasowują się do rozdzielczości pulpitu. Dodano diagnostykę Python/GUI/ServiceApp/exteplayer3/EPGImport/WebIF.
+- Usunięto 9 nieużywanych, historycznych modułów. IPK, DEB, instalator i updater korzystają ze wspólnego runtime.json. Pliki strony i narzędzia developerskie nie trafiają do tunera.
 
-## Najważniejsze zmiany w 8.0.0
+## Obsługa
 
-- **Czyste nazwy bukietów** — widoczna nazwa bukietu jest teraz dokładnie nazwą grupy z playlisty, np. `MAGENTA HD`, a nie `MAC-line... - MAGENTA HD`.
-- **Usuwanie technicznych przedrostków państw/języków** z nazw grup i kanałów, np. `|DE| HOPE TV` → `HOPE TV`, `[PL] TVP 1 HD` → `TVP 1 HD`, `UK - BBC ONE FHD` → `BBC ONE FHD`.
-- Oczyszczone nazwy są używane również przy dopasowaniu **piconów i EPG**, przy zachowaniu oryginalnego `tvg-id`.
-- Prefiksy jakości `HD`, `FHD`, `UHD`, `4K` pozostają w **widocznej nazwie kanału/bukietu**; osobne warianty bez jakości są używane tylko pomocniczo przy dopasowaniu EPG/piconów.
-- Poprawiono normalizację kanałów takich jak **CANAL+**, **TV PULS**, **CHANNEL 4** i **KANAL D** — słowa będące częścią prawdziwej nazwy kanału nie są już traktowane jako szum.
-- Nowa szata graficzna inspirowana **AIO Panel**: ciemny granat, akcenty cyan/green, czytelniejsze sekcje i nowe logo IPTV Dream.
-- Po zmianie zaznaczenia w menu panel informacji automatycznie pokazuje **co robi funkcja i co nacisnąć**.
-- Kontekstowe podpowiedzi są dostępne w językach: **PL / EN / DE / ES / AR / RU**.
-- Z ekranu głównego usunięto poprzedni odnośnik społecznościowy. Dodano **kod QR i adres strony projektu**:
-  `https://olioli2013.github.io/aio-iptv-projekt/`
-- WebIF pozostaje na porcie **9999**, ale jego pełny adres jest pokazywany w panelu pomocy zamiast zaśmiecać pozycję menu.
-- Zachowano wszystkie poprawki stabilności z audytu 7.0.1: parser M3U, retry/timeout, cache, bezpieczny updater, poprawny eksport 4097/5002, kodowanie URL w service reference, atomowe zapisy, poprawki WebIF/EPG/statystyk.
+Po wczytaniu listy wybierz **Odtwarzacz / Szukaj / LIVE / VOD** albo grupę kanałów.
 
-## Funkcje
+| Klawisz | Działanie w przeglądarce |
+|---|---|
+| OK | Odtwarzanie wybranej pozycji |
+| Zielony | Wyszukiwanie; puste hasło usuwa wyszukiwanie |
+| Żółty | Zmiana filtra Wszystko / LIVE / VOD |
+| Niebieski | Dodanie pozycji do ulubionych IPTV Dream |
+| Lewo / prawo | Poprzednia / następna strona |
+| Czerwony / EXIT | Powrót |
 
-- M3U/M3U8 z URL
-- M3U/M3U8 z pliku
-- Xtream Codes: LIVE / VOD / ALL / ADULT
-- MAC / Stalker / MAG / eStalker
-- grupy i ulubione
-- eksport do bukietów Enigma2
-- typ serwisu 4097 / 5002
-- EPGImport / XMLTV
-- pobieranie i mapowanie piconów
-- statystyki i historia
-- log diagnostyczny i tryb debug
-- WebIF `http://IP_TUNERA:9999`
-- aktualizacja bezpośrednio z GitHuba z walidacją i rollbackiem
+**Zarządzanie** zawiera intro, diagnostykę i ostatnio odtwarzane. Historia zapisuje uruchomione pozycje; nie jest potwierdzeniem, że dostawca dostarczył obraz. Kod nie pobiera zewnętrznych katalogów filmów ani płatnych treści.
 
-## Instalacja IPK
+Dotychczasowe tłumaczenia: PL/EN/DE/ES/AR/RU. Nowe ekrany mają PL i angielski jako język zastępczy.
 
+## Wymagania
+
+Enigma2 z Pythonem 3 (składnia sprawdzona dla 3.8+), requests oraz twisted-core. WebIF wymaga twisted-web; skalowanie piconów może korzystać z Pillow. EPGImport jest dodatkiem opcjonalnym.
+
+Domyślny typ serwisu **4097** korzysta z odtwarzacza image. **5002** wymaga ServiceApp i exteplayer3. Obsługiwane kodeki, przewijanie i działanie źródła zależą również od systemu, tunera i dostawcy. Enigma2/Python 2 nie jest obsługiwany.
+
+## Instalacja
+
+Wgraj odpowiednią paczkę do `/tmp` tunera.
+
+IPK:
 ```sh
-opkg install --force-reinstall /tmp/enigma2-plugin-extensions-iptvdream_8.0.1_all.ipk
-init 4
-sleep 2
-init 3
+opkg install /tmp/enigma2-plugin-extensions-iptvdream_9.0.0_all.ipk
 ```
 
-## Instalacja / aktualizacja bezpośrednio z GitHuba
-
+DEB:
 ```sh
-wget -qO - https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh | /bin/sh
+dpkg -i /tmp/enigma2-plugin-extensions-iptvdream_9.0.0_all.deb
 ```
 
-Instalator najpierw pobiera i waliduje źródła. Dopiero po poprawnym sprawdzeniu wykonuje backup i podmianę wtyczki; w razie błędu przywraca poprzednią wersję.
+Następnie zrestartuj GUI z menu odbiornika. Jeżeli system zgłosi brak zależności, doinstaluj je z jego własnego feedu. Nie wymuszaj ignorowania zależności.
 
-## Strona projektu
+Instalator źródłowy po opublikowaniu zmian:
+```sh
+wget -qO /tmp/iptvdream-installer.sh https://raw.githubusercontent.com/OliOli2013/IPTV-Dream-Plugin/main/installer.sh
+sh /tmp/iptvdream-installer.sh --no-restart
+```
 
-`https://olioli2013.github.io/aio-iptv-projekt/`
+Konfiguracja i zapisane portale pozostają w `/etc/enigma2`; paczka nie zawiera ani nie nadpisuje danych użytkownika.
 
-## Repozytorium
+## Budowanie i sprawdzanie
 
-`https://github.com/OliOli2013/IPTV-Dream-Plugin`
+```sh
+python3 -m unittest discover -s tests -v
+python3 tests/receiver_smoke.py
+python3 build_packages.py
+```
 
-## Autor
+IPK i DEB zawierają identyczny runtime. Sumy SHA256 znajdują się przy paczkach. Testy komputerowe obejmują logikę, eksport i ekrany z atrapami Enigma2; nie zastępują testu dekodera, pilota ani połączenia z rzeczywistym dostawcą na tunerze.
 
-**Paweł Pawełek**
+## Autor i licencja
 
-Licencja: **GPL-3.0**
-
-### Finalna korekta interfejsu 8.0.0
-
-Finalny build 8.0.0 zawiera przebudowany natywny skin Enigma2. Kod QR na ekranie głównym jest skalowany jako całość i prowadzi do `https://olioli2013.github.io/aio-iptv-projekt/`. Klawisz `0` albo pozycja **Strona projektu / QR** otwiera dodatkowy ekran z dużym, czytelnym kodem QR. Nagłówek został uproszczony, a pomoc dla głównych funkcji jest wyświetlana kontekstowo po zmianie zaznaczenia.
+Paweł Pawełek — GPL-3.0.
+Repozytorium: https://github.com/OliOli2013/IPTV-Dream-Plugin

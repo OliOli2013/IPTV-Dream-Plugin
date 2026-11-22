@@ -182,11 +182,17 @@ else
 fi
 
 # Validate downloaded source before touching the installed version.
-for REQUIRED in plugin.py dream_v6.py export_v2.py core/playlist_loader.py tools/net.py tools/lang.py; do
+for REQUIRED in plugin.py dream_v6.py export_v2.py intro.py media_screen.py player.py runtime.json pic/intro.png core/playlist_loader.py tools/net.py tools/lang.py tools/runtime_package.py; do
   [ -f "$SRC_DIR/$REQUIRED" ] || die "Niepełne źródła aktualizacji: brak $REQUIRED."
 done
 validate_python_tree "$SRC_DIR" || die "Walidacja pobranych źródeł nie powiodła się. Stara wersja nie została zmieniona."
 find "$SRC_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} \; 2>/dev/null
+
+log "Przygotowanie czystego runtime..."
+STAGED_RUNTIME="$TMP_BASE/runtime"
+python3 "$SRC_DIR/tools/runtime_package.py" "$SRC_DIR" "$STAGED_RUNTIME" || die "Nie można przygotować plików wtyczki."
+validate_python_tree "$STAGED_RUNTIME" || die "Błąd walidacji runtime."
+SRC_DIR="$STAGED_RUNTIME"
 
 BACKUP=""
 log "Backup poprzedniej wersji (jeśli istnieje)..."
@@ -247,7 +253,7 @@ find "$PLUGIN_DST" -type f \( -name "*.txt" -o -name "*.md" -o -name "VERSION" \
 log "Sprzątanie plików tymczasowych..."
 rm -rf "$TMP_BASE" 2>/dev/null
 if [ -n "$BACKUP" ] && [ -d "$BACKUP" ]; then
-  rm -rf "$BACKUP" 2>/dev/null
+  log "Zachowano kopię poprzedniej wersji: $BACKUP"
 fi
 sync
 

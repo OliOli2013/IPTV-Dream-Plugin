@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""IPTV Dream v8.0.1 - robust playlist loader.
+"""IPTV Dream v9.0.0 - robust playlist loader.
 
 Rebuilt for provider compatibility:
 - accepts valid M3U even when server sends wrong Content-Type (text/html),
@@ -17,6 +17,7 @@ import json
 import gzip
 import hashlib
 import requests
+from urllib.parse import urljoin, parse_qsl
 
 try:
     from twisted.internet import reactor
@@ -27,6 +28,7 @@ from .config_manager import ConfigManager
 from ..tools.net import http_get, NetError, response_info, DEFAULT_HEADERS
 from ..tools.logger import get_logger, mask_sensitive
 from ..tools.channel_name_utils import clean_display_channel_name, clean_bouquet_name
+from ..tools.tasks import TaskCancelled
 
 CACHE_DIR = "/tmp/iptvdream_cache"
 DEFAULT_CONFIG = "/etc/enigma2/iptvdream_v6_config.json"
@@ -34,7 +36,7 @@ DEFAULT_CONFIG = "/etc/enigma2/iptvdream_v6_config.json"
 UA_DESKTOP = DEFAULT_HEADERS.get('User-Agent')
 UA_MAG = 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 4 rev: 1812 Mobile Safari/533.3'
 UA_VLC = 'VLC/3.0.20 LibVLC/3.0.20'
-UA_IPTV = 'Mozilla/5.0 IPTV-Dream/8.0.1 Enigma2'
+UA_IPTV = 'Mozilla/5.0 IPTV-Dream/9.0.0 Enigma2'
 
 HTML_MARKERS = (
     '<html', '<!doctype html', '<body', '<head', 'cloudflare', 'captcha',
@@ -259,7 +261,7 @@ class PlaylistLoader(object):
         return out[:4]
 
     # ---------- download ----------
-    def load_m3u_url(self, url, progress_callback=None, headers=None):
+    def load_m3u_url(self, url, progress_callback=None, headers=None, force_refresh=False):
         """Download M3U with compatibility fallbacks.
 
         Returns raw bytes. The caller then parses them into channel dicts.
@@ -272,16 +274,19 @@ class PlaylistLoader(object):
         def cb(pct, msg):
             try:
                 if progress_callback:
-                    if reactor:
-                        reactor.callFromThread(progress_callback, int(pct), msg)
-                    else:
-                        progress_callback(int(pct), msg)
+                    progress_callback(int(pct), msg)
+            except TaskCancelled:
+                raise
             except Exception:
                 pass
 
         cached_fresh = self._read_cache(cache_file, max_age=int(self.config.get('cache_max_age', 3600)))
         cached_any = self._read_cache(cache_file, max_age=None)
+        if force_refresh or not self.config.get("cache_enabled", True):
+            cached_fresh = cached_any = None
+        self.last_warning = ""
         meta = self._read_meta_file(meta_file)
+        self.last_source_url = meta.get('source_url') or url
         last_exc = None
         last_resp = None
 
@@ -322,8 +327,10 @@ class PlaylistLoader(object):
 
                 content = self._maybe_decompress(resp.content or b'')
                 if self._is_m3u_bytes(content):
+                    self.last_source_url = getattr(resp, 'url', None) or url
                     self.cache_content(url, content, meta={
                         'url': url,
+                        'source_url': self.last_source_url,
                         'saved_at': time.time(),
                         'size': len(content),
                         'etag': resp.headers.get('ETag', ''),
@@ -348,12 +355,15 @@ class PlaylistLoader(object):
                     return content
 
                 last_exc = Exception(self._friendly_m3u_error('empty or unsupported response', last_response=resp))
+            except TaskCancelled:
+                raise
             except Exception as e:
                 last_exc = e
                 self.log.warning('M3U load attempt failed: %s', mask_sensitive(e))
                 continue
 
         if cached_any:
+            self.last_warning = "Nie udało się odświeżyć źródła. Wyświetlono zapisaną kopię." 
             self.log.warning('M3U all attempts failed, using stale cache: %s', mask_sensitive(last_exc))
             cb(100, 'Stary cache')
             return cached_any
@@ -373,7 +383,7 @@ class PlaylistLoader(object):
         if not s.upper().startswith('#EXTINF:'):
             return '', ''
         s = s[len('#EXTINF:'):]
-        in_q = False
+        in_q = None
         esc = False
         for i, ch in enumerate(s):
             if esc:
@@ -382,8 +392,11 @@ class PlaylistLoader(object):
             if ch == '\\':
                 esc = True
                 continue
-            if ch == '"':
-                in_q = not in_q
+            if ch in ('"', "'"):
+                if in_q == ch:
+                    in_q = None
+                elif in_q is None:
+                    in_q = ch
             elif ch == ',' and not in_q:
                 return s[:i], s[i + 1:]
         return s, ''
@@ -391,8 +404,8 @@ class PlaylistLoader(object):
     def _parse_attrs(self, attrs):
         out = {}
         try:
-            for m in re.finditer(r'([A-Za-z0-9_][A-Za-z0-9_\-]*)\s*=\s*"([^"]*)"', attrs or ''):
-                out[(m.group(1) or '').strip().lower()] = (m.group(2) or '').strip()
+            for m in re.finditer(r'''([A-Za-z0-9_][A-Za-z0-9_\-]*)\s*=\s*(["'])(.*?)\2''', attrs or ''):
+                out[(m.group(1) or '').strip().lower()] = (m.group(3) or '').strip()
             for m in re.finditer(r'([A-Za-z0-9_][A-Za-z0-9_\-]*)\s*=\s*([^\s,]+)', attrs or ''):
                 k = (m.group(1) or '').strip().lower()
                 if k not in out:
@@ -412,7 +425,7 @@ class PlaylistLoader(object):
         is_vod = ('/movie/' in text or '/series/' in text or bool(re.search(r'(^|[\s_\-\|/])(vod|movie|movies|film|films|serial|series)([\s_\-\|/]|$)', text)) or bool(re.search(r'\.(mp4|mkv|avi|mov|wmv|flv|m4v)(\?|$)', text)))
         return is_adult, is_vod
 
-    def parse_m3u_content(self, content, progress_callback=None, content_filter=None):
+    def parse_m3u_content(self, content, progress_callback=None, content_filter=None, base_url=None):
         channels = []
         try:
             if isinstance(content, (bytes, bytearray)):
@@ -421,6 +434,13 @@ class PlaylistLoader(object):
                 text = str(content or '')
         except Exception:
             text = str(content or '')
+
+        # HLS manifests are a single playable stream, not a channel list of
+        # their fragments or variants. The original URL preserves auth/redirects.
+        if re.search(r"(?mi)^#EXT-X-", text):
+            if not base_url:
+                raise ValueError("To manifest HLS. Wprowadź jego adres HTTP/HTTPS zamiast lokalnego pliku.")
+            return [{"title": "HLS Stream", "name": "HLS Stream", "group": "HLS", "url": base_url, "is_vod": False}]
 
         current = {}
         pending_group = ''
@@ -436,10 +456,9 @@ class PlaylistLoader(object):
             if pct >= next_progress:
                 next_progress += 10
                 try:
-                    if reactor:
-                        reactor.callFromThread(progress_callback, min(99, pct), 'Parsowanie %d%%' % pct)
-                    else:
-                        progress_callback(min(99, pct), 'Parsowanie %d%%' % pct)
+                    progress_callback(min(99, pct), 'Parsowanie %d%%' % pct)
+                except TaskCancelled:
+                    raise
                 except Exception:
                     pass
 
@@ -482,10 +501,22 @@ class PlaylistLoader(object):
                 if current:
                     current['raw_group'] = raw_pending_group
                     current['group'] = pending_group
+            elif low.startswith('#extvlcopt:'):
+                option = line.split(':', 1)[1]
+                if '=' in option:
+                    key, value = option.split('=', 1)
+                    header = {'http-user-agent': 'User-Agent', 'http-referrer': 'Referer', 'http-referer': 'Referer', 'http-origin': 'Origin'}.get(key.strip().lower())
+                    if header and value.strip():
+                        current.setdefault('headers', {})[header] = value.strip()
+            elif low.startswith('#kodiprop:') and 'stream_headers=' in low:
+                for key, value in parse_qsl(line.split('=', 1)[1]):
+                    header = {'user-agent': 'User-Agent', 'referer': 'Referer', 'origin': 'Origin'}.get(key.lower())
+                    if header:
+                        current.setdefault('headers', {})[header] = value
             elif line.startswith('#'):
                 continue
-            elif '://' in line:
-                url = line.strip()
+            elif '://' in line or (base_url and current):
+                url = urljoin(base_url, line.strip()) if base_url else line.strip()
                 if not current:
                     current = {'title': 'Stream', 'name': 'Stream', 'group': pending_group or 'Inne', 'logo': '', 'tvg-logo': '', 'epg_id': '', 'tvg-id': ''}
                 raw_title = current.get('raw_title') or current.get('title') or current.get('name') or 'No Name'
@@ -517,10 +548,9 @@ class PlaylistLoader(object):
 
         try:
             if progress_callback:
-                if reactor:
-                    reactor.callFromThread(progress_callback, 100, 'Gotowe')
-                else:
-                    progress_callback(100, 'Gotowe')
+                progress_callback(100, 'Gotowe')
+        except TaskCancelled:
+            raise
         except Exception:
             pass
         return channels

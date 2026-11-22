@@ -1,0 +1,8 @@
+{
+  "files": [
+    "VERSION", "LICENSE", "README.md", "CHANGELOG.txt", "runtime.json",
+    "__init__.py", "plugin.py", "intro.py", "media_screen.py", "player.py", "dream_v6.py",
+    "export_v2.py", "file_pick.py", "vkb_input.py", "icon.png", "plugin.png", "setup.xml"
+  ],
+  "directories": ["core", "tools", "pic"]
+}

@@ -6,6 +6,7 @@ Zarządzanie ulubionymi kanałami
 
 import os
 import json
+from .storage import write_json
 
 class FavoritesManager:
     """Menadżer ulubionych kanałów"""
@@ -21,8 +22,10 @@ class FavoritesManager:
                 with open(self.config_file, 'r') as f:
                     data = json.load(f)
                     if isinstance(data, dict):
-                        data.setdefault("groups", {})
-                        data.setdefault("channels", {})
+                        if not isinstance(data.get("groups"), dict):
+                            data["groups"] = {}
+                        if not isinstance(data.get("channels"), dict):
+                            data["channels"] = {}
                         return data
             except:
                 pass
@@ -30,22 +33,13 @@ class FavoritesManager:
         
     def _save_favorites(self):
         """Zapisuje ulubione do pliku"""
-        tmp = self.config_file + '.tmp'
         try:
-            parent = os.path.dirname(self.config_file)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(self.favorites, f, indent=2, ensure_ascii=False)
-            os.replace(tmp, self.config_file)
+            write_json(self.config_file, self.favorites)
+            return True
         except Exception:
-            try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            except Exception:
-                pass
+            return False
             
-    def add_to_favorites(self, channel, group_name="Ulubione"):
+    def add_to_favorites(self, channel, group_name="Ulubione", save=True):
         """
         Dodaje kanał do ulubionych
         
@@ -67,7 +61,20 @@ class FavoritesManager:
         if channel_id not in self.favorites["groups"][group_name]["channels"]:
             self.favorites["groups"][group_name]["channels"].append(channel_id)
             
-        self._save_favorites()
+        return self._save_favorites() if save else True
+
+    def add_many(self, channels, group_name="Ulubione"):
+        if group_name not in self.favorites["groups"]:
+            self.favorites["groups"][group_name] = {"name": group_name, "created": "", "channels": []}
+        group = self.favorites["groups"][group_name]
+        seen = set(group["channels"])
+        for channel in channels:
+            key = channel.get("url") or channel.get("title")
+            if key and key not in seen:
+                seen.add(key)
+                group["channels"].append(key)
+                self.favorites["channels"][key] = channel
+        return self._save_favorites()
         
     def remove_from_favorites(self, channel_id, group_name=None):
         """

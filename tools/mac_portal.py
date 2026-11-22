@@ -17,6 +17,7 @@ import string
 import time
 
 import requests
+from .tasks import TaskCancelled
 
 try:
     from urllib.parse import urlparse, urlencode, quote
@@ -885,6 +886,8 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
         try:
             if progress_callback:
                 progress_callback(int(p), msg or '')
+        except TaskCancelled:
+            raise
         except Exception:
             pass
 
@@ -1053,6 +1056,8 @@ def parse_mac_playlist(host, mac, content_type='live', progress_callback=None):
             return out
 
         raise Exception('Unsupported content type')
+    except TaskCancelled:
+        raise
     except Exception as e:
         raise Exception(translate_error(e, host))
 

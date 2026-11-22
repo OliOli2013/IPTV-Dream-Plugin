@@ -1,1 +1,2 @@
-ec064dd09254e3b4cd4fe371bd1462f0f55b40ee15f6f8afefa96d87e7ad0bd6  enigma2-plugin-extensions-iptvdream_8.0.1_all.ipk
+49e8c4a7281c623fbbf98b9d7bf8dd16b2dd39e41145240f26a9fc02a6c6cfa0  enigma2-plugin-extensions-iptvdream_9.0.0_all.ipk
+49e8c4a7281c623fbbf98b9d7bf8dd16b2dd39e41145240f26a9fc02a6c6cfa0  enigma2-plugin-extensions-iptvdream_9.0.0_all.deb

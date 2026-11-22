@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IPTV Dream v8.0.1 - szybki, bezpieczny eksport bukietów + EPG/Picon.
+IPTV Dream v9.0.0 - szybki, bezpieczny eksport bukietów + EPG/Picon.
 
 Wersja przebudowana pod mechanizmy zgodne z TvMad:
 - normalizacja nazw kanałów i aliasy picon,
@@ -138,6 +138,27 @@ def _build_service_line(ref_prefix, url, title):
     encoded_url = _quote_ref_field(url, safe='/')
     encoded_title = _quote_ref_field(_single_line(title), safe=' /+._~-')
     return "#SERVICE %s:%s:%s" % (ref_prefix, encoded_url, encoded_title)
+
+
+def playback_reference(channel, service_type="4097"):
+    """Use exactly the same stream options and IDs in player and bouquets."""
+    url = _normalize_stream_url(channel.get("url", ""))
+    if not url or url.split(":", 1)[0].lower() not in ("http", "https", "rtsp", "rtmp", "rtmps", "udp", "rtp"):
+        raise ValueError("Unsupported or empty stream URL")
+    title = sanit_title(channel.get("title") or channel.get("name") or "Stream")
+    headers = channel.get("headers") or {}
+    if headers and "|" not in url:
+        options = [(key, str(value)) for key, value in headers.items()
+                   if key.lower() in ("user-agent", "referer", "origin") and value]
+        if options:
+            url += "|" + urllib.parse.urlencode(options, quote_via=urllib.parse.quote)
+    if url.lower().startswith(("http://", "https://")) and "user-agent" not in url.lower():
+        separator = "&" if "|" in url or "#" in url else "#"
+        url += separator + "User-Agent=" + urllib.parse.quote(RAW_UA)
+    tvg_id = channel.get("epg_id") or channel.get("tvg-id") or channel.get("tvg_id") or ""
+    sid, tsid, onid, namespace = _stable_dvb_ids(url, title, tvg_id)
+    prefix = "%s:0:1:%s:%s:%s:%s:0:0:0" % (_normalize_service_type(service_type), sid, tsid, onid, namespace)
+    return _build_service_line(prefix, url, title)[len("#SERVICE "):], prefix, title
 
 
 def _mk_bouquet_filename(bq_name, group_name):
@@ -611,7 +632,7 @@ def create_epg_xml(mapping):
         return False
 
 
-def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097", include_epg_picons=False):
+def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type="4097", include_epg_picons=False, reload_services=True):
     """Szybki eksport playlisty do bukietów Enigma2.
 
     Ważne: od v8.0.0 eksport bukietów pozostaje szybki i nie buduje ciężkich map EPG/Picon
@@ -665,16 +686,9 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
             ]
             for ch in chans:
                 try:
-                    url = _normalize_stream_url(ch.get("url", ""))
-                    if not url:
-                        continue
-                    title_raw = ch.get("title") or ch.get("name") or "No Name"
-                    title = sanit_title(title_raw)
-                    if url.lower().startswith(('http://', 'https://')) and "user-agent" not in url.lower():
-                        url += ua_suffix
+                    reference, ref_prefix, title = playback_reference(ch, service_type)
+                    url = ch.get("url", "")
                     tvg_id = (ch.get("epg_id") or ch.get("tvg-id") or ch.get("tvg_id") or "")
-                    sid, tsid, onid, namespace = _stable_dvb_ids(url, title, tvg_id)
-                    ref_prefix = "%s:0:1:%s:%s:%s:%s:0:0:0" % (service_type, sid, tsid, onid, namespace)
                     if not _is_vod_like(title, grp, url):
                         group_epg_mapping.append({
                             'ref': ref_prefix,
@@ -682,7 +696,7 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
                             'tvg': tvg_id,
                             'group': grp
                         })
-                    lines.append(_build_service_line(ref_prefix, url, title))
+                    lines.append("#SERVICE " + reference)
                     lines.append("#DESCRIPTION %s" % title)
                     written_in_group += 1
                 except Exception as e:
@@ -769,7 +783,7 @@ def export_bouquets(playlist, bouquet_name=None, keep_groups=True, service_type=
             print('[IPTVDream] Optional EPG/Picon export skipped: %s' % e)
 
     try:
-        if eDVBDB:
+        if eDVBDB and reload_services:
             eDVBDB.getInstance().reloadBouquets()
             eDVBDB.getInstance().reloadServicelist()
     except Exception:

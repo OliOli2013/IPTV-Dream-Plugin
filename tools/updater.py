@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import tempfile
+from .runtime_package import copy_runtime
 
 from .net import http_get
 from .logger import get_logger, mask_sensitive
@@ -43,13 +44,13 @@ def _is_remote_newer(local, remote):
 
 def _get_remote_info():
     try:
-        r_ver = http_get(VERSION_URL, timeout=(5, 5), retries=2, backoff=0.8)
+        r_ver = http_get(VERSION_URL, timeout=(5, 5), retries=2, backoff=0.8, verify=True)
         r_ver.raise_for_status()
         remote_ver = (r_ver.text or "").strip()
 
         changelog = ""
         try:
-            r_log = http_get(CHANGELOG_URL, timeout=(5, 10), retries=2, backoff=0.8)
+            r_log = http_get(CHANGELOG_URL, timeout=(5, 10), retries=2, backoff=0.8, verify=True)
             if r_log.status_code == 200:
                 changelog = r_log.text or ""
         except Exception as e:
@@ -147,7 +148,8 @@ def _cleanup_package_artifacts(root_dir):
 
 def _validate_runtime_tree(root_dir):
     required = (
-        "plugin.py", "dream_v6.py", "export_v2.py", "VERSION",
+        "plugin.py", "dream_v6.py", "export_v2.py", "VERSION", "intro.py", "media_screen.py", "player.py", "runtime.json", "pic/intro.png",
+        "tools/tasks.py", "tools/storage.py", "tools/media.py", "tools/ui.py", "tools/runtime_package.py",
         os.path.join("core", "playlist_loader.py"),
         os.path.join("tools", "net.py"),
         os.path.join("tools", "lang.py")
@@ -194,29 +196,34 @@ def do_update():
     tmp = tempfile.mkdtemp(prefix="iptvdream_upd_")
     zip_path = os.path.join(tmp, "main.zip")
     extracted_folder = None
+    old_moved = False
+    installed_new = False
+    staged = None
 
     try:
-        r = http_get(REPO_ZIP, timeout=(10, 60), retries=2, backoff=1.0)
+        r = http_get(REPO_ZIP, timeout=(10, 60), retries=2, backoff=1.0, verify=True)
         r.raise_for_status()
         with open(zip_path, "wb") as f:
             f.write(r.content)
 
         shutil.unpack_archive(zip_path, tmp)
         extracted_folder = _find_extracted_plugin_dir(tmp)
-        _cleanup_package_artifacts(extracted_folder)
-        _validate_runtime_tree(extracted_folder)
+        staged = tempfile.mkdtemp(prefix=".IPTVDream-stage-", dir=os.path.dirname(PLUGIN_DIR))
+        copy_runtime(extracted_folder, staged)
+        _validate_runtime_tree(staged)
 
         if os.path.exists(SAFE_BAK_DIR):
             shutil.rmtree(SAFE_BAK_DIR)
 
         if os.path.exists(PLUGIN_DIR):
             shutil.move(PLUGIN_DIR, SAFE_BAK_DIR)
+            old_moved = True
 
-        shutil.move(extracted_folder, PLUGIN_DIR)
-        _cleanup_package_artifacts(PLUGIN_DIR)
+        shutil.move(staged, PLUGIN_DIR)
+        installed_new = True
         _apply_permissions(PLUGIN_DIR)
 
-        if os.path.exists(SAFE_BAK_DIR):
+        if old_moved and os.path.exists(SAFE_BAK_DIR):
             shutil.rmtree(SAFE_BAK_DIR, ignore_errors=True)
         return True
     except Exception as e:
@@ -224,13 +231,17 @@ def do_update():
             LOG_UPD.error("update failed: %s", mask_sensitive(e))
         except Exception:
             pass
-        if os.path.exists(SAFE_BAK_DIR):
+        if old_moved and os.path.exists(SAFE_BAK_DIR):
             try:
                 if os.path.exists(PLUGIN_DIR):
                     shutil.rmtree(PLUGIN_DIR, ignore_errors=True)
                 shutil.move(SAFE_BAK_DIR, PLUGIN_DIR)
             except Exception:
                 pass
+        elif installed_new:
+            shutil.rmtree(PLUGIN_DIR, ignore_errors=True)
         raise
     finally:
+        if staged and os.path.isdir(staged):
+            shutil.rmtree(staged, ignore_errors=True)
         shutil.rmtree(tmp, ignore_errors=True)

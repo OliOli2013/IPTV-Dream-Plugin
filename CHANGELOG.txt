@@ -1,3 +1,13 @@
+9.0.0 — 2026-11-22
+- Intro IPTV Dream / AIO Hub Enigma 2, lokalne, pomijane i wyłączane.
+- Przeglądarka i natywny odtwarzacz LIVE/VOD, wyszukiwanie, filtry, stronicowanie i ostatnie pozycje.
+- Poprawki wątków GUI, anulowania, parsowania Xtream i pracy w tle.
+- Nagłówki EXTVLCOPT/KODIPROP, manifesty HLS, względne URL i prawdziwe odświeżenie.
+- Atomowe prywatne ustawienia, odczyt bez nadpisywania, zbiorczy zapis ulubionych.
+- Diagnostyka, skalowanie głównych ekranów, zgodność MoviePlayer OpenATV/OpenPLi.
+- Wspólny runtime dla IPK/DEB/instalatora/updatera; usunięte historyczne duplikaty.
+- Pakiety i testy automatyczne. Odtwarzanie na fizycznym tunerze wymaga weryfikacji.
+
 IPTV Dream 8.0.1 - Export/MAC regression fixes and hardening
 2026-09-07
 

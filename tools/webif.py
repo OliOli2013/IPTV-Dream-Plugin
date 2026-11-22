@@ -77,10 +77,10 @@ def _read_plugin_version():
         if os.path.exists(ver_path):
             with open(ver_path, "r", encoding="utf-8") as f:
                 v = (f.read() or "").strip()
-                return v or "8.0.1"
+                return v or "9.0.0"
     except Exception:
         pass
-    return "8.0.1"
+    return "9.0.0"
 
 
 def _detect_lang_from_system():
@@ -294,7 +294,9 @@ class IPTVDreamWebIf(Resource):
                         data = {"type": "mac", "host": host, "mac": mac, "mode": mode}
 
             if data and _on_data_ready_callback:
-                _on_data_ready_callback(data)
+                if _on_data_ready_callback(data) is False:
+                    request.setResponseCode(409)
+                    return b"IPTV Dream is busy. Wait for the current operation."
                 return b"OK"
 
         except Exception as e:

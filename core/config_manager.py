@@ -9,6 +9,7 @@ IPTV Dream v6.0 - MENADŻER KONFIGURACJI
 
 import json, os, time, hashlib
 from datetime import datetime
+from ..tools.storage import read_json, write_json
 
 class ConfigManager:
     """Zaawansowany menadżer konfiguracji wtyczki."""
@@ -21,7 +22,8 @@ class ConfigManager:
     def ensure_defaults(self):
         """Upewnia się, że istnieją wszystkie domyślne ustawienia."""
         defaults = {
-            "version": "8.0.1",
+            "version": "9.0.0",
+            "intro_enabled": True,
             "language": "auto",
             "debug": False,
             "log_file": "/tmp/iptvdream.log",
@@ -44,6 +46,7 @@ class ConfigManager:
             "picon_auto_download": True,
             "favorites_auto_backup": True,
             "last_url": "",
+            "last_source": None,
             "last_playlist": None,
             "load_history": [],
             "performance_stats": {
@@ -75,33 +78,31 @@ class ConfigManager:
         for key, value in defaults.items():
             if key not in self.config:
                 self.config[key] = value
+            elif isinstance(value, (dict, list, bool)) and not isinstance(self.config[key], type(value)):
+                self.config[key] = value
+        for key, lower, upper in (("net_timeout_connect", 1, 60), ("net_timeout_read", 5, 300),
+                                  ("net_retries", 0, 3), ("m3u_variant_retries", 0, 2), ("cache_max_age", 0, 86400)):
+            try:
+                self.config[key] = min(upper, max(lower, int(self.config[key])))
+            except (TypeError, ValueError):
+                self.config[key] = defaults[key]
+        try:
+            self.config["net_backoff"] = min(5.0, max(0.0, float(self.config["net_backoff"])))
+        except (TypeError, ValueError):
+            self.config["net_backoff"] = defaults["net_backoff"]
+        if self.config.get("last_source") is not None and not isinstance(self.config["last_source"], dict):
+            self.config["last_source"] = None
         self.config["version"] = defaults["version"]
         
-        self.save_config()
     
     def load_config(self):
         """Wczytuje konfigurację z pliku."""
-        try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except Exception as e:
-            print(f"[IPTVDreamV6] Błąd ładowania konfiguracji: {e}")
-        
-        return {}
+        return read_json(self.config_file, {})
     
     def save_config(self):
         """Zapisuje konfigurację do pliku."""
         try:
-            # Upewnij się, że katalog istnieje
-            config_dir = os.path.dirname(self.config_file)
-            if config_dir:
-                os.makedirs(config_dir, exist_ok=True)
-            
-            tmp = self.config_file + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
-            os.replace(tmp, self.config_file)
+            write_json(self.config_file, self.config)
         except Exception as e:
             print(f"[IPTVDreamV6] Błąd zapisywania konfiguracji: {e}")
     
